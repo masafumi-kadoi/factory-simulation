@@ -44,8 +44,8 @@ func NewEngine(scenario *domain.Scenario) *Engine {
 }
 
 // Run executes the simulation until the time limit or event exhaustion
-func (e *Engine) Run(timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, error) {
-	simulation := domain.NewSimulation("sim-1", e.scenario.ID)
+func (e *Engine) Run(simulationID string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, error) {
+	simulation := domain.NewSimulation(simulationID, e.scenario.ID)
 
 	// Initialize: Generate WorkCreated events from source stations
 	for i := range e.scenario.Stations {

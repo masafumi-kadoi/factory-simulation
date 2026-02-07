@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // InitialConditionStation represents initial conditions for a station
@@ -85,9 +86,12 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Apply initial conditions (for future implementation)
 
+	// Generate unique simulation ID
+	simulationID := fmt.Sprintf("sim-%d", time.Now().UnixNano())
+
 	// Run simulation
 	engine := simulation.NewEngine(scenario)
-	sim, statusLogs, workEventLogs, err := engine.Run(req.SimulationTime)
+	sim, statusLogs, workEventLogs, err := engine.Run(simulationID, req.SimulationTime)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Simulation failed: %v", err))
 		return
