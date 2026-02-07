@@ -11,10 +11,10 @@ const (
 
 // Station represents a station in the factory simulation
 type Station struct {
-	ID       string
-	Type     StationType
-	ParentID *string
-	Current Work           *Work
+	ID          string
+	Type        StationType
+	ParentID    *string
+	CurrentWork *Work
 
 	// Status flags
 	CanReceive          bool

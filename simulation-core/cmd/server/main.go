@@ -4,7 +4,6 @@ import (
 	"context"
 	"factory-simulation/simulation-core/internal/api"
 	"factory-simulation/simulation-core/internal/database"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
