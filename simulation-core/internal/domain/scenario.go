@@ -1,0 +1,46 @@
+package domain
+
+// Connection represents a connection between two stations
+type Connection struct {
+	From string
+	To   string
+}
+
+// Scenario represents a simulation scenario
+type Scenario struct {
+	ID          string
+	Name        string
+	Stations    []Station
+	Connections []Connection
+}
+
+// NewScenario creates a new scenario
+func NewScenario(id, name string, stations []Station, connections []Connection) *Scenario {
+	return &Scenario{
+		ID:          id,
+		Name:        name,
+		Stations:    stations,
+		Connections: connections,
+	}
+}
+
+// GetStation retrieves a station by ID
+func (s *Scenario) GetStation(id string) *Station {
+	for i := range s.Stations {
+		if s.Stations[i].ID == id {
+			return &s.Stations[i]
+		}
+	}
+	return nil
+}
+
+// GetNextStations returns the IDs of stations connected from the given station
+func (s *Scenario) GetNextStations(stationID string) []string {
+	var nextStations []string
+	for _, conn := range s.Connections {
+		if conn.From == stationID {
+			nextStations = append(nextStations, conn.To)
+		}
+	}
+	return nextStations
+}

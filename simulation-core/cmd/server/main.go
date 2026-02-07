@@ -1,0 +1,103 @@
+package main
+
+import (
+	"context"
+	"factory-simulation/simulation-core/internal/api"
+	"factory-simulation/simulation-core/internal/database"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+func main() {
+	// Get database configuration from environment variables
+	dbHost := getEnv("DB_HOST", "localhost")
+	dbPort := getEnv("DB_PORT", "5432")
+	dbUser := getEnv("DB_USER", "postgres")
+	dbPassword := getEnv("DB_PASSWORD", "postgres")
+	dbName := getEnv("DB_NAME", "factory_simulation")
+
+	// Connect to database
+	log.Println("Connecting to database...")
+	db, err := database.NewDB(dbHost, dbPort, dbUser, dbPassword, dbName)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+	log.Println("Database connection established")
+
+	// Create repository
+	repo := database.NewRepository(db)
+
+	// Create HTTP handler
+	handler := api.NewHandler(repo)
+
+	// Setup router
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/scenarios", handler.HandleCreateScenario)
+	mux.HandleFunc("/api/simulations", handler.HandleRunSimulation)
+	mux.HandleFunc("/api/simulations/", func(w http.ResponseWriter, r *http.Request) {
+		// Route to appropriate handler based on path
+		if r.URL.Path == "/api/simulations/" {
+			http.Error(w, "Simulation ID required", http.StatusBadRequest)
+			return
+		}
+
+		// Check if path ends with /logs
+		if len(r.URL.Path) > 5 && r.URL.Path[len(r.URL.Path)-5:] == "/logs" {
+			handler.HandleGetLogs(w, r)
+		} else {
+			handler.HandleGetSimulation(w, r)
+		}
+	})
+
+	// Create HTTP server
+	port := getEnv("PORT", "8080")
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in a goroutine
+	go func() {
+		log.Printf("Starting server on port %s...", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	log.Println("Server started successfully")
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Create a deadline for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited")
+}
+
+// getEnv gets an environment variable or returns a default value
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
