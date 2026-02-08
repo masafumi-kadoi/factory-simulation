@@ -91,7 +91,7 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 
 	// Run simulation
 	engine := simulation.NewEngine(scenario)
-	sim, statusLogs, workEventLogs, err := engine.Run(simulationID, req.SimulationTime)
+	sim, statusLogs, workEventLogs, workLineageLogs, err := engine.Run(simulationID, req.SimulationTime)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Simulation failed: %v", err))
 		return
@@ -110,6 +110,11 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.repo.SaveWorkEvents(sim.ID, workEventLogs); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save work events: %v", err))
+		return
+	}
+
+	if err := h.repo.SaveWorkLineageLogs(sim.ID, workLineageLogs); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save work lineage logs: %v", err))
 		return
 	}
 

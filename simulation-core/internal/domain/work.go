@@ -13,8 +13,7 @@ const (
 type Work struct {
 	ID            string
 	QualityStatus QualityStatus
-	ParentWorkIDs []string // Parent work IDs for traceability (used in Merge stations)
-	OriginWorkID  string   // Origin work ID for traceability (used in Split stations)
+	// Traceability information is now managed externally in work_lineage table
 }
 
 // NewWork creates a new work with unknown quality status

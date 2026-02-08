@@ -40,3 +40,21 @@ CREATE TABLE work_events (
 -- Index for faster queries
 CREATE INDEX idx_work_events_simulation ON work_events(simulation_run_id);
 CREATE INDEX idx_work_events_timestamp ON work_events(timestamp);
+
+-- Table: work_lineage (traceability)
+CREATE TABLE work_lineage (
+    id SERIAL PRIMARY KEY,
+    simulation_run_id VARCHAR(255) NOT NULL,
+    child_work_id VARCHAR(255) NOT NULL,
+    parent_work_id VARCHAR(255) NOT NULL,
+    operation_type VARCHAR(50) NOT NULL,
+    station_id VARCHAR(255) NOT NULL,
+    timestamp FLOAT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (simulation_run_id) REFERENCES simulation_runs(id) ON DELETE CASCADE
+);
+
+-- Index for faster queries
+CREATE INDEX idx_work_lineage_child ON work_lineage(child_work_id);
+CREATE INDEX idx_work_lineage_parent ON work_lineage(parent_work_id);
+CREATE INDEX idx_work_lineage_simulation ON work_lineage(simulation_run_id);

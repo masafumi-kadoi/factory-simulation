@@ -238,3 +238,47 @@ func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventL
 
 	return logs, nil
 }
+
+// SaveWorkLineageLogs saves work lineage logs to the database
+func (r *Repository) SaveWorkLineageLogs(simulationID string, logs []simulation.WorkLineageLog) error {
+	if len(logs) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO work_lineage (simulation_run_id, child_work_id, parent_work_id, operation_type, station_id, timestamp)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`
+
+	tx, err := r.db.GetConnection().Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, log := range logs {
+		_, err := stmt.Exec(
+			simulationID,
+			log.ChildWorkID,
+			log.ParentWorkID,
+			log.OperationType,
+			log.StationID,
+			log.Timestamp,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to insert work lineage log: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}

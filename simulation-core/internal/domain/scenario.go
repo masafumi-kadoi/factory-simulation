@@ -1,9 +1,19 @@
 package domain
 
+// RoutingCondition represents a routing condition for conditional routing
+type RoutingCondition string
+
+const (
+	RoutingDefault   RoutingCondition = "default"    // Unconditional (default)
+	RoutingQualityOK RoutingCondition = "quality_ok" // Quality OK
+	RoutingQualityNG RoutingCondition = "quality_ng" // Quality NG
+)
+
 // Connection represents a connection between two stations
 type Connection struct {
-	From string
-	To   string
+	From      string
+	To        string
+	Condition RoutingCondition
 }
 
 // Scenario represents a simulation scenario

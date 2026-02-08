@@ -16,8 +16,9 @@ type StationRequest struct {
 
 // ConnectionRequest represents a connection in the request
 type ConnectionRequest struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Condition string `json:"condition"` // default, quality_ok, quality_ng
 }
 
 // ScenarioRequest represents a POST /api/scenarios request
@@ -120,9 +121,15 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 
 	connections := make([]domain.Connection, len(req.Connections))
 	for i, conn := range req.Connections {
+		// Default condition if not specified
+		condition := conn.Condition
+		if condition == "" {
+			condition = "default"
+		}
 		connections[i] = domain.Connection{
-			From: conn.From,
-			To:   conn.To,
+			From:      conn.From,
+			To:        conn.To,
+			Condition: domain.RoutingCondition(condition),
 		}
 	}
 
