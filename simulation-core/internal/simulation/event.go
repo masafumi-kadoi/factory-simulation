@@ -10,6 +10,10 @@ const (
 	EventProcessingCompleted EventType = "ProcessingCompleted"
 	EventWorkDeparted        EventType = "WorkDeparted"
 	EventWorkDestroyed       EventType = "WorkDestroyed"
+	EventWorkMerged          EventType = "WorkMerged"
+	EventWorkSplit           EventType = "WorkSplit"
+	EventWorkInspected       EventType = "WorkInspected"
+	EventWorkRouted          EventType = "WorkRouted"
 )
 
 // Event represents a simulation event

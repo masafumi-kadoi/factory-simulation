@@ -55,6 +55,61 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate station configurations
+	for _, st := range req.Stations {
+		if st.Type == "merge" {
+			if requiredWorkCount, ok := st.Config["requiredWorkCount"].(float64); ok {
+				if requiredWorkCount <= 0 {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: requiredWorkCount must be positive", st.ID))
+					return
+				}
+			} else {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: requiredWorkCount is required", st.ID))
+				return
+			}
+		}
+
+		if st.Type == "split" {
+			if outputWorkCount, ok := st.Config["outputWorkCount"].(float64); ok {
+				if outputWorkCount <= 0 {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: outputWorkCount must be positive", st.ID))
+					return
+				}
+			} else {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: outputWorkCount is required", st.ID))
+				return
+			}
+		}
+
+		if st.Type == "inspection" {
+			if okProbability, ok := st.Config["okProbability"].(float64); ok {
+				if okProbability < 0.0 || okProbability > 1.0 {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Inspection station %s: okProbability must be between 0.0 and 1.0", st.ID))
+					return
+				}
+			} else {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Inspection station %s: okProbability is required", st.ID))
+				return
+			}
+		}
+	}
+
+	// Validate discharge stations have at least 2 next stations
+	for _, st := range req.Stations {
+		if st.Type == "discharge" {
+			nextStationCount := 0
+			for _, conn := range req.Connections {
+				if conn.From == st.ID {
+					nextStationCount++
+				}
+			}
+			if nextStationCount < 2 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Discharge station %s: requires at least 2 next stations (OK route and NG route)", st.ID))
+				return
+			}
+		}
+	}
+
 	// Convert request to domain model
 	stations := make([]domain.Station, len(req.Stations))
 	for i, st := range req.Stations {

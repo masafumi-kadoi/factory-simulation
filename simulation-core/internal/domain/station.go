@@ -7,6 +7,10 @@ const (
 	StationTypeSource     StationType = "source"
 	StationTypeProcessing StationType = "processing"
 	StationTypeDrain      StationType = "drain"
+	StationTypeMerge      StationType = "merge"
+	StationTypeSplit      StationType = "split"
+	StationTypeInspection StationType = "inspection"
+	StationTypeDischarge  StationType = "discharge"
 )
 
 // Station represents a station in the factory simulation
@@ -15,6 +19,11 @@ type Station struct {
 	Type        StationType
 	ParentID    *string
 	CurrentWork *Work
+
+	// Merge/Split station fields
+	CurrentWorks []*Work // For Merge stations: holds multiple works until ready
+	OutputWorks  []*Work // For Split stations: holds output works to be sent sequentially
+	OutputIndex  int     // For Split stations: tracks which output work to send next
 
 	// Status flags
 	CanReceive          bool
