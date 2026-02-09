@@ -39,7 +39,7 @@ func (h *Handler) HandleGetLineage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to response format
-	var items []LineageResponse
+	items := make([]LineageResponse, 0, len(lineageLogs))
 	for _, log := range lineageLogs {
 		item := LineageResponse{
 			ChildWorkID:   log.ChildWorkID,

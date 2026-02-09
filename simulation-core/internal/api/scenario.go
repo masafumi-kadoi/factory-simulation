@@ -160,3 +160,60 @@ func (h *Handler) GetScenario(scenarioID string) (*domain.Scenario, error) {
 
 	return scenario, nil
 }
+
+// ScenarioDetailResponse represents a GET /api/scenarios/:id response
+type ScenarioDetailResponse struct {
+	ScenarioID  string              `json:"scenarioId"`
+	Name        string              `json:"name"`
+	Stations    []StationRequest    `json:"stations"`
+	Connections []ConnectionRequest `json:"connections"`
+}
+
+// HandleGetScenario handles GET /api/scenarios/:id
+func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Extract scenario ID from path
+	// Path format: /api/scenarios/scenario-1
+	scenarioID := r.URL.Path[len("/api/scenarios/"):]
+	if scenarioID == "" {
+		respondError(w, http.StatusBadRequest, "Scenario ID is required")
+		return
+	}
+
+	scenario, err := h.GetScenario(scenarioID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// Convert domain model to response
+	stations := make([]StationRequest, len(scenario.Stations))
+	for i, st := range scenario.Stations {
+		stations[i] = StationRequest{
+			ID:       st.ID,
+			Type:     string(st.Type),
+			ParentID: st.ParentID,
+			Config:   st.Config,
+		}
+	}
+
+	connections := make([]ConnectionRequest, len(scenario.Connections))
+	for i, conn := range scenario.Connections {
+		connections[i] = ConnectionRequest{
+			From:      conn.From,
+			To:        conn.To,
+			Condition: string(conn.Condition),
+		}
+	}
+
+	respondJSON(w, http.StatusOK, ScenarioDetailResponse{
+		ScenarioID:  scenario.ID,
+		Name:        scenario.Name,
+		Stations:    stations,
+		Connections: connections,
+	})
+}

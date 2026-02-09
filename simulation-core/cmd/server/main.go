@@ -37,6 +37,16 @@ func main() {
 
 	// Setup router with CORS middleware
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/scenarios/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		// Route based on path
+		if r.URL.Path == "/api/scenarios" || r.URL.Path == "/api/scenarios/" {
+			// POST /api/scenarios - create scenario
+			handler.HandleCreateScenario(w, r)
+		} else {
+			// GET /api/scenarios/:id - get scenario details
+			handler.HandleGetScenario(w, r)
+		}
+	}))
 	mux.HandleFunc("/api/scenarios", corsMiddleware(handler.HandleCreateScenario))
 	mux.HandleFunc("/api/simulations", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
