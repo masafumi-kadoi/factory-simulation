@@ -120,10 +120,8 @@ class AnimationPlayer {
     }
 
     _updateGraph() {
-        // Remove all work nodes
-        this.workNodes.forEach((nodeId) => {
-            this.cy.$(`#${nodeId}`).remove();
-        });
+        // Remove all work nodes (keep station nodes intact)
+        this.cy.nodes('.work-node').remove();
         this.workNodes.clear();
 
         // Process work events up to current time
@@ -148,43 +146,32 @@ class AnimationPlayer {
             }
         }
 
-        // Add work nodes to graph
+        // Add work nodes to graph at their current stations
         activeWorks.forEach((stationId, workId) => {
             const nodeId = `work-${workId}`;
 
-            if (!this.cy.$(`#${nodeId}`).length) {
-                this.cy.add({
-                    group: 'nodes',
-                    data: {
-                        id: nodeId,
-                        label: workId,
-                        parent: stationId
-                    },
-                    classes: 'work-node'
-                });
+            this.cy.add({
+                group: 'nodes',
+                data: {
+                    id: nodeId,
+                    label: `W${workId.substring(0, 4)}`,
+                    parent: stationId
+                },
+                classes: 'work-node'
+            });
 
-                // Style work nodes
-                this.cy.$(`#${nodeId}`).style({
-                    'background-color': '#ff0000',
-                    'width': 30,
-                    'height': 30,
-                    'font-size': '8px'
-                });
+            // Style work nodes
+            this.cy.$(`#${nodeId}`).style({
+                'background-color': '#ff6b6b',
+                'width': 25,
+                'height': 25,
+                'font-size': '10px',
+                'color': '#fff',
+                'text-halign': 'center',
+                'text-valign': 'center'
+            });
 
-                this.workNodes.set(workId, nodeId);
-            }
-        });
-
-        // Update station colors based on status logs
-        // (Simplified: just highlight stations with recent activity)
-        this.cy.nodes().forEach(node => {
-            if (!node.id().startsWith('work-')) {
-                node.style('opacity', 0.5);
-            }
-        });
-
-        activeWorks.forEach((stationId) => {
-            this.cy.$(`#${stationId}`).style('opacity', 1.0);
+            this.workNodes.set(workId, nodeId);
         });
     }
 

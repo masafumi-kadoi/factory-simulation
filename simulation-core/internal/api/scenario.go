@@ -140,10 +140,16 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 
 	scenario := domain.NewScenario(scenarioID, req.Name, stations, connections)
 
-	// Store scenario in memory
+	// Store scenario in memory (for backward compatibility)
 	h.mu.Lock()
 	h.scenarios[scenarioID] = scenario
 	h.mu.Unlock()
+
+	// Save scenario to database
+	if err := h.repo.SaveScenario(scenario); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save scenario: %v", err))
+		return
+	}
 
 	respondJSON(w, http.StatusCreated, ScenarioResponse{
 		ScenarioID: scenarioID,
@@ -152,13 +158,25 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 
 // GetScenario retrieves a scenario by ID
 func (h *Handler) GetScenario(scenarioID string) (*domain.Scenario, error) {
+	// Try to get from memory first
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	scenario, ok := h.scenarios[scenarioID]
-	if !ok {
+	h.mu.RUnlock()
+
+	if ok {
+		return scenario, nil
+	}
+
+	// If not in memory, try to get from database
+	scenario, err := h.repo.GetScenario(scenarioID)
+	if err != nil {
 		return nil, fmt.Errorf("scenario not found: %s", scenarioID)
 	}
+
+	// Cache in memory for future use
+	h.mu.Lock()
+	h.scenarios[scenarioID] = scenario
+	h.mu.Unlock()
 
 	return scenario, nil
 }

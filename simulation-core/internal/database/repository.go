@@ -1,6 +1,7 @@
 package database
 
 import (
+	"encoding/json"
 	"factory-simulation/simulation-core/internal/domain"
 	"factory-simulation/simulation-core/internal/simulation"
 	"fmt"
@@ -360,4 +361,133 @@ func (r *Repository) GetWorkLineage(simulationID string) ([]simulation.WorkLinea
 	}
 
 	return logs, nil
+}
+
+// SaveScenario saves a scenario to the database
+func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
+	tx, err := r.db.GetConnection().Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Insert scenario
+	_, err = tx.Exec(`
+		INSERT INTO scenarios (id, name)
+		VALUES ($1, $2)
+		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+	`, scenario.ID, scenario.Name)
+	if err != nil {
+		return fmt.Errorf("failed to insert scenario: %w", err)
+	}
+
+	// Delete existing stations and connections for this scenario
+	_, err = tx.Exec("DELETE FROM scenario_stations WHERE scenario_id = $1", scenario.ID)
+	if err != nil {
+		return fmt.Errorf("failed to delete existing stations: %w", err)
+	}
+
+	_, err = tx.Exec("DELETE FROM scenario_connections WHERE scenario_id = $1", scenario.ID)
+	if err != nil {
+		return fmt.Errorf("failed to delete existing connections: %w", err)
+	}
+
+	// Insert stations
+	for _, station := range scenario.Stations {
+		configJSON, err := json.Marshal(station.Config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal station config: %w", err)
+		}
+
+		_, err = tx.Exec(`
+			INSERT INTO scenario_stations (scenario_id, station_id, station_type, parent_id, config)
+			VALUES ($1, $2, $3, $4, $5)
+		`, scenario.ID, station.ID, station.Type, station.ParentID, configJSON)
+		if err != nil {
+			return fmt.Errorf("failed to insert station: %w", err)
+		}
+	}
+
+	// Insert connections
+	for _, conn := range scenario.Connections {
+		_, err = tx.Exec(`
+			INSERT INTO scenario_connections (scenario_id, from_station, to_station, condition)
+			VALUES ($1, $2, $3, $4)
+		`, scenario.ID, conn.From, conn.To, conn.Condition)
+		if err != nil {
+			return fmt.Errorf("failed to insert connection: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetScenario retrieves a scenario from the database
+func (r *Repository) GetScenario(id string) (*domain.Scenario, error) {
+	// Get scenario basic info
+	var name string
+	err := r.db.GetConnection().QueryRow(`
+		SELECT name FROM scenarios WHERE id = $1
+	`, id).Scan(&name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scenario: %w", err)
+	}
+
+	// Get stations
+	rows, err := r.db.GetConnection().Query(`
+		SELECT station_id, station_type, parent_id, config
+		FROM scenario_stations
+		WHERE scenario_id = $1
+	`, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query stations: %w", err)
+	}
+	defer rows.Close()
+
+	var stations []domain.Station
+	for rows.Next() {
+		var stationID, stationType string
+		var parentID *string
+		var configJSON []byte
+
+		if err := rows.Scan(&stationID, &stationType, &parentID, &configJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan station: %w", err)
+		}
+
+		var config map[string]interface{}
+		if err := json.Unmarshal(configJSON, &config); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		}
+
+		station := domain.NewStation(stationID, domain.StationType(stationType), config)
+		station.ParentID = parentID
+		stations = append(stations, *station)
+	}
+
+	// Get connections
+	connRows, err := r.db.GetConnection().Query(`
+		SELECT from_station, to_station, condition
+		FROM scenario_connections
+		WHERE scenario_id = $1
+	`, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query connections: %w", err)
+	}
+	defer connRows.Close()
+
+	var connections []domain.Connection
+	for connRows.Next() {
+		var from, to, condition string
+		if err := connRows.Scan(&from, &to, &condition); err != nil {
+			return nil, fmt.Errorf("failed to scan connection: %w", err)
+		}
+
+		connections = append(connections, domain.Connection{
+			From:      from,
+			To:        to,
+			Condition: domain.RoutingCondition(condition),
+		})
+	}
+
+	return domain.NewScenario(id, name, stations, connections), nil
 }
