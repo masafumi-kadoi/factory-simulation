@@ -41,6 +41,18 @@ services:
     networks:
       - factory-network
 
+  visualization-web:
+    build:
+      context: ./visualization-web
+      dockerfile: Dockerfile
+    container_name: factory-visualization-web
+    ports:
+      - "8081:80"
+    depends_on:
+      - simulation-core
+    networks:
+      - factory-network
+
 volumes:
   postgres_data:
     driver: local

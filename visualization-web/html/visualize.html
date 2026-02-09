@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualization - Factory Simulation</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Custom CSS -->
+    <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="index.html">← シミュレーション一覧に戻る</a>
+            <span class="navbar-text" id="simulation-info">Loading...</span>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Tabs -->
+        <ul class="nav nav-tabs" id="visualization-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="scenario-tab" data-bs-toggle="tab" data-bs-target="#scenario" type="button" role="tab">
+                    シナリオ構造
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="animation-tab" data-bs-toggle="tab" data-bs-target="#animation" type="button" role="tab">
+                    アニメーション再生
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="lineage-tab" data-bs-toggle="tab" data-bs-target="#lineage" type="button" role="tab">
+                    トレーサビリティ
+                </button>
+            </li>
+        </ul>
+
+        <!-- Tab content -->
+        <div class="tab-content mt-3" id="visualization-tab-content">
+            <!-- Scenario Structure Tab -->
+            <div class="tab-pane fade show active" id="scenario" role="tabpanel">
+                <div class="row">
+                    <div class="col-12">
+                        <h4>シナリオ構造</h4>
+                        <div id="scenario-container"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Animation Tab -->
+            <div class="tab-pane fade" id="animation" role="tabpanel">
+                <div class="row">
+                    <div class="col-12">
+                        <h4>アニメーション再生</h4>
+                        <div class="timeline-controls">
+                            <div class="d-flex justify-content-between">
+                                <span>タイムライン</span>
+                                <span class="current-time" id="current-time">0.00s</span>
+                            </div>
+                            <input type="range" class="form-range timeline-slider" id="timeline-slider" min="0" max="100" value="0" step="0.1">
+                            <div class="playback-controls">
+                                <button class="btn btn-primary" id="play-btn">再生</button>
+                                <button class="btn btn-secondary" id="pause-btn" disabled>一時停止</button>
+                                <button class="btn btn-secondary" id="reset-btn">リセット</button>
+                                <div class="speed-control">
+                                    <label for="speed-select">速度:</label>
+                                    <select class="form-select form-select-sm" id="speed-select" style="width: auto;">
+                                        <option value="0.5">0.5x</option>
+                                        <option value="1" selected>1x</option>
+                                        <option value="2">2x</option>
+                                        <option value="5">5x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="animation-container" style="height: 600px; border: 1px solid #dee2e6;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lineage Tab -->
+            <div class="tab-pane fade" id="lineage" role="tabpanel">
+                <div class="row">
+                    <div class="col-12">
+                        <h4>トレーサビリティグラフ</h4>
+                        <div id="lineage-container"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Work Detail Modal -->
+    <div class="modal fade" id="workDetailModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">ワーク詳細</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="work-detail-content">
+                    Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap Bundle JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Cytoscape.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+
+    <!-- API client -->
+    <script src="js/api.js"></script>
+
+    <!-- Visualization modules -->
+    <script src="js/scenario-graph.js"></script>
+    <script src="js/animation-player.js"></script>
+    <script src="js/lineage-graph.js"></script>
+
+    <script>
+        // Get simulation ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const simulationId = urlParams.get('sim');
+
+        if (!simulationId) {
+            alert('シミュレーションIDが指定されていません');
+            window.location.href = 'index.html';
+        }
+
+        // Load and display simulation data
+        (async () => {
+            try {
+                // Fetch simulation data
+                const simulation = await fetchSimulation(simulationId);
+                const scenario = await fetchScenario(simulation.scenarioId);
+
+                // Update navbar info
+                document.getElementById('simulation-info').textContent =
+                    `Simulation: ${simulation.simulationId} | Scenario: ${simulation.scenarioId}`;
+
+                // Render scenario graph
+                renderScenarioGraph(scenario, 'scenario-container');
+
+                // Load logs for animation and lineage
+                const logs = await fetchLogs(simulationId);
+                const lineageData = await fetchLineage(simulationId);
+
+                // Initialize animation player (will be implemented in animation-player.js)
+                window.animationPlayer = new AnimationPlayer(scenario, logs, 'animation-container');
+
+                // Render lineage graph (will be implemented in lineage-graph.js)
+                renderLineageGraph(lineageData, logs.workEvents, 'lineage-container');
+
+            } catch (error) {
+                console.error('Failed to load visualization:', error);
+                alert('可視化データの読み込みに失敗しました: ' + error.message);
+            }
+        })();
+    </script>
+</body>
+</html>

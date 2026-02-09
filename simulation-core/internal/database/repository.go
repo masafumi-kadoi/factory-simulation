@@ -282,3 +282,77 @@ func (r *Repository) SaveWorkLineageLogs(simulationID string, logs []simulation.
 
 	return nil
 }
+
+// GetAllSimulations retrieves all simulation runs from the database
+func (r *Repository) GetAllSimulations() ([]*domain.Simulation, error) {
+	query := `
+		SELECT id, scenario_id, simulation_end_time, end_reason, status
+		FROM simulation_runs
+		ORDER BY start_time DESC
+	`
+
+	rows, err := r.db.GetConnection().Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query simulations: %w", err)
+	}
+	defer rows.Close()
+
+	var simulations []*domain.Simulation
+	for rows.Next() {
+		var sim domain.Simulation
+		var endTime *float64
+		var endReason *string
+		var status string
+
+		if err := rows.Scan(&sim.ID, &sim.ScenarioID, &endTime, &endReason, &status); err != nil {
+			return nil, fmt.Errorf("failed to scan simulation: %w", err)
+		}
+
+		sim.Status = domain.SimulationStatus(status)
+		sim.EndTime = endTime
+
+		if endReason != nil {
+			reason := domain.EndReason(*endReason)
+			sim.EndReason = &reason
+		}
+
+		simulations = append(simulations, &sim)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating simulations: %w", err)
+	}
+
+	return simulations, nil
+}
+
+// GetWorkLineage retrieves work lineage logs from the database
+func (r *Repository) GetWorkLineage(simulationID string) ([]simulation.WorkLineageLog, error) {
+	query := `
+		SELECT child_work_id, parent_work_id, operation_type, station_id, timestamp
+		FROM work_lineage
+		WHERE simulation_run_id = $1
+		ORDER BY timestamp ASC
+	`
+
+	rows, err := r.db.GetConnection().Query(query, simulationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query work lineage: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []simulation.WorkLineageLog
+	for rows.Next() {
+		var log simulation.WorkLineageLog
+		if err := rows.Scan(&log.ChildWorkID, &log.ParentWorkID, &log.OperationType, &log.StationID, &log.Timestamp); err != nil {
+			return nil, fmt.Errorf("failed to scan work lineage log: %w", err)
+		}
+		logs = append(logs, log)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating work lineage: %w", err)
+	}
+
+	return logs, nil
+}

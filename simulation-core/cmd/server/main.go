@@ -35,11 +35,17 @@ func main() {
 	// Create HTTP handler
 	handler := api.NewHandler(repo)
 
-	// Setup router
+	// Setup router with CORS middleware
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/scenarios", handler.HandleCreateScenario)
-	mux.HandleFunc("/api/simulations", handler.HandleRunSimulation)
-	mux.HandleFunc("/api/simulations/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/scenarios", corsMiddleware(handler.HandleCreateScenario))
+	mux.HandleFunc("/api/simulations", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handler.HandleGetSimulations(w, r)
+		} else {
+			handler.HandleRunSimulation(w, r)
+		}
+	}))
+	mux.HandleFunc("/api/simulations/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		// Route to appropriate handler based on path
 		if r.URL.Path == "/api/simulations/" {
 			http.Error(w, "Simulation ID required", http.StatusBadRequest)
@@ -49,10 +55,12 @@ func main() {
 		// Check if path ends with /logs
 		if len(r.URL.Path) > 5 && r.URL.Path[len(r.URL.Path)-5:] == "/logs" {
 			handler.HandleGetLogs(w, r)
+		} else if len(r.URL.Path) > 8 && r.URL.Path[len(r.URL.Path)-8:] == "/lineage" {
+			handler.HandleGetLineage(w, r)
 		} else {
 			handler.HandleGetSimulation(w, r)
 		}
-	})
+	}))
 
 	// Create HTTP server
 	port := getEnv("PORT", "8080")
@@ -99,4 +107,22 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// corsMiddleware adds CORS headers for development
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Allow all origins in development
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next(w, r)
+	}
 }

@@ -212,3 +212,48 @@ func (h *Handler) HandleGetLogs(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, response)
 }
+
+// SimulationListItem represents a simulation in the list response
+type SimulationListItem struct {
+	SimulationID string  `json:"simulationId"`
+	ScenarioID   string  `json:"scenarioId"`
+	Status       string  `json:"status"`
+	EndTime      float64 `json:"endTime"`
+	EndReason    string  `json:"endReason"`
+}
+
+// HandleGetSimulations handles GET /api/simulations
+func (h *Handler) HandleGetSimulations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	simulations, err := h.repo.GetAllSimulations()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get simulations: %v", err))
+		return
+	}
+
+	// Convert to response format
+	var items []SimulationListItem
+	for _, sim := range simulations {
+		item := SimulationListItem{
+			SimulationID: sim.ID,
+			ScenarioID:   sim.ScenarioID,
+			Status:       string(sim.Status),
+		}
+
+		if sim.EndTime != nil {
+			item.EndTime = *sim.EndTime
+		}
+
+		if sim.EndReason != nil {
+			item.EndReason = string(*sim.EndReason)
+		}
+
+		items = append(items, item)
+	}
+
+	respondJSON(w, http.StatusOK, items)
+}
