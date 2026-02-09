@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // InitialConditionStation represents initial conditions for a station
@@ -27,6 +29,7 @@ type SimulationRequest struct {
 // SimulationResponse represents a POST /api/simulations response
 type SimulationResponse struct {
 	SimulationID string  `json:"simulationId"`
+	FriendlyName string  `json:"friendlyName"`
 	Status       string  `json:"status"`
 	EndTime      float64 `json:"endTime"`
 	EndReason    string  `json:"endReason"`
@@ -35,6 +38,7 @@ type SimulationResponse struct {
 // SimulationResult represents a GET /api/simulations/:id response
 type SimulationResult struct {
 	SimulationID string  `json:"simulationId"`
+	FriendlyName string  `json:"friendlyName"`
 	ScenarioID   string  `json:"scenarioId"`
 	Status       string  `json:"status"`
 	StartTime    float64 `json:"startTime"`
@@ -86,12 +90,16 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Apply initial conditions (for future implementation)
 
-	// Generate unique simulation ID
-	simulationID := fmt.Sprintf("sim-%d", time.Now().UnixNano())
+	// Generate unique simulation ID using UUID
+	simulationID := uuid.New().String()
+
+	// Generate friendly name: ScenarioName_RunN_Timestamp
+	timestamp := time.Now().Format("2006-01-02T15:04:05")
+	friendlyName := fmt.Sprintf("%s_実行_%s", scenario.Name, timestamp)
 
 	// Run simulation
 	engine := simulation.NewEngine(scenario)
-	sim, statusLogs, workEventLogs, workLineageLogs, err := engine.Run(simulationID, req.SimulationTime)
+	sim, statusLogs, workEventLogs, workLineageLogs, err := engine.Run(simulationID, friendlyName, req.SimulationTime)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Simulation failed: %v", err))
 		return
@@ -121,6 +129,7 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 	// Prepare response
 	response := SimulationResponse{
 		SimulationID: sim.ID,
+		FriendlyName: sim.FriendlyName,
 		Status:       string(sim.Status),
 		EndTime:      *sim.EndTime,
 		EndReason:    string(*sim.EndReason),
@@ -155,6 +164,7 @@ func (h *Handler) HandleGetSimulation(w http.ResponseWriter, r *http.Request) {
 	// Prepare response
 	result := SimulationResult{
 		SimulationID: sim.ID,
+		FriendlyName: sim.FriendlyName,
 		ScenarioID:   sim.ScenarioID,
 		Status:       string(sim.Status),
 		StartTime:    sim.StartTime,
@@ -216,6 +226,7 @@ func (h *Handler) HandleGetLogs(w http.ResponseWriter, r *http.Request) {
 // SimulationListItem represents a simulation in the list response
 type SimulationListItem struct {
 	SimulationID string  `json:"simulationId"`
+	FriendlyName string  `json:"friendlyName"`
 	ScenarioID   string  `json:"scenarioId"`
 	Status       string  `json:"status"`
 	EndTime      float64 `json:"endTime"`
@@ -240,6 +251,7 @@ func (h *Handler) HandleGetSimulations(w http.ResponseWriter, r *http.Request) {
 	for _, sim := range simulations {
 		item := SimulationListItem{
 			SimulationID: sim.ID,
+			FriendlyName: sim.FriendlyName,
 			ScenarioID:   sim.ScenarioID,
 			Status:       string(sim.Status),
 		}

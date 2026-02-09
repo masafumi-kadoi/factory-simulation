@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // StationStatusLog represents a log entry for station status changes
@@ -17,19 +19,22 @@ type StationStatusLog struct {
 
 // WorkEventLog represents a log entry for work events
 type WorkEventLog struct {
-	WorkID     string
-	StationID  string
-	Timestamp  float64
-	EventType  string
+	WorkID           string
+	WorkFriendlyName string
+	StationID        string
+	Timestamp        float64
+	EventType        string
 }
 
 // WorkLineageLog represents a log entry for work lineage (traceability)
 type WorkLineageLog struct {
-	ChildWorkID   string
-	ParentWorkID  string
-	OperationType string
-	StationID     string
-	Timestamp     float64
+	ChildWorkID            string
+	ChildWorkFriendlyName  string
+	ParentWorkID           string
+	ParentWorkFriendlyName string
+	OperationType          string
+	StationID              string
+	Timestamp              float64
 }
 
 // Engine is the simulation engine
@@ -61,8 +66,8 @@ func NewEngine(scenario *domain.Scenario) *Engine {
 }
 
 // Run executes the simulation until the time limit or event exhaustion
-func (e *Engine) Run(simulationID string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, []WorkLineageLog, error) {
-	simulation := domain.NewSimulation(simulationID, e.scenario.ID)
+func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, []WorkLineageLog, error) {
+	simulation := domain.NewSimulation(simulationID, friendlyName, e.scenario.ID)
 
 	// Initialize: Generate WorkCreated events from source stations
 	for i := range e.scenario.Stations {
@@ -132,16 +137,16 @@ func (e *Engine) processEvent(event *Event, simulation *domain.Simulation) error
 
 // handleWorkCreated handles the WorkCreated event
 func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error {
-	// Generate new work ID
-	workID := e.generateWorkID()
-	work := domain.NewWork(workID)
+	// Generate new work ID and friendly name
+	workID, friendlyName := e.generateWorkID()
+	work := domain.NewWork(workID, friendlyName)
 
 	// Add to station (Source stations keep works internally)
 	station.Works = append(station.Works, work)
 	station.State = domain.StateCompleted
 
 	// Log work event
-	e.logWorkEvent(workID, station.ID, e.currentTime, string(EventWorkCreated))
+	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated))
 
 	// Schedule WorkDeparted event
 	departureTime := station.GetFloatConfig("departureTime")
@@ -165,7 +170,7 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	}
 
 	// Log work event
-	e.logWorkEvent(work.ID, station.ID, e.currentTime, string(EventWorkArrived))
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived))
 	e.logStationStatus(station, "ワーク到着")
 
 	// For Drain station, schedule immediate destruction
@@ -199,13 +204,15 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 	}
 
 	// Log work event
-	var workID string
+	var workID, workFriendlyName string
 	if station.Type == domain.StationTypeMerge {
 		workID = "" // Multiple works, no single ID
+		workFriendlyName = ""
 	} else if len(station.Works) > 0 {
 		workID = station.Works[0].ID
+		workFriendlyName = station.Works[0].FriendlyName
 	}
-	e.logWorkEvent(workID, station.ID, e.currentTime, string(EventProcessingStarted))
+	e.logWorkEvent(workID, workFriendlyName, station.ID, e.currentTime, string(EventProcessingStarted))
 	e.logStationStatus(station, "処理開始")
 
 	// Schedule ProcessingCompleted event
@@ -217,11 +224,9 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 
 // handleProcessingCompleted handles the ProcessingCompleted event
 func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station) error {
-	// Collect parent work IDs for traceability
-	var parentWorkIDs []string
-	for _, work := range station.Works {
-		parentWorkIDs = append(parentWorkIDs, work.ID)
-	}
+	// Collect parent works for traceability
+	parentWorks := make([]*domain.Work, len(station.Works))
+	copy(parentWorks, station.Works)
 
 	// Delegate to station logic
 	if err := station.CompleteProcessing(e.generateWorkID); err != nil {
@@ -243,27 +248,28 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 	switch station.Type {
 	case domain.StationTypeMerge:
 		// Merge: multiple parent works -> one child work
-		childWorkID := station.Works[0].ID
-		e.recordWorkLineage(childWorkID, parentWorkIDs, "merge", station.ID)
-		e.logWorkEvent(childWorkID, station.ID, e.currentTime, string(EventWorkMerged))
+		childWork := station.Works[0]
+		e.recordWorkLineage(childWork.ID, childWork.FriendlyName, parentWorks, "merge", station.ID)
+		e.logWorkEvent(childWork.ID, childWork.FriendlyName, station.ID, e.currentTime, string(EventWorkMerged))
 
 	case domain.StationTypeSplit:
 		// Split: one parent work -> multiple child works
 		for _, childWork := range station.Works {
-			e.recordWorkLineage(childWork.ID, parentWorkIDs, "split", station.ID)
+			e.recordWorkLineage(childWork.ID, childWork.FriendlyName, parentWorks, "split", station.ID)
 		}
-		e.logWorkEvent("", station.ID, e.currentTime, string(EventWorkSplit))
+		// Log event with empty work ID for split (affects multiple works)
+		e.logWorkEvent("", "", station.ID, e.currentTime, string(EventWorkSplit))
 
 	case domain.StationTypeInspection:
 		// Inspection: quality status updated
-		workID := station.Works[0].ID
-		e.logWorkEvent(workID, station.ID, e.currentTime, string(EventWorkInspected))
+		work := station.Works[0]
+		e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkInspected))
 
 	default:
 		// Processing: normal completion
 		if len(station.Works) > 0 {
-			workID := station.Works[0].ID
-			e.logWorkEvent(workID, station.ID, e.currentTime, string(EventProcessingCompleted))
+			work := station.Works[0]
+			e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted))
 		}
 	}
 
@@ -288,7 +294,7 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	}
 
 	// Log work event
-	e.logWorkEvent(work.ID, station.ID, e.currentTime, string(EventWorkDeparted))
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted))
 	e.logStationStatus(station, "ワーク出発")
 
 	// Get next station with conditional routing
@@ -304,7 +310,7 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 
 	// Log routing for Discharge station
 	if station.Type == domain.StationTypeDischarge {
-		e.logWorkEvent(work.ID, station.ID, e.currentTime, string(EventWorkRouted))
+		e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkRouted))
 	}
 
 	// Put work in transit
@@ -331,7 +337,7 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	}
 
 	// Log work event
-	e.logWorkEvent(work.ID, station.ID, e.currentTime, string(EventWorkDestroyed))
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDestroyed))
 
 	// Clear station
 	station.Works = nil
@@ -385,22 +391,26 @@ func (e *Engine) getNextStation(fromStation *domain.Station, work *domain.Work, 
 }
 
 // recordWorkLineage records work lineage for traceability
-func (e *Engine) recordWorkLineage(childWorkID string, parentWorkIDs []string, operationType string, stationID string) {
-	for _, parentWorkID := range parentWorkIDs {
+func (e *Engine) recordWorkLineage(childWorkID, childWorkFriendlyName string, parentWorks []*domain.Work, operationType string, stationID string) {
+	for _, parentWork := range parentWorks {
 		e.workLineageLogs = append(e.workLineageLogs, WorkLineageLog{
-			ChildWorkID:   childWorkID,
-			ParentWorkID:  parentWorkID,
-			OperationType: operationType,
-			StationID:     stationID,
-			Timestamp:     e.currentTime,
+			ChildWorkID:            childWorkID,
+			ChildWorkFriendlyName:  childWorkFriendlyName,
+			ParentWorkID:           parentWork.ID,
+			ParentWorkFriendlyName: parentWork.FriendlyName,
+			OperationType:          operationType,
+			StationID:              stationID,
+			Timestamp:              e.currentTime,
 		})
 	}
 }
 
-// generateWorkID generates a new work ID
-func (e *Engine) generateWorkID() string {
+// generateWorkID generates a new work ID (UUID) and friendly name
+func (e *Engine) generateWorkID() (string, string) {
 	e.workCounter++
-	return fmt.Sprintf("work-%d", e.workCounter)
+	workID := uuid.New().String()
+	friendlyName := fmt.Sprintf("work-%d", e.workCounter)
+	return workID, friendlyName
 }
 
 // findWorkByID finds a work by ID across all stations
@@ -417,12 +427,13 @@ func (e *Engine) findWorkByID(workID string) *domain.Work {
 }
 
 // logWorkEvent logs a work event
-func (e *Engine) logWorkEvent(workID, stationID string, timestamp float64, eventType string) {
+func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timestamp float64, eventType string) {
 	e.workEventLogs = append(e.workEventLogs, WorkEventLog{
-		WorkID:    workID,
-		StationID: stationID,
-		Timestamp: timestamp,
-		EventType: eventType,
+		WorkID:           workID,
+		WorkFriendlyName: workFriendlyName,
+		StationID:        stationID,
+		Timestamp:        timestamp,
+		EventType:        eventType,
 	})
 }
 

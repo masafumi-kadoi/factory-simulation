@@ -26,24 +26,26 @@ type SimulationSummary struct {
 
 // Simulation represents a simulation run
 type Simulation struct {
-	ID         string
-	ScenarioID string
-	Status     SimulationStatus
-	StartTime  float64
-	EndTime    *float64
-	EndReason  *EndReason
-	Summary    SimulationSummary
+	ID           string
+	FriendlyName string
+	ScenarioID   string
+	Status       SimulationStatus
+	StartTime    float64
+	EndTime      *float64
+	EndReason    *EndReason
+	Summary      SimulationSummary
 }
 
 // NewSimulation creates a new simulation
-func NewSimulation(id, scenarioID string) *Simulation {
+func NewSimulation(id, friendlyName, scenarioID string) *Simulation {
 	return &Simulation{
-		ID:         id,
-		ScenarioID: scenarioID,
-		Status:     SimulationStatusRunning,
-		StartTime:  0.0,
-		EndTime:    nil,
-		EndReason:  nil,
+		ID:           id,
+		FriendlyName: friendlyName,
+		ScenarioID:   scenarioID,
+		Status:       SimulationStatusRunning,
+		StartTime:    0.0,
+		EndTime:      nil,
+		EndReason:    nil,
 		Summary: SimulationSummary{
 			TotalWorksCreated:   0,
 			TotalWorksDestroyed: 0,

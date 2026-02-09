@@ -162,7 +162,7 @@ func (s *Station) StartProcessing() error {
 }
 
 // CompleteProcessing completes processing and generates output works
-func (s *Station) CompleteProcessing(newWorkIDFunc func() string) error {
+func (s *Station) CompleteProcessing(newWorkIDFunc func() (string, string)) error {
 	if s.State != StateProcessing {
 		return fmt.Errorf("station %s is not processing", s.ID)
 	}
@@ -170,7 +170,8 @@ func (s *Station) CompleteProcessing(newWorkIDFunc func() string) error {
 	switch s.Type {
 	case StationTypeMerge:
 		// Merge multiple works into one
-		newWork := NewWork(newWorkIDFunc())
+		workID, friendlyName := newWorkIDFunc()
+		newWork := NewWork(workID, friendlyName)
 		// Inherit quality status from first work (or could be logic-based)
 		if len(s.Works) > 0 {
 			newWork.QualityStatus = s.Works[0].QualityStatus
@@ -184,7 +185,8 @@ func (s *Station) CompleteProcessing(newWorkIDFunc func() string) error {
 		inputWork := s.Works[0] // Original work
 		s.Works = make([]*Work, outputCount)
 		for i := 0; i < outputCount; i++ {
-			s.Works[i] = NewWork(newWorkIDFunc())
+			workID, friendlyName := newWorkIDFunc()
+			s.Works[i] = NewWork(workID, friendlyName)
 			s.Works[i].QualityStatus = inputWork.QualityStatus // Inherit quality status
 		}
 		s.OutputIndex = 0

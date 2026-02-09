@@ -8,11 +8,13 @@ import (
 
 // LineageResponse represents a GET /api/simulations/:id/lineage response
 type LineageResponse struct {
-	ChildWorkID   string  `json:"childWorkId"`
-	ParentWorkID  string  `json:"parentWorkId"`
-	OperationType string  `json:"operationType"`
-	StationID     string  `json:"stationId"`
-	Timestamp     float64 `json:"timestamp"`
+	ChildWorkID           string  `json:"childWorkId"`
+	ChildWorkFriendlyName string  `json:"childWorkFriendlyName"`
+	ParentWorkID          string  `json:"parentWorkId"`
+	ParentWorkFriendlyName string `json:"parentWorkFriendlyName"`
+	OperationType         string  `json:"operationType"`
+	StationID             string  `json:"stationId"`
+	Timestamp             float64 `json:"timestamp"`
 }
 
 // HandleGetLineage handles GET /api/simulations/:id/lineage
@@ -42,11 +44,13 @@ func (h *Handler) HandleGetLineage(w http.ResponseWriter, r *http.Request) {
 	items := make([]LineageResponse, 0, len(lineageLogs))
 	for _, log := range lineageLogs {
 		item := LineageResponse{
-			ChildWorkID:   log.ChildWorkID,
-			ParentWorkID:  log.ParentWorkID,
-			OperationType: log.OperationType,
-			StationID:     log.StationID,
-			Timestamp:     log.Timestamp,
+			ChildWorkID:            log.ChildWorkID,
+			ChildWorkFriendlyName:  log.ChildWorkFriendlyName,
+			ParentWorkID:           log.ParentWorkID,
+			ParentWorkFriendlyName: log.ParentWorkFriendlyName,
+			OperationType:          log.OperationType,
+			StationID:              log.StationID,
+			Timestamp:              log.Timestamp,
 		}
 		items = append(items, item)
 	}

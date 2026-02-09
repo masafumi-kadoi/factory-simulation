@@ -20,8 +20,8 @@ func NewRepository(db *DB) *Repository {
 // SaveSimulationRun saves a simulation run to the database
 func (r *Repository) SaveSimulationRun(sim *domain.Simulation) error {
 	query := `
-		INSERT INTO simulation_runs (id, scenario_id, start_time, end_time, simulation_end_time, end_reason, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO simulation_runs (id, friendly_name, scenario_id, start_time, end_time, simulation_end_time, end_reason, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	now := time.Now()
@@ -40,6 +40,7 @@ func (r *Repository) SaveSimulationRun(sim *domain.Simulation) error {
 
 	_, err := r.db.GetConnection().Exec(query,
 		sim.ID,
+		sim.FriendlyName,
 		sim.ScenarioID,
 		now,
 		endTime,
@@ -105,8 +106,8 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 	}
 
 	query := `
-		INSERT INTO work_events (simulation_run_id, work_id, station_id, timestamp, event_type)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO work_events (simulation_run_id, work_id, work_friendly_name, station_id, timestamp, event_type)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`
 
 	tx, err := r.db.GetConnection().Begin()
@@ -125,6 +126,7 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 		_, err := stmt.Exec(
 			simulationID,
 			log.WorkID,
+			log.WorkFriendlyName,
 			log.StationID,
 			log.Timestamp,
 			log.EventType,
@@ -144,7 +146,7 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 // GetSimulation retrieves a simulation run from the database
 func (r *Repository) GetSimulation(id string) (*domain.Simulation, error) {
 	query := `
-		SELECT id, scenario_id, simulation_end_time, end_reason, status
+		SELECT id, friendly_name, scenario_id, simulation_end_time, end_reason, status
 		FROM simulation_runs
 		WHERE id = $1
 	`
@@ -156,6 +158,7 @@ func (r *Repository) GetSimulation(id string) (*domain.Simulation, error) {
 
 	err := r.db.GetConnection().QueryRow(query, id).Scan(
 		&sim.ID,
+		&sim.FriendlyName,
 		&sim.ScenarioID,
 		&endTime,
 		&endReason,
@@ -211,7 +214,7 @@ func (r *Repository) GetStationStatusLogs(simulationID string) ([]simulation.Sta
 // GetWorkEvents retrieves work events from the database
 func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventLog, error) {
 	query := `
-		SELECT work_id, station_id, timestamp, event_type
+		SELECT work_id, work_friendly_name, station_id, timestamp, event_type
 		FROM work_events
 		WHERE simulation_run_id = $1
 		ORDER BY timestamp ASC
@@ -226,7 +229,7 @@ func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventL
 	var logs []simulation.WorkEventLog
 	for rows.Next() {
 		var log simulation.WorkEventLog
-		if err := rows.Scan(&log.WorkID, &log.StationID, &log.Timestamp, &log.EventType); err != nil {
+		if err := rows.Scan(&log.WorkID, &log.WorkFriendlyName, &log.StationID, &log.Timestamp, &log.EventType); err != nil {
 			return nil, fmt.Errorf("failed to scan work event: %w", err)
 		}
 		logs = append(logs, log)
@@ -246,8 +249,8 @@ func (r *Repository) SaveWorkLineageLogs(simulationID string, logs []simulation.
 	}
 
 	query := `
-		INSERT INTO work_lineage (simulation_run_id, child_work_id, parent_work_id, operation_type, station_id, timestamp)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO work_lineage (simulation_run_id, child_work_id, child_work_friendly_name, parent_work_id, parent_work_friendly_name, operation_type, station_id, timestamp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	tx, err := r.db.GetConnection().Begin()
@@ -266,7 +269,9 @@ func (r *Repository) SaveWorkLineageLogs(simulationID string, logs []simulation.
 		_, err := stmt.Exec(
 			simulationID,
 			log.ChildWorkID,
+			log.ChildWorkFriendlyName,
 			log.ParentWorkID,
+			log.ParentWorkFriendlyName,
 			log.OperationType,
 			log.StationID,
 			log.Timestamp,
@@ -286,7 +291,7 @@ func (r *Repository) SaveWorkLineageLogs(simulationID string, logs []simulation.
 // GetAllSimulations retrieves all simulation runs from the database
 func (r *Repository) GetAllSimulations() ([]*domain.Simulation, error) {
 	query := `
-		SELECT id, scenario_id, simulation_end_time, end_reason, status
+		SELECT id, friendly_name, scenario_id, simulation_end_time, end_reason, status
 		FROM simulation_runs
 		ORDER BY start_time DESC
 	`
@@ -304,7 +309,7 @@ func (r *Repository) GetAllSimulations() ([]*domain.Simulation, error) {
 		var endReason *string
 		var status string
 
-		if err := rows.Scan(&sim.ID, &sim.ScenarioID, &endTime, &endReason, &status); err != nil {
+		if err := rows.Scan(&sim.ID, &sim.FriendlyName, &sim.ScenarioID, &endTime, &endReason, &status); err != nil {
 			return nil, fmt.Errorf("failed to scan simulation: %w", err)
 		}
 
@@ -329,7 +334,7 @@ func (r *Repository) GetAllSimulations() ([]*domain.Simulation, error) {
 // GetWorkLineage retrieves work lineage logs from the database
 func (r *Repository) GetWorkLineage(simulationID string) ([]simulation.WorkLineageLog, error) {
 	query := `
-		SELECT child_work_id, parent_work_id, operation_type, station_id, timestamp
+		SELECT child_work_id, child_work_friendly_name, parent_work_id, parent_work_friendly_name, operation_type, station_id, timestamp
 		FROM work_lineage
 		WHERE simulation_run_id = $1
 		ORDER BY timestamp ASC
@@ -344,7 +349,7 @@ func (r *Repository) GetWorkLineage(simulationID string) ([]simulation.WorkLinea
 	var logs []simulation.WorkLineageLog
 	for rows.Next() {
 		var log simulation.WorkLineageLog
-		if err := rows.Scan(&log.ChildWorkID, &log.ParentWorkID, &log.OperationType, &log.StationID, &log.Timestamp); err != nil {
+		if err := rows.Scan(&log.ChildWorkID, &log.ChildWorkFriendlyName, &log.ParentWorkID, &log.ParentWorkFriendlyName, &log.OperationType, &log.StationID, &log.Timestamp); err != nil {
 			return nil, fmt.Errorf("failed to scan work lineage log: %w", err)
 		}
 		logs = append(logs, log)

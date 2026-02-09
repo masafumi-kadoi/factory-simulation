@@ -4,6 +4,8 @@ import (
 	"factory-simulation/simulation-core/internal/domain"
 	"fmt"
 	"net/http"
+
+	"github.com/google/uuid"
 )
 
 // StationRequest represents a station in the request
@@ -133,8 +135,8 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Generate scenario ID
-	scenarioID := fmt.Sprintf("scenario-%d", len(h.scenarios)+1)
+	// Generate scenario ID using UUID
+	scenarioID := uuid.New().String()
 
 	scenario := domain.NewScenario(scenarioID, req.Name, stations, connections)
 
