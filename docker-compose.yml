@@ -41,11 +41,11 @@ services:
     networks:
       - factory-network
 
-  visualization-web:
+  sim-visualizer:
     build:
-      context: ./visualization-web
+      context: ./sim-visualizer
       dockerfile: Dockerfile
-    container_name: factory-visualization-web
+    container_name: factory-sim-visualizer
     ports:
       - "8081:80"
     depends_on:
