@@ -492,3 +492,37 @@ func (r *Repository) GetScenario(id string) (*domain.Scenario, error) {
 
 	return domain.NewScenario(id, name, stations, connections), nil
 }
+
+// ListScenarios retrieves all scenarios from the database
+func (r *Repository) ListScenarios() ([]*domain.Scenario, error) {
+	// Get all scenario IDs
+	rows, err := r.db.GetConnection().Query(`
+		SELECT id, name FROM scenarios ORDER BY name ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query scenarios: %w", err)
+	}
+	defer rows.Close()
+
+	var scenarios []*domain.Scenario
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("failed to scan scenario: %w", err)
+		}
+
+		// For each scenario, get full details
+		scenario, err := r.GetScenario(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get scenario %s: %w", id, err)
+		}
+
+		scenarios = append(scenarios, scenario)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating scenarios: %w", err)
+	}
+
+	return scenarios, nil
+}

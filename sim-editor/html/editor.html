@@ -15,10 +15,16 @@
                 <input type="text" id="scenario-name" class="scenario-name-input" placeholder="シナリオ名" value="新規シナリオ">
             </div>
             <div class="header-right">
+                <button id="undo-btn" class="btn-secondary" disabled>↶ Undo</button>
+                <button id="redo-btn" class="btn-secondary" disabled>↷ Redo</button>
+                <button id="import-btn" class="btn-secondary">📤 JSONインポート</button>
                 <button id="save-btn" class="btn-primary">💾 保存</button>
                 <button id="export-btn" class="btn-secondary">📥 JSONエクスポート</button>
             </div>
         </header>
+
+        <!-- Hidden file input for import -->
+        <input type="file" id="file-input" accept=".json" style="display: none;">
 
         <!-- Main Content: 3 Panes -->
         <div class="editor-main">

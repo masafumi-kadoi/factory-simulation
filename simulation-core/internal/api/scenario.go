@@ -189,6 +189,50 @@ type ScenarioDetailResponse struct {
 	Connections []ConnectionRequest `json:"connections"`
 }
 
+// ScenarioListItem represents a single scenario in the list
+type ScenarioListItem struct {
+	ScenarioID     string `json:"scenarioId"`
+	Name           string `json:"name"`
+	StationCount   int    `json:"stationCount"`
+	ConnectionCount int   `json:"connectionCount"`
+}
+
+// ScenarioListResponse represents a GET /api/scenarios response
+type ScenarioListResponse struct {
+	Scenarios []ScenarioListItem `json:"scenarios"`
+}
+
+// HandleListScenarios handles GET /api/scenarios
+func (h *Handler) HandleListScenarios(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("HandleListScenarios called: Method=%s, Path=%s\n", r.Method, r.URL.Path)
+	if r.Method != http.MethodGet {
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Get all scenarios from database
+	scenarios, err := h.repo.ListScenarios()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scenarios: %v", err))
+		return
+	}
+
+	// Convert to response format
+	items := make([]ScenarioListItem, len(scenarios))
+	for i, scenario := range scenarios {
+		items[i] = ScenarioListItem{
+			ScenarioID:     scenario.ID,
+			Name:           scenario.Name,
+			StationCount:   len(scenario.Stations),
+			ConnectionCount: len(scenario.Connections),
+		}
+	}
+
+	respondJSON(w, http.StatusOK, ScenarioListResponse{
+		Scenarios: items,
+	})
+}
+
 // HandleGetScenario handles GET /api/scenarios/:id
 func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

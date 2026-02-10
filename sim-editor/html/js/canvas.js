@@ -1,4 +1,6 @@
 // Canvas rendering and interaction
+import { MoveStationCommand } from './undo.js';
+
 export class Canvas {
     constructor(svg, editor) {
         this.svg = svg;
@@ -8,6 +10,7 @@ export class Canvas {
 
         this.draggedStation = null;
         this.dragOffset = { x: 0, y: 0 };
+        this.dragStartPos = { x: 0, y: 0 }; // Store initial position for undo
         this.connectFrom = null;
 
         this._setupEventListeners();
@@ -94,6 +97,11 @@ export class Canvas {
             x: pt.x - stationData.x,
             y: pt.y - stationData.y
         };
+        // Store initial position for undo
+        this.dragStartPos = {
+            x: stationData.x,
+            y: stationData.y
+        };
 
         e.preventDefault();
     }
@@ -109,6 +117,27 @@ export class Canvas {
     }
 
     _handleMouseUp(e) {
+        if (this.draggedStation) {
+            const stationData = this.editor.getStation(this.draggedStation);
+            if (stationData) {
+                // Check if position actually changed
+                if (stationData.x !== this.dragStartPos.x || stationData.y !== this.dragStartPos.y) {
+                    // Create move command for undo/redo
+                    const command = new MoveStationCommand(
+                        this.editor,
+                        this.draggedStation,
+                        this.dragStartPos.x,
+                        this.dragStartPos.y,
+                        stationData.x,
+                        stationData.y
+                    );
+                    // Add to command history without executing (already moved during drag)
+                    this.editor.commandManager.undoStack.push(command);
+                    this.editor.commandManager.redoStack = [];
+                    this.editor._updateUndoRedoButtons();
+                }
+            }
+        }
         this.draggedStation = null;
     }
 

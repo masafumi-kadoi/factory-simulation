@@ -2,8 +2,16 @@
 import { Canvas } from './canvas.js';
 import { PropertiesPanel } from './properties.js';
 import { validateScenario, validateStation } from './validation.js';
-
-const API_BASE = 'http://localhost:8080/api';
+import { apiClient } from './api.js';
+import {
+    CommandManager,
+    AddStationCommand,
+    DeleteStationCommand,
+    UpdateStationCommand,
+    MoveStationCommand,
+    AddConnectionCommand,
+    DeleteConnectionCommand
+} from './undo.js';
 
 class ScenarioEditor {
     constructor() {
@@ -12,9 +20,11 @@ class ScenarioEditor {
         this.currentTool = 'select';
         this.selectedItem = null;
         this.dirty = false;
+        this.savedToAPI = false; // Track if scenario was saved to API
 
         this.canvas = null;
         this.propertiesPanel = null;
+        this.commandManager = new CommandManager(this);
 
         this._init();
     }
@@ -77,6 +87,59 @@ class ScenarioEditor {
             this._exportJSON();
         });
 
+        // Import button
+        document.getElementById('import-btn').addEventListener('click', () => {
+            document.getElementById('file-input').click();
+        });
+
+        // File input
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this._importJSON(file);
+            }
+            e.target.value = ''; // Reset file input
+        });
+
+        // Undo button
+        document.getElementById('undo-btn').addEventListener('click', () => {
+            if (this.commandManager.undo()) {
+                this._updateUndoRedoButtons();
+            }
+        });
+
+        // Redo button
+        document.getElementById('redo-btn').addEventListener('click', () => {
+            if (this.commandManager.redo()) {
+                this._updateUndoRedoButtons();
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+Z / Cmd+Z for Undo
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                if (this.commandManager.undo()) {
+                    this._updateUndoRedoButtons();
+                }
+            }
+            // Ctrl+Shift+Z / Cmd+Shift+Z for Redo
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
+                e.preventDefault();
+                if (this.commandManager.redo()) {
+                    this._updateUndoRedoButtons();
+                }
+            }
+            // Ctrl+Y / Cmd+Y for Redo (alternative)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                e.preventDefault();
+                if (this.commandManager.redo()) {
+                    this._updateUndoRedoButtons();
+                }
+            }
+        });
+
         // Scenario name input
         document.getElementById('scenario-name').addEventListener('change', (e) => {
             this.scenario.name = e.target.value;
@@ -127,6 +190,12 @@ class ScenarioEditor {
     _render() {
         this.canvas.render();
         this.propertiesPanel.render();
+        this._updateUndoRedoButtons();
+    }
+
+    _updateUndoRedoButtons() {
+        document.getElementById('undo-btn').disabled = !this.commandManager.canUndo();
+        document.getElementById('redo-btn').disabled = !this.commandManager.canRedo();
     }
 
     addStation(type, x, y) {
@@ -139,9 +208,8 @@ class ScenarioEditor {
             y: y
         };
 
-        this.scenario.stations.push(station);
-        this._markDirty();
-        this._render();
+        const command = new AddStationCommand(this, station);
+        this.commandManager.execute(command);
         return station;
     }
 
@@ -164,28 +232,15 @@ class ScenarioEditor {
     }
 
     deleteStation(stationId) {
-        // Remove station
-        this.scenario.stations = this.scenario.stations.filter(s => s.id !== stationId);
-
-        // Remove related connections
-        this.scenario.connections = this.scenario.connections.filter(
-            c => c.from !== stationId && c.to !== stationId
-        );
-
-        if (this.selectedItem?.type === 'station' && this.selectedItem.id === stationId) {
-            this.selectedItem = null;
-        }
-
-        this._markDirty();
-        this._render();
+        const command = new DeleteStationCommand(this, stationId);
+        this.commandManager.execute(command);
     }
 
     updateStation(stationId, config) {
         const station = this.scenario.stations.find(s => s.id === stationId);
         if (station) {
-            station.config = { ...station.config, ...config };
-            this._markDirty();
-            this._render();
+            const command = new UpdateStationCommand(this, stationId, station.config, { ...station.config, ...config });
+            this.commandManager.execute(command);
         }
     }
 
@@ -210,25 +265,22 @@ class ScenarioEditor {
             return;
         }
 
-        this.scenario.connections.push({
+        const connection = {
             from: fromId,
             to: toId,
             condition: 'default'
-        });
+        };
 
-        this._markDirty();
-        this._render();
+        const command = new AddConnectionCommand(this, connection);
+        this.commandManager.execute(command);
     }
 
     deleteConnection(index) {
-        this.scenario.connections.splice(index, 1);
-
-        if (this.selectedItem?.type === 'connection' && this.selectedItem.index === index) {
-            this.selectedItem = null;
+        const connection = this.scenario.connections[index];
+        if (connection) {
+            const command = new DeleteConnectionCommand(this, connection, index);
+            this.commandManager.execute(command);
         }
-
-        this._markDirty();
-        this._render();
     }
 
     selectItem(item) {
@@ -241,28 +293,73 @@ class ScenarioEditor {
         this.dirty = true;
     }
 
-    _saveScenario() {
+    async _saveScenario() {
         // Validate
         const errors = validateScenario(this.scenario);
         if (errors.length > 0) {
-            alert('バリデーションエラー:\n' + errors.join('\n'));
-            return;
+            const confirmMsg = 'バリデーションエラー/警告:\n' + errors.join('\n') + '\n\n無視して保存しますか？';
+            if (!confirm(confirmMsg)) {
+                return;
+            }
         }
 
-        // Save to localStorage
-        const scenarios = JSON.parse(localStorage.getItem('sim-editor-scenarios') || '[]');
-        const index = scenarios.findIndex(s => s.id === this.scenarioId);
+        try {
+            // Prepare scenario data for API
+            const scenarioData = {
+                name: this.scenario.name,
+                stations: this.scenario.stations.map(s => ({
+                    id: s.id,
+                    type: s.type,
+                    config: s.config
+                })),
+                connections: this.scenario.connections.map(c => ({
+                    from: c.from,
+                    to: c.to,
+                    condition: c.condition || 'default'
+                }))
+            };
 
-        if (index >= 0) {
-            scenarios[index] = this.scenario;
-        } else {
-            scenarios.push(this.scenario);
+            // Save to API
+            const response = await apiClient.createScenario(scenarioData);
+
+            // Store scenario ID from API response
+            if (response.scenarioId) {
+                this.scenario.apiScenarioId = response.scenarioId;
+                this.savedToAPI = true;
+            }
+
+            // Also save to localStorage
+            const scenarios = JSON.parse(localStorage.getItem('sim-editor-scenarios') || '[]');
+            const index = scenarios.findIndex(s => s.id === this.scenarioId);
+
+            if (index >= 0) {
+                scenarios[index] = this.scenario;
+            } else {
+                scenarios.push(this.scenario);
+            }
+
+            localStorage.setItem('sim-editor-scenarios', JSON.stringify(scenarios));
+
+            this.dirty = false;
+            alert(`保存しました\nシナリオID: ${response.scenarioId || 'localStorage'}`);
+        } catch (error) {
+            console.error('Save failed:', error);
+            alert('API保存に失敗しました。localStorageに保存します。\nエラー: ' + error.message);
+
+            // Fallback to localStorage only
+            const scenarios = JSON.parse(localStorage.getItem('sim-editor-scenarios') || '[]');
+            const index = scenarios.findIndex(s => s.id === this.scenarioId);
+
+            if (index >= 0) {
+                scenarios[index] = this.scenario;
+            } else {
+                scenarios.push(this.scenario);
+            }
+
+            localStorage.setItem('sim-editor-scenarios', JSON.stringify(scenarios));
+            this.dirty = false;
+            alert('localStorageに保存しました');
         }
-
-        localStorage.setItem('sim-editor-scenarios', JSON.stringify(scenarios));
-
-        this.dirty = false;
-        alert('保存しました');
     }
 
     _exportJSON() {
@@ -298,6 +395,75 @@ class ScenarioEditor {
         URL.revokeObjectURL(url);
 
         alert('JSONをエクスポートしました');
+    }
+
+    async _importJSON(file) {
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+
+            // Check if the JSON has the expected structure
+            if (!data.scenario || !data.scenario.stations || !data.scenario.connections) {
+                throw new Error('無効なJSONフォーマットです。scenario, stations, connectionsが必要です。');
+            }
+
+            // Create new scenario object
+            const importedScenario = {
+                id: this.scenarioId,
+                name: data.name || data.scenario.name || 'インポートされたシナリオ',
+                description: data.description || '',
+                stations: [],
+                connections: []
+            };
+
+            // Import stations
+            data.scenario.stations.forEach((st, index) => {
+                const station = {
+                    id: st.id,
+                    type: st.type,
+                    config: st.config || {},
+                    x: 0,
+                    y: 0
+                };
+
+                // If UI layout exists, use it
+                if (data.ui && data.ui.layout && data.ui.layout[st.id]) {
+                    station.x = data.ui.layout[st.id].x;
+                    station.y = data.ui.layout[st.id].y;
+                } else {
+                    // Auto-layout: arrange stations in a row
+                    station.x = 100 + index * 200;
+                    station.y = 300;
+                }
+
+                importedScenario.stations.push(station);
+            });
+
+            // Import connections
+            data.scenario.connections.forEach(conn => {
+                importedScenario.connections.push({
+                    from: conn.from,
+                    to: conn.to,
+                    condition: conn.condition || 'default'
+                });
+            });
+
+            // Replace current scenario
+            this.scenario = importedScenario;
+            this.selectedItem = null;
+            this.commandManager.clear();
+
+            // Update UI
+            document.getElementById('scenario-name').value = importedScenario.name;
+
+            this._markDirty();
+            this._render();
+
+            alert('JSONをインポートしました');
+        } catch (error) {
+            console.error('Import failed:', error);
+            alert('JSONインポートに失敗しました:\n' + error.message);
+        }
     }
 
     getStation(id) {
