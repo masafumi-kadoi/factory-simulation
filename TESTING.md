@@ -1,311 +1,472 @@
-# Simulation Core 動作確認手順
+# Factory Simulation - テスト・動作確認ガイド
 
-## 前提条件
-
-- Docker がインストールされている
-- Docker Compose がインストールされている
-- ターミナルが使用できる
-
-## ステップ1: システムの起動
-
-### 1-1. プロジェクトディレクトリに移動
-
-```bash
-cd factory-simulation
-```
-
-### 1-2. Docker Composeでシステムを起動
-
-```bash
-docker compose up -d
-```
-
-**期待される出力:**
-```
-✔ Container factory-simulation-db    Started
-✔ Container factory-simulation-core  Started
-```
-
-### 1-3. システムの起動確認
-
-```bash
-# PostgreSQLの確認
-docker compose ps postgres
-
-# Simulation Coreの確認
-docker compose ps simulation-core
-```
-
-**期待される出力:**
-両方のコンテナが `running` (healthy) 状態であること。
-
-### 1-4. ログの確認
-
-```bash
-# Simulation Coreのログを確認
-docker compose logs simulation-core
-
-# 以下のようなログが表示されればOK
-# Connecting to database...
-# Database connection established
-# Server started successfully
-# Starting server on port 8080...
-```
+## 目次
+1. [概要](#概要)
+2. [システム起動](#システム起動)
+3. [基本動作確認](#基本動作確認)
+4. [自動テストの実行](#自動テストの実行)
+5. [インターロック機構の確認](#インターロック機構の確認)
+6. [3D可視化の確認](#3d可視化の確認)
+7. [トラブルシューティング](#トラブルシューティング)
 
 ---
 
-## ステップ2: シナリオの登録
+## 概要
 
-### 2-1. 基本テストシナリオを登録
+### システムアーキテクチャ
+
+Factory Simulationは**インターロック制御方式**を採用した離散イベントシミュレーションシステムです。
+
+**重要な設計原則:**
+- **1ステーション1ワーク**: 各ステーションは同時に1つのワークのみ保持
+- **インターロック機構**: 搬入可・搬出可の2信号で制御
+- **逐次処理**: ワークは並列処理されず、1つずつ順番に処理
+
+### ステーション種別（現在実装済み）
+
+| 種別 | 役割 | 特徴 |
+|------|------|------|
+| **Source** | ワーク生成 | 指定個数のワークを逐次生成 |
+| **Processing** | 処理（基底クラス） | 1ワークを受け取り、処理して送出 |
+| **Drain** | ワーク消滅 | ワークを破棄して終了 |
+
+### インターロック信号
+
+各ステーションは2つの信号を持ちます：
+
+| 信号 | 意味 | ONの条件 |
+|------|------|----------|
+| **搬入可 (InputReady)** | ワークを受け入れ可能 | `State == Idle && CurrentWork == nil` |
+| **搬出可 (OutputReady)** | ワークを送出可能 | `State == Completed && CurrentWork != nil` |
+
+**ワーク移動の条件:**
+- 送出側の「搬出可」がON **かつ** 受入側の「搬入可」がONの時のみワークが移動します
+- これにより、複数ワークの同時流入を防ぎ、1ステーション1ワークを保証します
+
+---
+
+## システム起動
+
+### 前提条件
+
+- Docker がインストールされている
+- Docker Compose がインストールされている
+- ポート 8080 (API), 8081 (可視化), 5432 (PostgreSQL) が空いている
+
+### 起動手順
+
+```bash
+# プロジェクトディレクトリに移動
+cd factory-simulation
+
+# Docker Composeでシステムを起動
+docker-compose up -d
+```
+
+**期待される出力:**
+```
+✔ Container factory-simulation-db      Started
+✔ Container factory-simulation-core    Started
+✔ Container factory-sim-visualizer     Started
+```
+
+### 起動確認
+
+```bash
+# コンテナの状態確認
+docker-compose ps
+
+# APIの疎通確認
+curl http://localhost:8080/api/scenarios
+
+# 可視化サーバーの確認
+curl -I http://localhost:8081
+```
+
+すべて正常にレスポンスが返れば起動成功です。
+
+---
+
+## 基本動作確認
+
+### ステップ1: シンプルなシナリオを登録
+
+**シナリオ構成:**
+```
+[Source] → [Drain]
+```
+
+最もシンプルな構成で、ワークが生成されて即座に消滅します。
 
 ```bash
 curl -X POST http://localhost:8080/api/scenarios \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "基本テストシナリオ",
+    "name": "基本テスト - Source to Drain",
     "stations": [
       {
         "id": "source-1",
         "type": "source",
-        "parentId": null,
         "config": {
-          "workCount": 1,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "process-1",
-        "type": "processing",
-        "parentId": null,
-        "config": {
-          "processingTime": 5.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0
+          "workCount": 3,
+          "departureTime": 2.0
         }
       },
       {
         "id": "drain-1",
         "type": "drain",
-        "parentId": null,
         "config": {
-          "arrivalTime": 2.0
+          "arrivalTime": 1.0
         }
       }
     ],
     "connections": [
-      {"from": "source-1", "to": "process-1"},
-      {"from": "process-1", "to": "drain-1"}
+      {"from": "source-1", "to": "drain-1"}
     ]
   }'
 ```
 
-**期待される出力:**
-```json
-{"scenarioId":"scenario-1"}
-```
-
-**シナリオの説明:**
-- `source-1`: ワークを1個生成するSource Station
-- `process-1`: 処理時間5秒のProcessing Station
-- `drain-1`: ワークを消滅させるDrain Station
-- 流れ: source-1 → process-1 → drain-1
-
----
-
-## ステップ3: シミュレーションの実行
-
-### 3-1. シミュレーションを実行
-
-```bash
-curl -X POST http://localhost:8080/api/simulations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenarioId": "scenario-1",
-    "simulationTime": 100.0,
-    "initialConditions": {}
-  }'
-```
-
-**期待される出力:**
+**期待されるレスポンス:**
 ```json
 {
-  "simulationId": "sim-1",
+  "scenarioId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+```
+
+シナリオIDをメモしてください（次のステップで使用）。
+
+### ステップ2: シミュレーション実行
+
+```bash
+# シナリオIDを環境変数に設定（上記で取得したIDに置き換え）
+SCENARIO_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# シミュレーション実行
+curl -X POST http://localhost:8080/api/simulations \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"scenarioId\": \"$SCENARIO_ID\",
+    \"simulationTime\": 50.0,
+    \"initialConditions\": {}
+  }" | jq
+```
+
+**期待されるレスポンス:**
+```json
+{
+  "simulationId": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
+  "friendlyName": "基本テスト - Source to Drain_実行_2026-02-10T...",
   "status": "completed",
-  "endTime": 11,
+  "endTime": 9.0,
   "endReason": "event_exhausted"
 }
 ```
 
 **確認ポイント:**
 - ✅ `status` が `"completed"` であること
-- ✅ `endTime` が `11` であること（予想通りの終了時刻）
-- ✅ `endReason` が `"event_exhausted"` であること（イベント枯渇で終了）
+- ✅ `endReason` が `"event_exhausted"` であること（イベント枯渇で正常終了）
+- ✅ `endTime` が妥当な値であること（この例では約9秒）
+
+### ステップ3: ワークイベントログの確認
+
+```bash
+# シミュレーションIDを設定（上記で取得したIDに置き換え）
+SIM_ID="yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+
+# ワークイベントログを取得
+curl -s "http://localhost:8080/api/simulations/$SIM_ID/logs" | \
+  jq '.workEvents'
+```
+
+**期待されるイベント（3ワークの場合）:**
+
+```json
+[
+  {"workId": "...", "workFriendlyName": "work-1", "stationId": "source-1", "timestamp": 0, "eventType": "WorkCreated"},
+  {"workId": "...", "workFriendlyName": "work-1", "stationId": "source-1", "timestamp": 2, "eventType": "WorkDeparted"},
+  {"workId": "...", "workFriendlyName": "work-1", "stationId": "drain-1", "timestamp": 3, "eventType": "WorkArrived"},
+  {"workId": "...", "workFriendlyName": "work-1", "stationId": "drain-1", "timestamp": 3, "eventType": "WorkDestroyed"},
+
+  {"workId": "...", "workFriendlyName": "work-2", "stationId": "source-1", "timestamp": 2, "eventType": "WorkCreated"},
+  {"workId": "...", "workFriendlyName": "work-2", "stationId": "source-1", "timestamp": 4, "eventType": "WorkDeparted"},
+  {"workId": "...", "workFriendlyName": "work-2", "stationId": "drain-1", "timestamp": 5, "eventType": "WorkArrived"},
+  {"workId": "...", "workFriendlyName": "work-2", "stationId": "drain-1", "timestamp": 5, "eventType": "WorkDestroyed"},
+
+  {"workId": "...", "workFriendlyName": "work-3", "stationId": "source-1", "timestamp": 4, "eventType": "WorkCreated"},
+  {"workId": "...", "workFriendlyName": "work-3", "stationId": "source-1", "timestamp": 6, "eventType": "WorkDeparted"},
+  {"workId": "...", "workFriendlyName": "work-3", "stationId": "drain-1", "timestamp": 7, "eventType": "WorkArrived"},
+  {"workId": "...", "workFriendlyName": "work-3", "stationId": "drain-1", "timestamp": 7, "eventType": "WorkDestroyed"}
+]
+```
+
+**確認ポイント:**
+- ✅ ワークが逐次生成されている（t=0, 2, 4）
+- ✅ 各ワークが `Created → Departed → Arrived → Destroyed` のライフサイクルを持つ
+- ✅ ワークが重複して存在していない（1ステーション1ワーク）
 
 ---
 
-## ステップ4: シミュレーション結果の取得
+## 自動テストの実行
 
-### 4-1. 結果サマリーを取得
+### テストスイート概要
+
+`simulation-core/test/` ディレクトリにテストシナリオが格納されています。
+
+**現在のテストケース:**
+
+| ファイル | テスト内容 | ワーク数 | 主な確認項目 |
+|----------|-----------|----------|--------------|
+| `01_basic_test.json` | Source → Drain | 3 | 基本的なワークフロー |
+| `02_processing_test.json` | Source → Processing → Drain | 3 | 処理ステーションの動作、インターロック |
+| `07_stress_test.json` | Source → Processing → Drain | 20 | 大量ワークの処理、負荷テスト |
+
+### テスト実行方法
 
 ```bash
-curl http://localhost:8080/api/simulations/sim-1
+# テストディレクトリに移動
+cd simulation-core/test
+
+# 全テスト実行
+bash run_all_tests.sh
 ```
 
-**期待される出力:**
+**期待される出力（全テスト成功時）:**
+
+```
+===========================================
+  Factory Simulation - Test Suite
+===========================================
+
+Running test: 01_basic_test.json
+  Scenario ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  Simulation ID: yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+  Status: completed
+  Work Events: 12
+✓ PASS
+
+Running test: 02_processing_test.json
+  Scenario ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  Simulation ID: yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+  Status: completed
+  Work Events: 24
+✓ PASS
+
+Running test: 07_stress_test.json
+  Scenario ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  Simulation ID: yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+  Status: completed
+  Work Events: 160
+✓ PASS
+
+===========================================
+  Test Results Summary
+===========================================
+
+Total tests: 3
+Passed: 3
+Failed: 0
+
+===========================================
+```
+
+### テストシナリオ詳細
+
+#### テスト1: 基本テスト (01_basic_test.json)
+
+**構成:**
+```
+[Source] → [Drain]
+```
+
+**パラメータ:**
+- ワーク数: 3個
+- Source出発間隔: 2.0秒
+- 到着時間: 1.0秒
+
+**期待される動作:**
+- 3つのワークが逐次生成される
+- 各ワークがDrainで消滅する
+- 全ワークイベント数: 12 (各ワーク4イベント × 3)
+
+#### テスト2: Processing テスト (02_processing_test.json)
+
+**構成:**
+```
+[Source] → [Processing] → [Drain]
+```
+
+**パラメータ:**
+- ワーク数: 3個
+- Source出発間隔: 5.0秒（インターロック違反防止のため長め）
+- Processing処理時間: 2.0秒
+- 到着・出発時間: 各1.0秒
+
+**期待される動作:**
+- 3つのワークが逐次生成される
+- 各ワークがProcessingステーションで2秒間処理される
+- インターロック機構により、次のワークはProcessingが空くまで待機
+- 全ワークイベント数: 24 (各ワーク8イベント × 3)
+
+**確認ポイント:**
+- ✅ Processingステーションで `WorkArrived → ProcessingStarted → ProcessingCompleted → WorkDeparted` のフローが発生
+- ✅ インターロック違反が発生しない（エラーログなし）
+- ✅ ワークが重複してProcessingに入らない
+
+#### テスト3: ストレステスト (07_stress_test.json)
+
+**構成:**
+```
+[Source] → [Processing] → [Drain]
+```
+
+**パラメータ:**
+- ワーク数: 20個
+- Source出発間隔: 2.0秒
+- Processing処理時間: 0.5秒
+- 到着・出発時間: 各0.5秒
+
+**期待される動作:**
+- 20個のワークが逐次生成・処理される
+- 高速処理でもインターロック機構が正常に動作する
+- 全ワークイベント数: 160 (各ワーク8イベント × 20)
+
+**確認ポイント:**
+- ✅ 大量ワークでもシミュレーションが完走する
+- ✅ メモリリークやパフォーマンス劣化がない
+- ✅ すべてのワークが正しく処理・破棄される
+
+---
+
+## インターロック機構の確認
+
+### インターロック違反のシミュレーション（意図的な失敗）
+
+インターロック機構が正しく動作していることを確認するため、意図的に違反させてみます。
+
+**問題のあるシナリオ:**
 ```json
 {
-  "simulationId": "sim-1",
-  "scenarioId": "scenario-1",
-  "status": "completed",
-  "startTime": 0,
-  "endTime": 11,
-  "endReason": "event_exhausted",
-  "summary": {
-    "totalWorksCreated": 0,
-    "totalWorksDestroyed": 0,
-    "totalEvents": 0
+  "name": "インターロック違反テスト（失敗するはず）",
+  "stations": [
+    {
+      "id": "source-1",
+      "type": "source",
+      "config": {
+        "workCount": 2,
+        "departureTime": 0.5
+      }
+    },
+    {
+      "id": "processing-1",
+      "type": "processing",
+      "config": {
+        "processingTime": 2.0,
+        "arrivalTime": 0.5,
+        "departureTime": 0.5
+      }
+    },
+    {
+      "id": "drain-1",
+      "type": "drain",
+      "config": {
+        "arrivalTime": 0.5
+      }
+    }
+  ],
+  "connections": [
+    {"from": "source-1", "to": "processing-1"},
+    {"from": "processing-1", "to": "drain-1"}
+  ]
+}
+```
+
+**問題点:**
+- `departureTime: 0.5` は短すぎる
+- Processingの処理サイクル時間（2.0 + 0.5 + 0.5 = 3.0秒）より短い
+- 2つ目のワークがProcessingステーションに到着した時、まだ1つ目が処理中
+
+**期待されるエラー:**
+```json
+{
+  "code": 500,
+  "message": "Simulation failed: interlock violation: next station processing-1 InputReady=OFF (state=processing), cannot send work"
+}
+```
+
+このエラーが出れば、インターロック機構が正しく動作しています。
+
+### 正しいタイミング設計
+
+**処理サイクル時間の計算:**
+```
+サイクル時間 = arrivalTime + processingTime + departureTime
+```
+
+**Source の departureTime 設定:**
+```
+departureTime >= (次ステーションのサイクル時間)
+```
+
+例: Processingステーションのサイクル時間が3.0秒なら、
+```json
+{
+  "id": "source-1",
+  "config": {
+    "departureTime": 3.0  // 3.0秒以上に設定
   }
 }
 ```
 
-### 4-2. 結果を見やすく表示（Pythonを使用）
-
-```bash
-curl -s http://localhost:8080/api/simulations/sim-1 | python3 -m json.tool
-```
+これにより、次のワークが到着する前に前のワークが完全に処理されます。
 
 ---
 
-## ステップ5: 詳細ログの確認
+## 3D可視化の確認
 
-### 5-1. ワークイベントログを取得
+### 可視化サーバーへのアクセス
 
-```bash
-curl -s http://localhost:8080/api/simulations/sim-1/logs | \
-  python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps(data['workEvents'], indent=2, ensure_ascii=False))"
-```
-
-**期待される出力:**
-```json
-[
-  {
-    "WorkID": "work-001",
-    "StationID": "source-1",
-    "Timestamp": 0,
-    "EventType": "WorkCreated"
-  },
-  {
-    "WorkID": "work-001",
-    "StationID": "source-1",
-    "Timestamp": 1,
-    "EventType": "WorkDeparted"
-  },
-  {
-    "WorkID": "work-001",
-    "StationID": "process-1",
-    "Timestamp": 3,
-    "EventType": "WorkArrived"
-  },
-  {
-    "WorkID": "work-001",
-    "StationID": "process-1",
-    "Timestamp": 3,
-    "EventType": "ProcessingStarted"
-  },
-  {
-    "WorkID": "work-001",
-    "StationID": "process-1",
-    "Timestamp": 8,
-    "EventType": "ProcessingCompleted"
-  },
-  {
-    "WorkID": "work-001",
-    "StationID": "process-1",
-    "Timestamp": 9,
-    "EventType": "WorkDeparted"
-  },
-  {
-    "WorkID": "work-001",
-    "StationID": "drain-1",
-    "Timestamp": 11,
-    "EventType": "WorkArrived"
-  },
-  {
-    "WorkID": "work-001",
-    "StationID": "drain-1",
-    "Timestamp": 11,
-    "EventType": "WorkDestroyed"
-  }
-]
-```
-
-**確認ポイント（期待値との照合）:**
-- ✅ t=0: Source Stationがwork-001を生成
-- ✅ t=1: ワークがProcessing Stationに向けて出発
-- ✅ t=3: ワークがProcessing Stationに到着、処理開始
-- ✅ t=8: 処理完了（処理時間5秒）
-- ✅ t=9: ワークがDrain Stationに向けて出発
-- ✅ t=11: ワークがDrain Stationに到着、消滅
-
-### 5-2. ステーションステータスログを取得
+シミュレーション実行後、3D可視化で結果を確認できます。
 
 ```bash
-curl -s http://localhost:8080/api/simulations/sim-1/logs | \
-  python3 -c "import sys, json; data=json.load(sys.stdin); print(json.dumps(data['stationStatusLogs'], indent=2, ensure_ascii=False))"
+# シミュレーション実行（前述の手順でIDを取得）
+SIM_ID="yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+
+# ブラウザで開く
+open "http://localhost:8081?sim=$SIM_ID"
+# または
+# Windowsの場合: start http://localhost:8081?sim=%SIM_ID%
 ```
 
-**期待される内容:**
-- 搬入可ON/OFF
-- 搬出可ON/OFF
-- 処理条件成立
-- 処理開始
-- 処理完了
+### 可視化画面の操作
 
-などのステータス変更が時系列で記録されている。
+**マウス操作:**
+- 左ドラッグ: 視点回転
+- ホイール: ズームイン/アウト
+- 右ドラッグ: パン（視点移動）
 
----
+**コントロール:**
+- ▶ (Play): シミュレーション再生
+- ⏸ (Pause): 一時停止
+- 🔄 (Reset): 最初に戻る
+- Speed: 再生速度調整（0.5x, 1x, 2x, 4x）
 
-## ステップ6: PostgreSQLのデータ確認（オプション）
+### 確認ポイント
 
-### 6-1. PostgreSQLコンテナに接続
+**ステーション表示:**
+- Source: 緑色の円柱
+- Processing: 青色の円柱
+- Drain: 赤色の円柱
 
-```bash
-docker compose exec postgres psql -U postgres -d factory_simulation
-```
+**ワーク表示:**
+- 小さな球体として表示
+- ステーション間をスムーズに移動
+- 同時に複数のワークがステーション内に存在しない（1ステーション1ワーク）
 
-### 6-2. テーブルの確認
-
-```sql
--- シミュレーション実行一覧
-SELECT * FROM simulation_runs;
-
--- ステーションステータスログ（最初の10件）
-SELECT * FROM station_status_logs ORDER BY timestamp LIMIT 10;
-
--- ワークイベントログ
-SELECT * FROM work_events ORDER BY timestamp;
-
--- PostgreSQLから抜ける
-\q
-```
-
----
-
-## ステップ7: システムの停止
-
-### 7-1. コンテナを停止
-
-```bash
-docker compose down
-```
-
-### 7-2. データベースも含めて完全に削除（次回クリーンスタート）
-
-```bash
-docker compose down -v
-```
-
-**注意:** `-v` オプションを付けるとデータベースのボリュームも削除されます。
+**動作確認:**
+- ✅ ワークがステーション間をスムーズに移動する
+- ✅ Processingステーションでワークが停止（処理中）する
+- ✅ 複数ワークが同時にステーション内に存在しない
+- ✅ タイムスタンプが正しく進む
 
 ---
 
@@ -321,13 +482,41 @@ curl: (7) Failed to connect to localhost port 8080
 **対処法:**
 ```bash
 # コンテナの状態を確認
-docker compose ps
+docker-compose ps
 
 # simulation-coreのログを確認
-docker compose logs simulation-core
+docker-compose logs simulation-core
 
 # 必要に応じて再起動
-docker compose restart simulation-core
+docker-compose restart simulation-core
+
+# それでもダメならビルドから
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+### エラー: "interlock violation"
+
+**症状:**
+```json
+{
+  "code": 500,
+  "message": "Simulation failed: interlock violation: ..."
+}
+```
+
+**原因:**
+- Source の `departureTime` が短すぎる
+- 次ステーションの処理サイクル時間より短い間隔でワークを送出している
+
+**対処法:**
+```json
+{
+  "config": {
+    "departureTime": 5.0  // より長い値に設定
+  }
+}
 ```
 
 ### エラー: "relation does not exist"
@@ -342,12 +531,51 @@ docker compose restart simulation-core
 
 ```bash
 # ボリュームごと削除して再作成
-docker compose down -v
-docker compose up -d
+docker-compose down -v
+docker-compose up -d
+
+# マイグレーションが自動実行されるまで少し待つ
+sleep 5
 
 # テーブルが作成されたか確認
-docker compose logs postgres | grep "CREATE TABLE"
+docker-compose exec postgres psql -U postgres -d factory_simulation -c "\dt"
 ```
+
+### テストが失敗する
+
+**症状:**
+```
+Failed: X
+```
+
+**対処法:**
+
+1. **詳細なエラーメッセージを確認:**
+   ```bash
+   cd simulation-core/test
+   bash run_all_tests.sh 2>&1 | tee test-results.log
+   cat test-results.log
+   ```
+
+2. **個別にテスト実行:**
+   ```bash
+   # シナリオ登録
+   curl -X POST http://localhost:8080/api/scenarios \
+     -H "Content-Type: application/json" \
+     -d @01_basic_test.json
+
+   # レスポンスを確認してシナリオIDを取得
+
+   # シミュレーション実行
+   curl -X POST http://localhost:8080/api/simulations \
+     -H "Content-Type: application/json" \
+     -d '{"scenarioId": "...", "simulationTime": 100.0, "initialConditions": {}}'
+   ```
+
+3. **ログを確認:**
+   ```bash
+   docker-compose logs simulation-core | tail -100
+   ```
 
 ### ポートが既に使用されている
 
@@ -364,598 +592,65 @@ lsof -i :8080
 # 5432ポートを使用しているプロセスを確認
 lsof -i :5432
 
-# 他のプロセスを停止するか、docker-compose.ymlのポート番号を変更
-```
+# 8081ポートを使用しているプロセスを確認
+lsof -i :8081
 
-### コンテナが起動しない
-
-**対処法:**
-```bash
-# ログを詳しく確認
-docker compose logs
-
-# 特定のサービスのログを確認
-docker compose logs postgres
-docker compose logs simulation-core
-
-# イメージを再ビルド
-docker compose build --no-cache
-docker compose up -d
+# プロセスを停止するか、docker-compose.ymlのポート番号を変更
 ```
 
 ---
 
-## 追加テスト: 複数ワークのシミュレーション
+## PostgreSQLのデータ確認（上級者向け）
 
-より複雑なシナリオをテストしたい場合、ワーク数を増やすことができます。
+### データベースに接続
 
 ```bash
-# ワーク3個のシナリオを登録
-curl -X POST http://localhost:8080/api/scenarios \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "複数ワークシナリオ",
-    "stations": [
-      {
-        "id": "source-2",
-        "type": "source",
-        "parentId": null,
-        "config": {
-          "workCount": 3,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "process-2",
-        "type": "processing",
-        "parentId": null,
-        "config": {
-          "processingTime": 5.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "drain-2",
-        "type": "drain",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0
-        }
-      }
-    ],
-    "connections": [
-      {"from": "source-2", "to": "process-2"},
-      {"from": "process-2", "to": "drain-2"}
-    ]
-  }'
-
-# シミュレーション実行
-curl -X POST http://localhost:8080/api/simulations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenarioId": "scenario-2",
-    "simulationTime": 100.0,
-    "initialConditions": {}
-  }'
+docker-compose exec postgres psql -U postgres -d factory_simulation
 ```
 
-**期待される動作:**
-- work-001, work-002, work-003 が順次処理される
-- 各ワークが処理されるごとに時間が経過
-- すべてのワークがDrain Stationで消滅したらシミュレーション終了
+### テーブル一覧表示
 
----
-
-## 新しいステーション種別のテスト
-
-### テスト1: Merge Station（合流ステーション）
-
-**シナリオ概要:**
-2つのSource Stationからワークを生成し、Merge Stationで1つにまとめてDrain Stationで消滅させる。
-
-```
-[Source-A] ──┐
-             ├─→ [Merge] → [Drain]
-[Source-B] ──┘
+```sql
+\dt
 ```
 
-**シナリオ登録:**
-```bash
-curl -X POST http://localhost:8080/api/scenarios \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Merge Station テスト",
-    "stations": [
-      {
-        "id": "source-a",
-        "type": "source",
-        "parentId": null,
-        "config": {
-          "workCount": 1,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "source-b",
-        "type": "source",
-        "parentId": null,
-        "config": {
-          "workCount": 1,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "merge-1",
-        "type": "merge",
-        "parentId": null,
-        "config": {
-          "requiredWorkCount": 2,
-          "processingTime": 3.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "drain-1",
-        "type": "drain",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0
-        }
-      }
-    ],
-    "connections": [
-      {"from": "source-a", "to": "merge-1"},
-      {"from": "source-b", "to": "merge-1"},
-      {"from": "merge-1", "to": "drain-1"}
-    ]
-  }'
+**期待される出力:**
+```
+                   List of relations
+ Schema |         Name          | Type  |  Owner
+--------+-----------------------+-------+----------
+ public | scenarios             | table | postgres
+ public | simulation_runs       | table | postgres
+ public | station_status_logs   | table | postgres
+ public | work_events           | table | postgres
+ public | work_lineage          | table | postgres
 ```
 
-**シミュレーション実行:**
-```bash
-curl -X POST http://localhost:8080/api/simulations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenarioId": "scenario-3",
-    "simulationTime": 100.0,
-    "initialConditions": {}
-  }'
+### データ確認クエリ
+
+```sql
+-- シミュレーション実行一覧
+SELECT simulation_id, friendly_name, status, end_time
+FROM simulation_runs
+ORDER BY created_at DESC
+LIMIT 5;
+
+-- 特定シミュレーションのワークイベント
+SELECT work_friendly_name, station_id, timestamp, event_type
+FROM work_events
+WHERE simulation_id = 'your-simulation-id'
+ORDER BY timestamp;
+
+-- ステーションごとのワーク処理数
+SELECT station_id, COUNT(*) as work_count
+FROM work_events
+WHERE simulation_id = 'your-simulation-id'
+  AND event_type = 'WorkArrived'
+GROUP BY station_id;
+
+-- PostgreSQLから抜ける
+\q
 ```
-
-**期待される結果:**
-- 2つのワークが生成される（work-001, work-002）
-- Merge Stationで2つのワークが1つにまとまる（work-003）
-- 新しいワークがDrain Stationで消滅する
-
-**期待されるワークイベント:**
-- t=0: WorkCreated (source-a, work-001)
-- t=0: WorkCreated (source-b, work-002)
-- t=1: WorkDeparted (source-a, work-001)
-- t=1: WorkDeparted (source-b, work-002)
-- t=3: WorkArrived (merge-1, work-001)
-- t=3: WorkArrived (merge-1, work-002)
-- t=3: ProcessingStarted (merge-1)
-- t=6: ProcessingCompleted (merge-1)
-- t=6: WorkMerged (merge-1, work-003)
-- t=7: WorkDeparted (merge-1, work-003)
-- t=9: WorkArrived (drain-1, work-003)
-- t=9: WorkDestroyed (drain-1, work-003)
-
----
-
-### テスト2: Split Station（分割ステーション）
-
-**シナリオ概要:**
-1つのワークを2つに分割する。
-
-```
-[Source] → [Split] ──┬─→ [Drain-A]
-                     └─→ [Drain-B]
-```
-
-**シナリオ登録:**
-```bash
-curl -X POST http://localhost:8080/api/scenarios \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Split Station テスト",
-    "stations": [
-      {
-        "id": "source-1",
-        "type": "source",
-        "parentId": null,
-        "config": {
-          "workCount": 1,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "split-1",
-        "type": "split",
-        "parentId": null,
-        "config": {
-          "outputWorkCount": 2,
-          "processingTime": 3.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "drain-1",
-        "type": "drain",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0
-        }
-      }
-    ],
-    "connections": [
-      {"from": "source-1", "to": "split-1"},
-      {"from": "split-1", "to": "drain-1"}
-    ]
-  }'
-```
-
-**シミュレーション実行:**
-```bash
-curl -X POST http://localhost:8080/api/simulations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenarioId": "scenario-4",
-    "simulationTime": 100.0,
-    "initialConditions": {}
-  }'
-```
-
-**期待される結果:**
-- 1つのワークが生成される（work-001）
-- Split Stationで2つのワークに分割される（work-002, work-003）
-- 2つのワークが順次Drain Stationで消滅する
-
-**期待されるワークイベント:**
-- t=0: WorkCreated (source-1, work-001)
-- t=1: WorkDeparted (source-1, work-001)
-- t=3: WorkArrived (split-1, work-001)
-- t=3: ProcessingStarted (split-1, work-001)
-- t=6: ProcessingCompleted (split-1)
-- t=6: WorkSplit (split-1, work-001)
-- t=7: WorkDeparted (split-1, work-002)
-- t=9: WorkArrived (drain-1, work-002)
-- t=9: WorkDestroyed (drain-1, work-002)
-- t=8: WorkDeparted (split-1, work-003)
-- t=10: WorkArrived (drain-1, work-003)
-- t=10: WorkDestroyed (drain-1, work-003)
-
----
-
-### テスト3: Inspection Station（検査ステーション）
-
-**シナリオ概要:**
-ワークを検査してOK/NGを判定する（確率90%でOK）。
-
-```
-[Source] → [Inspection] → [Drain]
-```
-
-**シナリオ登録:**
-```bash
-curl -X POST http://localhost:8080/api/scenarios \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Inspection Station テスト",
-    "stations": [
-      {
-        "id": "source-1",
-        "type": "source",
-        "parentId": null,
-        "config": {
-          "workCount": 1,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "inspection-1",
-        "type": "inspection",
-        "parentId": null,
-        "config": {
-          "processingTime": 3.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0,
-          "okProbability": 0.9
-        }
-      },
-      {
-        "id": "drain-1",
-        "type": "drain",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0
-        }
-      }
-    ],
-    "connections": [
-      {"from": "source-1", "to": "inspection-1"},
-      {"from": "inspection-1", "to": "drain-1"}
-    ]
-  }'
-```
-
-**シミュレーション実行:**
-```bash
-curl -X POST http://localhost:8080/api/simulations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenarioId": "scenario-5",
-    "simulationTime": 100.0,
-    "initialConditions": {}
-  }'
-```
-
-**期待される結果:**
-- 1つのワークが生成される（work-001）
-- Inspection Stationで品質ステータスが設定される（90%の確率でOK、10%の確率でNG）
-- ワークがDrain Stationで消滅する
-
-**期待されるワークイベント:**
-- t=0: WorkCreated (source-1, work-001)
-- t=1: WorkDeparted (source-1, work-001)
-- t=3: WorkArrived (inspection-1, work-001)
-- t=3: ProcessingStarted (inspection-1, work-001)
-- t=6: ProcessingCompleted (inspection-1)
-- t=6: WorkInspected (inspection-1, work-001) ← 品質ステータスが設定される
-- t=7: WorkDeparted (inspection-1, work-001)
-- t=9: WorkArrived (drain-1, work-001)
-- t=9: WorkDestroyed (drain-1, work-001)
-
----
-
-### テスト4: Discharge Station（振り分けステーション）
-
-**シナリオ概要:**
-品質ステータスに応じてOKとNGを別のDrain Stationに振り分ける。
-
-```
-                ┌─→ [Drain-OK]
-[Source] → [Inspection] → [Discharge]
-                           └─→ [Drain-NG]
-```
-
-**シナリオ登録:**
-```bash
-curl -X POST http://localhost:8080/api/scenarios \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Discharge Station テスト",
-    "stations": [
-      {
-        "id": "source-1",
-        "type": "source",
-        "parentId": null,
-        "config": {
-          "workCount": 1,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "inspection-1",
-        "type": "inspection",
-        "parentId": null,
-        "config": {
-          "processingTime": 3.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0,
-          "okProbability": 0.5
-        }
-      },
-      {
-        "id": "discharge-1",
-        "type": "discharge",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "drain-ok",
-        "type": "drain",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0
-        }
-      },
-      {
-        "id": "drain-ng",
-        "type": "drain",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0
-        }
-      }
-    ],
-    "connections": [
-      {"from": "source-1", "to": "inspection-1"},
-      {"from": "inspection-1", "to": "discharge-1"},
-      {"from": "discharge-1", "to": "drain-ok"},
-      {"from": "discharge-1", "to": "drain-ng"}
-    ]
-  }'
-```
-
-**シミュレーション実行:**
-```bash
-curl -X POST http://localhost:8080/api/simulations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenarioId": "scenario-6",
-    "simulationTime": 100.0,
-    "initialConditions": {}
-  }'
-```
-
-**期待される結果:**
-- 1つのワークが生成される（work-001）
-- Inspection Stationで品質ステータスが設定される（50%の確率でOK、50%の確率でNG）
-- Discharge StationでOKなら drain-ok へ、NGなら drain-ng へ振り分けられる
-
-**期待されるワークイベント（OKの場合）:**
-- t=0: WorkCreated (source-1, work-001)
-- t=1: WorkDeparted (source-1, work-001)
-- t=3: WorkArrived (inspection-1, work-001)
-- t=3: ProcessingStarted (inspection-1, work-001)
-- t=6: ProcessingCompleted (inspection-1)
-- t=6: WorkInspected (inspection-1, work-001) ← qualityStatus=OK
-- t=7: WorkDeparted (inspection-1, work-001)
-- t=9: WorkArrived (discharge-1, work-001)
-- t=9: WorkRouted (discharge-1, work-001)
-- t=10: WorkDeparted (discharge-1, work-001)
-- t=12: WorkArrived (drain-ok, work-001)
-- t=12: WorkDestroyed (drain-ok, work-001)
-
----
-
-### テスト5: 複合シナリオ（全ステーション種別を組み合わせ）
-
-**シナリオ概要:**
-全てのステーション種別を使った複雑なシミュレーション。
-
-```
-[Source-A] ──┐
-             ├─→ [Merge] → [Split] ──┬─→ [Inspection-A] ──┐
-[Source-B] ──┘                       │                      ├─→ [Discharge] ─┬─→ [Drain-OK]
-                                     └─→ [Inspection-B] ──┘                  └─→ [Drain-NG]
-```
-
-**シナリオ登録:**
-```bash
-curl -X POST http://localhost:8080/api/scenarios \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "複合シナリオ",
-    "stations": [
-      {
-        "id": "source-a",
-        "type": "source",
-        "parentId": null,
-        "config": {
-          "workCount": 1,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "source-b",
-        "type": "source",
-        "parentId": null,
-        "config": {
-          "workCount": 1,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "merge-1",
-        "type": "merge",
-        "parentId": null,
-        "config": {
-          "requiredWorkCount": 2,
-          "processingTime": 3.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "split-1",
-        "type": "split",
-        "parentId": null,
-        "config": {
-          "outputWorkCount": 2,
-          "processingTime": 3.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "inspection-a",
-        "type": "inspection",
-        "parentId": null,
-        "config": {
-          "processingTime": 2.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0,
-          "okProbability": 0.7
-        }
-      },
-      {
-        "id": "inspection-b",
-        "type": "inspection",
-        "parentId": null,
-        "config": {
-          "processingTime": 2.0,
-          "arrivalTime": 2.0,
-          "departureTime": 1.0,
-          "okProbability": 0.7
-        }
-      },
-      {
-        "id": "discharge-1",
-        "type": "discharge",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0,
-          "departureTime": 1.0
-        }
-      },
-      {
-        "id": "drain-ok",
-        "type": "drain",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0
-        }
-      },
-      {
-        "id": "drain-ng",
-        "type": "drain",
-        "parentId": null,
-        "config": {
-          "arrivalTime": 2.0
-        }
-      }
-    ],
-    "connections": [
-      {"from": "source-a", "to": "merge-1"},
-      {"from": "source-b", "to": "merge-1"},
-      {"from": "merge-1", "to": "split-1"},
-      {"from": "split-1", "to": "inspection-a"},
-      {"from": "split-1", "to": "inspection-b"},
-      {"from": "inspection-a", "to": "discharge-1"},
-      {"from": "inspection-b", "to": "discharge-1"},
-      {"from": "discharge-1", "to": "drain-ok"},
-      {"from": "discharge-1", "to": "drain-ng"}
-    ]
-  }'
-```
-
-**注意:** Splitステーションからの接続が正しく動作するように、上記のconnectionsは両方のワークがinspection-aに向かうように設定しています。実際の実装では、Splitステーションは最初の接続先にすべてのワークを送ります。
-
-**シミュレーション実行:**
-```bash
-curl -X POST http://localhost:8080/api/simulations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenarioId": "scenario-7",
-    "simulationTime": 100.0,
-    "initialConditions": {}
-  }'
-```
-
-**期待される結果:**
-- 2つのワークが生成される（work-001, work-002）
-- Merge Stationで1つにまとまる（work-003）
-- Split Stationで2つに分割される（work-004, work-005）
-- 各ワークがInspection Stationで検査される
-- Discharge Stationで品質ステータスに応じて振り分けられる
 
 ---
 
@@ -963,13 +658,55 @@ curl -X POST http://localhost:8080/api/simulations \
 
 動作確認が完了したら、以下をチェックしてください：
 
+### システム起動
 - [ ] Docker Composeでシステムが起動できた
+- [ ] 3つのコンテナ（db, simulation-core, sim-visualizer）が全て起動している
+- [ ] APIにアクセスできる（http://localhost:8080）
+- [ ] 可視化サーバーにアクセスできる（http://localhost:8081）
+
+### 基本動作
 - [ ] シナリオ登録APIが正常に動作した
 - [ ] シミュレーション実行APIが正常に動作した
 - [ ] シミュレーション結果取得APIが正常に動作した
 - [ ] ログ取得APIが正常に動作した
-- [ ] ワークイベントが期待通りの時刻で発生した（t=0, 1, 3, 8, 9, 11）
-- [ ] PostgreSQLにデータが正しく保存された
-- [ ] システムを停止できた
 
-すべてチェックが付いたら、Simulation Coreの初期実装が正常に動作していることが確認できました！ 🎉
+### 自動テスト
+- [ ] 全テストがPASSした（3/3）
+- [ ] ワークイベントが期待通りの時刻で発生した
+- [ ] インターロック違反が発生していない
+
+### インターロック機構
+- [ ] 1ステーション1ワークが保証されている
+- [ ] 搬入可・搬出可の信号制御が動作している
+- [ ] ワークの逐次処理が正しく行われている
+
+### 3D可視化
+- [ ] シミュレーション結果が3Dで表示される
+- [ ] ワークが滑らかに移動する
+- [ ] 再生・一時停止・リセット操作ができる
+- [ ] 速度調整ができる
+
+### データ永続化
+- [ ] PostgreSQLにデータが正しく保存されている
+- [ ] シミュレーション結果が再取得できる
+
+すべてチェックが付いたら、Factory Simulationのインターロック機構が正常に動作していることが確認できました！ 🎉
+
+---
+
+## 次のステップ
+
+基本動作確認が完了したら、以下を試してみてください：
+
+1. **独自シナリオの作成**: より複雑なステーション構成を設計
+2. **パラメータチューニング**: 処理時間や到着時間を調整して最適化
+3. **ステーション種別の追加**: Merge, Split, Inspection, Dischargeの実装（今後の課題）
+
+---
+
+## 関連ドキュメント
+
+- `README.md` - システム概要とクイックスタート
+- `docs/architecture.md` - アーキテクチャ設計書（未作成）
+- `simulation-core/internal/domain/station.go` - ステーション実装
+- `simulation-core/internal/simulation/engine.go` - シミュレーションエンジン実装
