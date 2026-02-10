@@ -20,10 +20,11 @@ export class Visualizer3D {
         this.renderer = null;
         this.controls = null;
 
-        this.stations = new Map(); // Map<stationId, {mesh, position}>
+        this.stations = new Map(); // Map<stationId, {mesh, position, label}>
         this.works = new Map(); // Map<workId, {mesh, label}>
         this.connections = [];
         this.showWorkIDs = true; // Default: show work IDs
+        this.showStationNames = true; // Default: show station names
 
         this._initScene();
         this._animate();
@@ -119,8 +120,8 @@ export class Visualizer3D {
             const pos = positions.get(station.id);
             if (!pos) return;
 
-            const stationMesh = this._createStation(station, pos);
-            this.stations.set(station.id, { mesh: stationMesh, position: pos });
+            const { mesh, label } = this._createStation(station, pos);
+            this.stations.set(station.id, { mesh: mesh, position: pos, label: label });
         });
 
         // Create connections
@@ -237,9 +238,9 @@ export class Visualizer3D {
         this.scene.add(group);
 
         // Add label
-        this._createLabel(station.id, position.x, 65, position.z);
+        const label = this._createLabel(station.id, position.x, 65, position.z);
 
-        return group;
+        return { mesh: group, label: label };
     }
 
     _createLabel(text, x, y, z) {
@@ -262,8 +263,10 @@ export class Visualizer3D {
         const sprite = new THREE.Sprite(material);
         sprite.position.set(x, y, z);
         sprite.scale.set(100, 25, 1);
+        sprite.visible = this.showStationNames; // Control visibility based on setting
 
         this.scene.add(sprite);
+        return sprite;
     }
 
     _createWorkLabel(text, x, y, z) {
@@ -301,6 +304,16 @@ export class Visualizer3D {
         this.works.forEach(work => {
             if (work.label) {
                 work.label.visible = show;
+            }
+        });
+    }
+
+    setShowStationNames(show) {
+        this.showStationNames = show;
+        // Update visibility of all station labels
+        this.stations.forEach(station => {
+            if (station.label) {
+                station.label.visible = show;
             }
         });
     }
@@ -433,6 +446,9 @@ export class Visualizer3D {
         // Clear stations
         this.stations.forEach(station => {
             this.scene.remove(station.mesh);
+            if (station.label) {
+                this.scene.remove(station.label);
+            }
         });
         this.stations.clear();
 

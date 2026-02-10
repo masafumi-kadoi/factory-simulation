@@ -108,6 +108,12 @@ class App {
             this.seek(parseFloat(e.target.value));
         });
 
+        document.getElementById('show-station-names').addEventListener('change', (e) => {
+            if (this.visualizer) {
+                this.visualizer.setShowStationNames(e.target.checked);
+            }
+        });
+
         document.getElementById('show-work-ids').addEventListener('change', (e) => {
             if (this.visualizer) {
                 this.visualizer.setShowWorkIDs(e.target.checked);
