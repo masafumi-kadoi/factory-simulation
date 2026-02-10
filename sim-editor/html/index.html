@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scenario List - Factory Simulation Editor</title>
+    <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+    <div class="list-container">
+        <header class="list-header">
+            <h1>Factory Simulation - Scenario Editor</h1>
+            <button id="new-scenario-btn" class="btn-primary">➕ 新規作成</button>
+        </header>
+
+        <main class="list-main">
+            <div id="scenario-list" class="scenario-list">
+                <!-- シナリオがここに表示される -->
+            </div>
+            <div id="empty-state" class="empty-state">
+                <p>📋 シナリオがありません</p>
+                <p class="empty-state-hint">「新規作成」ボタンでシナリオを作成してください</p>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="js/list.js"></script>
+</body>
+</html>

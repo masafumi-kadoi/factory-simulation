@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scenario Editor - Factory Simulation</title>
+    <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+    <div class="editor-container">
+        <!-- Header -->
+        <header class="editor-header">
+            <div class="header-left">
+                <button id="back-btn" class="btn-secondary">← 戻る</button>
+                <input type="text" id="scenario-name" class="scenario-name-input" placeholder="シナリオ名" value="新規シナリオ">
+            </div>
+            <div class="header-right">
+                <button id="save-btn" class="btn-primary">💾 保存</button>
+                <button id="export-btn" class="btn-secondary">📥 JSONエクスポート</button>
+            </div>
+        </header>
+
+        <!-- Main Content: 3 Panes -->
+        <div class="editor-main">
+            <!-- Left: Tool Palette -->
+            <aside class="tool-palette">
+                <h3>ツール</h3>
+                <div class="tool-section">
+                    <h4>ステーション</h4>
+                    <button class="tool-btn" data-tool="source" title="Source Station">
+                        📦 Source
+                    </button>
+                    <button class="tool-btn" data-tool="processing" title="Processing Station">
+                        ⚙️ Processing
+                    </button>
+                    <button class="tool-btn" data-tool="drain" title="Drain Station">
+                        🗑️ Drain
+                    </button>
+                </div>
+                <div class="tool-section">
+                    <h4>編集</h4>
+                    <button class="tool-btn active" data-tool="select" title="選択モード">
+                        ✋ 選択
+                    </button>
+                    <button class="tool-btn" data-tool="connect" title="接続作成">
+                        🔗 接続
+                    </button>
+                    <button class="tool-btn" data-tool="delete" title="削除">
+                        🗑️ 削除
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Center: Canvas -->
+            <div class="canvas-container">
+                <svg id="canvas" width="100%" height="100%">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="7"
+                                refX="9" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#999" />
+                        </marker>
+                        <marker id="arrowhead-selected" markerWidth="10" markerHeight="7"
+                                refX="9" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#4a9eff" />
+                        </marker>
+                    </defs>
+                    <!-- Connections drawn first (behind stations) -->
+                    <g id="connections-layer"></g>
+                    <!-- Stations drawn on top -->
+                    <g id="stations-layer"></g>
+                </svg>
+                <div id="canvas-info" class="canvas-info">
+                    クリックでステーション配置 | ドラッグで移動
+                </div>
+            </div>
+
+            <!-- Right: Properties Panel -->
+            <aside class="properties-panel">
+                <h3>プロパティ</h3>
+                <div id="properties-content">
+                    <!-- Properties displayed here -->
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script type="module" src="js/editor.js"></script>
+</body>
+</html>

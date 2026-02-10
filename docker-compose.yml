@@ -53,6 +53,18 @@ services:
     networks:
       - factory-network
 
+  sim-editor:
+    build:
+      context: ./sim-editor
+      dockerfile: Dockerfile
+    container_name: factory-sim-editor
+    ports:
+      - "8082:80"
+    depends_on:
+      - simulation-core
+    networks:
+      - factory-network
+
 volumes:
   postgres_data:
     driver: local
