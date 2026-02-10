@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // SimulationStatus represents the status of a simulation
 type SimulationStatus string
 
@@ -34,6 +36,7 @@ type Simulation struct {
 	EndTime      *float64
 	EndReason    *EndReason
 	Summary      SimulationSummary
+	CreatedAt    time.Time
 }
 
 // NewSimulation creates a new simulation
@@ -46,6 +49,7 @@ func NewSimulation(id, friendlyName, scenarioID string) *Simulation {
 		StartTime:    0.0,
 		EndTime:      nil,
 		EndReason:    nil,
+		CreatedAt:    time.Now(),
 		Summary: SimulationSummary{
 			TotalWorksCreated:   0,
 			TotalWorksDestroyed: 0,

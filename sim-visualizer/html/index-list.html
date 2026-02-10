@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulation Results - Factory Simulation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        main {
+            padding: 30px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+            font-size: 18px;
+        }
+
+        .error {
+            text-align: center;
+            padding: 60px 20px;
+            color: #d32f2f;
+        }
+
+        .error h2 {
+            margin-bottom: 10px;
+        }
+
+        .simulation-list {
+            list-style: none;
+        }
+
+        .simulation-item {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .simulation-item:hover {
+            background: #e9ecef;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .simulation-item h3 {
+            color: #495057;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .simulation-meta {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            color: #6c757d;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .simulation-meta span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status.completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #6c757d;
+        }
+
+        .empty-state h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .empty-state p {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+
+        .empty-state code {
+            background: #f8f9fa;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .refresh-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .icon {
+            font-style: normal;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Factory Simulation Visualizer</h1>
+            <p>シミュレーション結果一覧</p>
+        </header>
+
+        <main>
+            <div id="content">
+                <div class="loading">
+                    <p>📊 シミュレーション結果を読み込み中...</p>
+                </div>
+            </div>
+            <div style="text-align: center;">
+                <button class="refresh-btn" onclick="location.reload()">
+                    🔄 更新
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        const API_BASE = 'http://localhost:8080/api';
+
+        async function fetchSimulations() {
+            try {
+                const response = await fetch(`${API_BASE}/simulations`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Failed to fetch simulations:', error);
+                throw error;
+            }
+        }
+
+        function formatDate(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleString('ja-JP');
+        }
+
+        function renderSimulations(simulations) {
+            const content = document.getElementById('content');
+
+            if (!simulations || simulations.length === 0) {
+                content.innerHTML = `
+                    <div class="empty-state">
+                        <h2>📭 シミュレーション結果がありません</h2>
+                        <p>まだシミュレーションが実行されていません。</p>
+                        <p>以下のコマンドでテストを実行してください：</p>
+                        <code>cd simulation-core/test && bash run_all_tests.sh</code>
+                    </div>
+                `;
+                return;
+            }
+
+            // Sort by creation time (most recent first)
+            simulations.sort((a, b) => {
+                const dateA = new Date(a.createdAt || 0);
+                const dateB = new Date(b.createdAt || 0);
+                return dateB - dateA;
+            });
+
+            const listHTML = simulations.map(sim => `
+                <li class="simulation-item" onclick="window.location.href='/?sim=${sim.simulationId}'">
+                    <h3>${sim.friendlyName || sim.simulationId}</h3>
+                    <span class="status ${sim.status}">${sim.status}</span>
+                    <div class="simulation-meta">
+                        <span><span class="icon">🆔</span> ${sim.simulationId.substring(0, 8)}...</span>
+                        <span><span class="icon">⏱️</span> 終了時刻: ${sim.endTime ? sim.endTime.toFixed(2) + 's' : 'N/A'}</span>
+                        <span><span class="icon">🏁</span> ${sim.endReason || 'N/A'}</span>
+                        <span><span class="icon">📅</span> ${formatDate(sim.createdAt)}</span>
+                    </div>
+                </li>
+            `).join('');
+
+            content.innerHTML = `
+                <ul class="simulation-list">
+                    ${listHTML}
+                </ul>
+            `;
+        }
+
+        function renderError(error) {
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <div class="error">
+                    <h2>❌ エラーが発生しました</h2>
+                    <p>${error.message}</p>
+                    <p style="font-size: 14px; margin-top: 20px; color: #666;">
+                        APIサーバーが起動しているか確認してください。<br>
+                        <code>docker-compose ps</code>
+                    </p>
+                </div>
+            `;
+        }
+
+        // Load simulations on page load
+        (async () => {
+            try {
+                const simulations = await fetchSimulations();
+                renderSimulations(simulations);
+            } catch (error) {
+                renderError(error);
+            }
+        })();
+    </script>
+</body>
+</html>

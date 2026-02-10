@@ -231,6 +231,7 @@ type SimulationListItem struct {
 	Status       string  `json:"status"`
 	EndTime      float64 `json:"endTime"`
 	EndReason    string  `json:"endReason"`
+	CreatedAt    string  `json:"createdAt"` // ISO 8601 format
 }
 
 // HandleGetSimulations handles GET /api/simulations
@@ -254,6 +255,7 @@ func (h *Handler) HandleGetSimulations(w http.ResponseWriter, r *http.Request) {
 			FriendlyName: sim.FriendlyName,
 			ScenarioID:   sim.ScenarioID,
 			Status:       string(sim.Status),
+			CreatedAt:    sim.CreatedAt.Format("2006-01-02T15:04:05Z07:00"), // ISO 8601
 		}
 
 		if sim.EndTime != nil {

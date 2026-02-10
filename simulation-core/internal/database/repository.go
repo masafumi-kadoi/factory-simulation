@@ -21,8 +21,8 @@ func NewRepository(db *DB) *Repository {
 // SaveSimulationRun saves a simulation run to the database
 func (r *Repository) SaveSimulationRun(sim *domain.Simulation) error {
 	query := `
-		INSERT INTO simulation_runs (id, friendly_name, scenario_id, start_time, end_time, simulation_end_time, end_reason, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO simulation_runs (id, friendly_name, scenario_id, start_time, end_time, simulation_end_time, end_reason, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
 	now := time.Now()
@@ -48,6 +48,7 @@ func (r *Repository) SaveSimulationRun(sim *domain.Simulation) error {
 		simEndTime,
 		endReason,
 		string(sim.Status),
+		sim.CreatedAt,
 	)
 
 	if err != nil {
@@ -292,9 +293,9 @@ func (r *Repository) SaveWorkLineageLogs(simulationID string, logs []simulation.
 // GetAllSimulations retrieves all simulation runs from the database
 func (r *Repository) GetAllSimulations() ([]*domain.Simulation, error) {
 	query := `
-		SELECT id, friendly_name, scenario_id, simulation_end_time, end_reason, status
+		SELECT id, friendly_name, scenario_id, simulation_end_time, end_reason, status, created_at
 		FROM simulation_runs
-		ORDER BY start_time DESC
+		ORDER BY created_at DESC
 	`
 
 	rows, err := r.db.GetConnection().Query(query)
@@ -310,7 +311,7 @@ func (r *Repository) GetAllSimulations() ([]*domain.Simulation, error) {
 		var endReason *string
 		var status string
 
-		if err := rows.Scan(&sim.ID, &sim.FriendlyName, &sim.ScenarioID, &endTime, &endReason, &status); err != nil {
+		if err := rows.Scan(&sim.ID, &sim.FriendlyName, &sim.ScenarioID, &endTime, &endReason, &status, &sim.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan simulation: %w", err)
 		}
 

@@ -25,19 +25,8 @@ class App {
         console.log('[App] Simulation ID:', simId);
 
         if (!simId) {
-            // Show error message in the container instead of alert
-            const container = document.getElementById('container-3d');
-            container.innerHTML = `
-                <div style="padding: 40px; text-align: center; color: #333;">
-                    <h2>⚠️ シミュレーションIDが指定されていません</h2>
-                    <p style="margin-top: 20px; color: #666;">
-                        URLに <code>?sim=シミュレーションID</code> を指定してください。
-                    </p>
-                    <p style="margin-top: 20px; font-size: 14px; color: #999;">
-                        例: http://localhost:8081?sim=1263a957-cb9b-47c2-aed1-d8d67a97db41
-                    </p>
-                </div>
-            `;
+            // Show simulation list
+            await this._showSimulationList();
             return;
         }
 
@@ -199,7 +188,142 @@ class App {
         document.getElementById('current-time').textContent = this.currentTime.toFixed(2) + 's';
         document.getElementById('timeline-slider').value = this.currentTime;
     }
+
+    async _showSimulationList() {
+        console.log('[App] _showSimulationList called');
+        const container = document.getElementById('container-3d');
+        console.log('[App] Container element:', container);
+
+        // Hide controls
+        document.getElementById('controls').style.display = 'none';
+
+        // Enable scrolling for the list
+        container.style.overflow = 'auto';
+        container.style.background = '#f5f5f5';
+
+        // Update header
+        document.getElementById('sim-info').textContent = 'シミュレーション結果一覧';
+
+        try {
+            // Show loading
+            console.log('[App] Setting loading message');
+            container.innerHTML = '<div style="padding: 40px; text-align: center; color: #333; font-size: 18px;">📊 読み込み中...</div>';
+
+            // Fetch simulations list
+            console.log('[App] Fetching simulations from API...');
+            const response = await fetch('http://localhost:8080/api/simulations');
+            console.log('[App] API response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const simulations = await response.json();
+            console.log('[App] Received simulations:', simulations.length, 'items');
+
+            if (!simulations || simulations.length === 0) {
+                container.innerHTML = `
+                    <div style="padding: 60px 40px; text-align: center; color: #666;">
+                        <h2 style="margin-bottom: 20px;">📭 シミュレーション結果がありません</h2>
+                        <p style="margin-bottom: 10px;">まだシミュレーションが実行されていません。</p>
+                        <p style="font-size: 14px; color: #999;">
+                            以下のコマンドでテストを実行してください：<br>
+                            <code style="background: #f5f5f5; padding: 4px 8px; border-radius: 4px; margin-top: 10px; display: inline-block;">
+                                cd simulation-core/test && bash run_all_tests.sh
+                            </code>
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Sort by creation time (most recent first)
+            simulations.sort((a, b) => {
+                const dateA = new Date(a.createdAt || 0);
+                const dateB = new Date(b.createdAt || 0);
+                return dateB - dateA;
+            });
+
+            // Render list
+            const listHTML = simulations.map(sim => {
+                const createdAt = sim.createdAt ? new Date(sim.createdAt).toLocaleString('ja-JP') : 'N/A';
+                const endTime = sim.endTime ? sim.endTime.toFixed(2) + 's' : 'N/A';
+                const statusColor = sim.status === 'completed' ? '#4caf50' : '#f44336';
+
+                return `
+                    <div style="
+                        background: #f8f9fa;
+                        border: 1px solid #dee2e6;
+                        border-radius: 8px;
+                        padding: 20px;
+                        margin-bottom: 15px;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                    "
+                    onmouseover="this.style.background='#e9ecef'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'"
+                    onmouseout="this.style.background='#f8f9fa'; this.style.boxShadow='none'"
+                    onclick="window.location.href='?sim=${sim.simulationId}'">
+                        <h3 style="color: #495057; font-size: 18px; margin-bottom: 12px;">
+                            ${sim.friendlyName || sim.simulationId}
+                        </h3>
+                        <div style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; background: ${statusColor}20; color: ${statusColor}; margin-bottom: 10px;">
+                            ${sim.status.toUpperCase()}
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; color: #6c757d; font-size: 14px; margin-top: 10px;">
+                            <div>🆔 ID: ${sim.simulationId.substring(0, 8)}...</div>
+                            <div>📅 実行日時: ${createdAt}</div>
+                            <div>⏱️ 終了時刻: ${endTime}</div>
+                            <div>🏁 終了理由: ${sim.endReason || 'N/A'}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <div style="padding: 20px;">
+                    <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="color: #333;">全${simulations.length}件のシミュレーション</h2>
+                        <button onclick="location.reload()" style="
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 14px;
+                        ">
+                            🔄 更新
+                        </button>
+                    </div>
+                    ${listHTML}
+                </div>
+            `;
+
+        } catch (error) {
+            console.error('[App] Failed to load simulation list:', error);
+            container.innerHTML = `
+                <div style="padding: 60px 40px; text-align: center; color: #d32f2f;">
+                    <h2 style="margin-bottom: 20px;">❌ エラーが発生しました</h2>
+                    <p style="color: #666;">${error.message}</p>
+                    <p style="font-size: 14px; margin-top: 20px; color: #999;">
+                        APIサーバーが起動しているか確認してください。<br>
+                        <code style="background: #f5f5f5; padding: 4px 8px; border-radius: 4px;">docker-compose ps</code>
+                    </p>
+                </div>
+            `;
+        }
+    }
 }
 
+// Global error handlers
+window.addEventListener('error', (event) => {
+    console.error('[App] Global error:', event.error);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('[App] Unhandled promise rejection:', event.reason);
+});
+
 // Start app
+console.log('[App] Starting application...');
 new App();
+console.log('[App] Application constructor completed');
