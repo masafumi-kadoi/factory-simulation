@@ -205,28 +205,40 @@ export class Visualizer3D {
     _createStation(station, position) {
         const color = STATION_COLORS[station.type] || 0x6c757d;
 
-        // Create station mesh (cylinder)
-        const geometry = new THREE.CylinderGeometry(25, 25, 50, 32);
-        const material = new THREE.MeshStandardMaterial({
+        // Create station mesh (box with wireframe + transparent cube)
+        const geometry = new THREE.BoxGeometry(50, 50, 50);
+
+        // Transparent filled cube
+        const fillMaterial = new THREE.MeshStandardMaterial({
             color: color,
+            transparent: true,
+            opacity: 0.3,
             emissive: color,
-            emissiveIntensity: 0.3,
-            roughness: 0.5,
-            metalness: 0.5
+            emissiveIntensity: 0.2
         });
+        const fillMesh = new THREE.Mesh(geometry, fillMaterial);
 
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(position.x, 25, position.z);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.userData = { stationId: station.id, type: station.type };
+        // Wireframe
+        const wireframeGeometry = new THREE.EdgesGeometry(geometry);
+        const wireframeMaterial = new THREE.LineBasicMaterial({
+            color: color,
+            linewidth: 2
+        });
+        const wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
 
-        this.scene.add(mesh);
+        // Group both together
+        const group = new THREE.Group();
+        group.add(fillMesh);
+        group.add(wireframeMesh);
+        group.position.set(position.x, 25, position.z);
+        group.userData = { stationId: station.id, type: station.type };
+
+        this.scene.add(group);
 
         // Add label
         this._createLabel(station.id, position.x, 65, position.z);
 
-        return mesh;
+        return group;
     }
 
     _createLabel(text, x, y, z) {
@@ -235,7 +247,8 @@ export class Visualizer3D {
         canvas.width = 512;
         canvas.height = 128;
 
-        context.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        // Background with 50% transparency
+        context.fillStyle = 'rgba(255, 255, 255, 0.5)';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.font = 'Bold 48px Arial';
         context.fillStyle = '#000';
@@ -244,7 +257,7 @@ export class Visualizer3D {
         context.fillText(text, canvas.width / 2, canvas.height / 2);
 
         const texture = new THREE.CanvasTexture(canvas);
-        const material = new THREE.SpriteMaterial({ map: texture });
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
         const sprite = new THREE.Sprite(material);
         sprite.position.set(x, y, z);
         sprite.scale.set(100, 25, 1);
@@ -292,24 +305,39 @@ export class Visualizer3D {
             if (!station) return;
 
             if (!this.works.has(workId)) {
-                // Create new work
+                // Create new work (sphere with wireframe, opaque)
                 const geometry = new THREE.SphereGeometry(12, 32, 32);
-                const material = new THREE.MeshStandardMaterial({
+
+                // Opaque filled sphere
+                const fillMaterial = new THREE.MeshStandardMaterial({
                     color: 0xff4444,
+                    transparent: false,
+                    opacity: 1.0,
                     emissive: 0xff0000,
-                    emissiveIntensity: 0.5,
+                    emissiveIntensity: 0.3,
                     roughness: 0.3,
                     metalness: 0.7
                 });
+                const fillMesh = new THREE.Mesh(geometry, fillMaterial);
 
-                const mesh = new THREE.Mesh(geometry, material);
-                mesh.position.set(station.position.x, 40, station.position.z);
-                mesh.castShadow = true;
-                mesh.userData = { workId: workId };
+                // Wireframe
+                const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+                const wireframeMaterial = new THREE.LineBasicMaterial({
+                    color: 0xff8888,
+                    linewidth: 1
+                });
+                const wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
 
-                this.scene.add(mesh);
+                // Group both together
+                const group = new THREE.Group();
+                group.add(fillMesh);
+                group.add(wireframeMesh);
+                group.position.set(station.position.x, 40, station.position.z);
+                group.userData = { workId: workId };
+
+                this.scene.add(group);
                 this.works.set(workId, {
-                    mesh: mesh,
+                    mesh: group,
                     currentStation: stationId,
                     targetStation: null,
                     progress: 1.0
