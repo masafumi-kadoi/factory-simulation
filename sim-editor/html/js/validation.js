@@ -56,10 +56,6 @@ export function validateScenario(scenario) {
         }
     }
 
-    // Check for interlock warnings (Phase 2 enhancement)
-    const interlockWarnings = checkInterlockWarnings(scenario);
-    errors.push(...interlockWarnings);
-
     return errors;
 }
 
@@ -131,32 +127,4 @@ function hasCycleAdvanced(nodeId, graph, visited, recStack) {
 
     recStack.delete(nodeId);
     return false;
-}
-
-function checkInterlockWarnings(scenario) {
-    const warnings = [];
-
-    scenario.stations.forEach(station => {
-        if (station.type === 'processing') {
-            const config = station.config;
-            const processingTime = config.processingTime || 0;
-            const arrivalTime = config.arrivalTime || 0;
-            const departureTime = config.departureTime || 0;
-
-            // Check if departureTime is sufficient
-            // departureTime should ideally be >= processingTime to avoid interlock
-            if (departureTime < processingTime) {
-                warnings.push(
-                    `⚠️ ${station.id}: departureTime (${departureTime}s) < processingTime (${processingTime}s). インターロックの可能性があります。推奨値: ${processingTime}s以上`
-                );
-            }
-
-            // Check if times are reasonable
-            if (arrivalTime <= 0 || departureTime <= 0) {
-                warnings.push(`⚠️ ${station.id}: arrivalTimeとdepartureTimeは0より大きくする必要があります`);
-            }
-        }
-    });
-
-    return warnings;
 }
