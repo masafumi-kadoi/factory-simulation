@@ -1,0 +1,52 @@
+{
+  "name": "スムーズアニメーションテスト",
+  "description": "arrivalTime=1.0, departureTime=1.0 でワークの移動をスムーズに表示",
+  "scenario": {
+    "name": "Test08_SmoothAnimation",
+    "stations": [
+      {
+        "id": "source-1",
+        "type": "source",
+        "config": {
+          "workCount": 5,
+          "departureTime": 6.0
+        }
+      },
+      {
+        "id": "processing-1",
+        "type": "processing",
+        "config": {
+          "processingTime": 3.0,
+          "arrivalTime": 1.0,
+          "departureTime": 1.0
+        }
+      },
+      {
+        "id": "processing-2",
+        "type": "processing",
+        "config": {
+          "processingTime": 2.0,
+          "arrivalTime": 1.0,
+          "departureTime": 1.0
+        }
+      },
+      {
+        "id": "drain-1",
+        "type": "drain",
+        "config": {
+          "arrivalTime": 1.0
+        }
+      }
+    ],
+    "connections": [
+      {"from": "source-1", "to": "processing-1"},
+      {"from": "processing-1", "to": "processing-2"},
+      {"from": "processing-2", "to": "drain-1"}
+    ]
+  },
+  "expectedResults": {
+    "totalWorks": 5,
+    "processingEvents": 10,
+    "notes": "arrivalTime=1.0, departureTime=1.0で全ステーション統一。スムーズな移動アニメーションの確認用"
+  }
+}
