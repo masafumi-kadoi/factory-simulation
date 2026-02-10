@@ -157,9 +157,8 @@ func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error 
 	// Log work event
 	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated))
 
-	// Schedule WorkDeparted event
-	departureTime := station.GetFloatConfig("departureTime")
-	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime+departureTime, station.ID, &workID))
+	// Schedule WorkDeparted event immediately
+	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, &workID))
 
 	return nil
 }
@@ -193,10 +192,10 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return nil
 	}
 
-	// For Processing station, schedule processing start
+	// For Processing station, schedule processing start after arrival time
 	if station.CanStartProcessing() {
-		processingTime := station.GetFloatConfig("processingTime")
-		e.eventQueue.Push(NewEvent(EventProcessingStarted, e.currentTime+processingTime, station.ID, nil))
+		arrivalTime := station.GetFloatConfig("arrivalTime")
+		e.eventQueue.Push(NewEvent(EventProcessingStarted, e.currentTime+arrivalTime, station.ID, nil))
 	}
 
 	return nil
@@ -239,9 +238,8 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 
 	e.logStationStatus(station, "処理完了")
 
-	// Schedule WorkDeparted event
-	departureTime := station.GetFloatConfig("departureTime")
-	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime+departureTime, station.ID, nil))
+	// Schedule WorkDeparted event immediately
+	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
 
 	return nil
 }
@@ -274,18 +272,17 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return nil
 	}
 
-	// Check interlock: Next station must have InputReady ON
-	if !nextStation.IsInputReady() {
-		// This should not happen with proper timing, but let's error out to detect issues
-		return fmt.Errorf("interlock violation: next station %s InputReady=OFF (state=%s), cannot send work", nextStation.ID, nextStation.State)
-	}
+	// Note: Interlock check for InputReady is done at WorkArrived event, not here.
+	// WorkDeparted represents the start of departure, and the work will arrive after departureTime + arrivalTime.
 
 	// Put work in transit
 	e.worksInTransit[work.ID] = work
 
-	// Schedule WorkArrived event at next station
+	// Schedule WorkArrived event at next station (departureTime + arrivalTime)
+	departureTime := station.GetFloatConfig("departureTime")
 	arrivalTime := nextStation.GetFloatConfig("arrivalTime")
-	e.eventQueue.Push(NewEvent(EventWorkArrived, e.currentTime+arrivalTime, nextStation.ID, &work.ID))
+	transitTime := departureTime + arrivalTime
+	e.eventQueue.Push(NewEvent(EventWorkArrived, e.currentTime+transitTime, nextStation.ID, &work.ID))
 
 	// For Source stations: Schedule next work creation (interlock: one at a time)
 	if station.Type == domain.StationTypeSource {
