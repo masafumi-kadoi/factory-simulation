@@ -107,6 +107,12 @@ class App {
         document.getElementById('timeline-slider').addEventListener('input', (e) => {
             this.seek(parseFloat(e.target.value));
         });
+
+        document.getElementById('show-work-ids').addEventListener('change', (e) => {
+            if (this.visualizer) {
+                this.visualizer.setShowWorkIDs(e.target.checked);
+            }
+        });
     }
 
     play() {

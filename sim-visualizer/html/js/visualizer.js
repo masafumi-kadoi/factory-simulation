@@ -21,8 +21,9 @@ export class Visualizer3D {
         this.controls = null;
 
         this.stations = new Map(); // Map<stationId, {mesh, position}>
-        this.works = new Map(); // Map<workId, {mesh, fromStation, toStation, progress}>
+        this.works = new Map(); // Map<workId, {mesh, label}>
         this.connections = [];
+        this.showWorkIDs = true; // Default: show work IDs
 
         this._initScene();
         this._animate();
@@ -265,6 +266,45 @@ export class Visualizer3D {
         this.scene.add(sprite);
     }
 
+    _createWorkLabel(text, x, y, z) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 512;
+        canvas.height = 128;
+
+        // Background with 70% transparency (more prominent than station labels)
+        context.fillStyle = 'rgba(255, 200, 0, 0.7)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.font = 'Bold 40px Arial';
+        context.fillStyle = '#000';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+
+        // Truncate long IDs
+        const displayText = text.length > 20 ? text.substring(0, 17) + '...' : text;
+        context.fillText(displayText, canvas.width / 2, canvas.height / 2);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+        const sprite = new THREE.Sprite(material);
+        sprite.position.set(x, y, z);
+        sprite.scale.set(80, 20, 1);
+        sprite.visible = this.showWorkIDs; // Control visibility based on setting
+
+        this.scene.add(sprite);
+        return sprite;
+    }
+
+    setShowWorkIDs(show) {
+        this.showWorkIDs = show;
+        // Update visibility of all work labels
+        this.works.forEach(work => {
+            if (work.label) {
+                work.label.visible = show;
+            }
+        });
+    }
+
     _createConnection(from, to, condition) {
         let color = 0x3a4f6f;
         if (condition === 'quality_ok') color = 0x28a745;
@@ -294,6 +334,9 @@ export class Visualizer3D {
         this.works.forEach((work, workId) => {
             if (!activeWorks.has(workId)) {
                 this.scene.remove(work.mesh);
+                if (work.label) {
+                    this.scene.remove(work.label);
+                }
                 toRemove.push(workId);
             }
         });
@@ -331,8 +374,11 @@ export class Visualizer3D {
                 group.add(wireframeMesh);
                 group.userData = { workId: workId };
 
+                // Create work label
+                const label = this._createWorkLabel(workId, 0, 60, 0);
+
                 this.scene.add(group);
-                this.works.set(workId, { mesh: group });
+                this.works.set(workId, { mesh: group, label: label });
             }
 
             const work = this.works.get(workId);
@@ -341,7 +387,15 @@ export class Visualizer3D {
                 // Work is at station
                 const station = this.stations.get(workInfo.stationId);
                 if (station) {
-                    work.mesh.position.set(station.position.x, 40, station.position.z);
+                    const x = station.position.x;
+                    const y = 40;
+                    const z = station.position.z;
+                    work.mesh.position.set(x, y, z);
+
+                    // Update label position
+                    if (work.label) {
+                        work.label.position.set(x, y + 20, z);
+                    }
                 }
             } else if (workInfo.state === 'moving') {
                 // Work is moving between stations
@@ -361,6 +415,11 @@ export class Visualizer3D {
                     const y = 40 + Math.sin(t * Math.PI) * 30; // Arc movement
 
                     work.mesh.position.set(x, y, z);
+
+                    // Update label position
+                    if (work.label) {
+                        work.label.position.set(x, y + 20, z);
+                    }
                 }
             }
         });
@@ -380,6 +439,9 @@ export class Visualizer3D {
         // Clear works
         this.works.forEach(work => {
             this.scene.remove(work.mesh);
+            if (work.label) {
+                this.scene.remove(work.label);
+            }
         });
         this.works.clear();
 
