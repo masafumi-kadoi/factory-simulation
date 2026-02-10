@@ -1,0 +1,42 @@
+{
+  "name": "ストレステスト - 大量ワーク (インターロック版)",
+  "description": "大量のワークを処理 (搬入可/搬出可の信号制御)",
+  "scenario": {
+    "name": "Test07_StressTest",
+    "stations": [
+      {
+        "id": "source-1",
+        "type": "source",
+        "config": {
+          "workCount": 20,
+          "departureTime": 2.0
+        }
+      },
+      {
+        "id": "processing-1",
+        "type": "processing",
+        "config": {
+          "processingTime": 0.5,
+          "arrivalTime": 0.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "drain-1",
+        "type": "drain",
+        "config": {
+          "arrivalTime": 0.5
+        }
+      }
+    ],
+    "connections": [
+      {"from": "source-1", "to": "processing-1"},
+      {"from": "processing-1", "to": "drain-1"}
+    ]
+  },
+  "expectedResults": {
+    "totalWorksCreated": 20,
+    "totalWorksDestroyed": 20,
+    "notes": "departureTime=2.0でインターロック違反を防ぐ(処理サイクル時間=1.5秒)"
+  }
+}

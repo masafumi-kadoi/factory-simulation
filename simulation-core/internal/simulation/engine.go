@@ -39,29 +39,31 @@ type WorkLineageLog struct {
 
 // Engine is the simulation engine
 type Engine struct {
-	scenario        *domain.Scenario
-	eventQueue      *PriorityQueue
-	currentTime     float64
-	workCounter     int
-	statusLogs      []StationStatusLog
-	workEventLogs   []WorkEventLog
-	workLineageLogs []WorkLineageLog
-	random          *rand.Rand
-	worksInTransit  map[string]*domain.Work // Works in transit between stations
+	scenario           *domain.Scenario
+	eventQueue         *PriorityQueue
+	currentTime        float64
+	workCounter        int
+	statusLogs         []StationStatusLog
+	workEventLogs      []WorkEventLog
+	workLineageLogs    []WorkLineageLog
+	random             *rand.Rand
+	worksInTransit     map[string]*domain.Work // Works in transit between stations
+	sourceWorkCounters map[string]int          // Counter for each source station (stationID -> count created)
 }
 
 // NewEngine creates a new simulation engine
 func NewEngine(scenario *domain.Scenario) *Engine {
 	return &Engine{
-		scenario:        scenario,
-		eventQueue:      NewPriorityQueue(),
-		currentTime:     0.0,
-		workCounter:     0,
-		statusLogs:      make([]StationStatusLog, 0),
-		workEventLogs:   make([]WorkEventLog, 0),
-		workLineageLogs: make([]WorkLineageLog, 0),
-		random:          rand.New(rand.NewSource(time.Now().UnixNano())),
-		worksInTransit:  make(map[string]*domain.Work),
+		scenario:           scenario,
+		eventQueue:         NewPriorityQueue(),
+		currentTime:        0.0,
+		workCounter:        0,
+		statusLogs:         make([]StationStatusLog, 0),
+		workEventLogs:      make([]WorkEventLog, 0),
+		workLineageLogs:    make([]WorkLineageLog, 0),
+		random:             rand.New(rand.NewSource(time.Now().UnixNano())),
+		worksInTransit:     make(map[string]*domain.Work),
+		sourceWorkCounters: make(map[string]int),
 	}
 }
 
@@ -69,17 +71,14 @@ func NewEngine(scenario *domain.Scenario) *Engine {
 func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, []WorkLineageLog, error) {
 	simulation := domain.NewSimulation(simulationID, friendlyName, e.scenario.ID)
 
-	// Initialize: Generate WorkCreated events from source stations
+	// Initialize: Schedule FIRST WorkCreated event for each source station
+	// Subsequent works will be created after each work departs (one at a time)
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
 		if station.Type == domain.StationTypeSource {
-			workCount := station.GetIntConfig("workCount")
-			departureTime := station.GetFloatConfig("departureTime")
-			for j := 0; j < workCount; j++ {
-				// Create works sequentially to avoid simultaneous arrivals at next station
-				createTime := float64(j) * departureTime
-				e.eventQueue.Push(NewEvent(EventWorkCreated, createTime, station.ID, nil))
-			}
+			e.sourceWorkCounters[station.ID] = 0
+			// Schedule first work creation at time 0
+			e.eventQueue.Push(NewEvent(EventWorkCreated, 0.0, station.ID, nil))
 		}
 	}
 
@@ -137,12 +136,22 @@ func (e *Engine) processEvent(event *Event, simulation *domain.Simulation) error
 
 // handleWorkCreated handles the WorkCreated event
 func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error {
+	// Check if we should create more works for this source
+	workCount := station.GetIntConfig("workCount")
+	if e.sourceWorkCounters[station.ID] >= workCount {
+		// Already created all works for this source
+		return nil
+	}
+
+	// Increment counter
+	e.sourceWorkCounters[station.ID]++
+
 	// Generate new work ID and friendly name
 	workID, friendlyName := e.generateWorkID()
 	work := domain.NewWork(workID, friendlyName)
 
-	// Add to station (Source stations keep works internally)
-	station.Works = append(station.Works, work)
+	// Add to station (Source stations keep work internally)
+	station.CurrentWork = work
 	station.State = domain.StateCompleted
 
 	// Log work event
@@ -164,6 +173,11 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	}
 	delete(e.worksInTransit, *event.WorkID)
 
+	// Check interlock: InputReady must be ON
+	if !station.IsInputReady() {
+		return fmt.Errorf("interlock violation: station %s InputReady=OFF (state=%s), cannot accept work", station.ID, station.State)
+	}
+
 	// Delegate to station logic
 	if err := station.AddWork(work); err != nil {
 		return err
@@ -179,15 +193,7 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return nil
 	}
 
-	// For Discharge station, route immediately without processing
-	if station.Type == domain.StationTypeDischarge {
-		station.State = domain.StateCompleted
-		departureTime := station.GetFloatConfig("departureTime")
-		e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime+departureTime, station.ID, nil))
-		return nil
-	}
-
-	// Check if processing can start
+	// For Processing station, schedule processing start
 	if station.CanStartProcessing() {
 		processingTime := station.GetFloatConfig("processingTime")
 		e.eventQueue.Push(NewEvent(EventProcessingStarted, e.currentTime+processingTime, station.ID, nil))
@@ -205,12 +211,9 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 
 	// Log work event
 	var workID, workFriendlyName string
-	if station.Type == domain.StationTypeMerge {
-		workID = "" // Multiple works, no single ID
-		workFriendlyName = ""
-	} else if len(station.Works) > 0 {
-		workID = station.Works[0].ID
-		workFriendlyName = station.Works[0].FriendlyName
+	if station.CurrentWork != nil {
+		workID = station.CurrentWork.ID
+		workFriendlyName = station.CurrentWork.FriendlyName
 	}
 	e.logWorkEvent(workID, workFriendlyName, station.ID, e.currentTime, string(EventProcessingStarted))
 	e.logStationStatus(station, "処理開始")
@@ -224,53 +227,14 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 
 // handleProcessingCompleted handles the ProcessingCompleted event
 func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station) error {
-	// Collect parent works for traceability
-	parentWorks := make([]*domain.Work, len(station.Works))
-	copy(parentWorks, station.Works)
-
 	// Delegate to station logic
 	if err := station.CompleteProcessing(e.generateWorkID); err != nil {
 		return err
 	}
 
-	// Handle Inspection station: update quality status with random
-	if station.Type == domain.StationTypeInspection && len(station.Works) > 0 {
-		work := station.Works[0]
-		okProbability := station.GetFloatConfig("okProbability")
-		if e.random.Float64() < okProbability {
-			work.QualityStatus = domain.QualityOK
-		} else {
-			work.QualityStatus = domain.QualityNG
-		}
-	}
-
-	// Record traceability logs and work events
-	switch station.Type {
-	case domain.StationTypeMerge:
-		// Merge: multiple parent works -> one child work
-		childWork := station.Works[0]
-		e.recordWorkLineage(childWork.ID, childWork.FriendlyName, parentWorks, "merge", station.ID)
-		e.logWorkEvent(childWork.ID, childWork.FriendlyName, station.ID, e.currentTime, string(EventWorkMerged))
-
-	case domain.StationTypeSplit:
-		// Split: one parent work -> multiple child works
-		for _, childWork := range station.Works {
-			e.recordWorkLineage(childWork.ID, childWork.FriendlyName, parentWorks, "split", station.ID)
-		}
-		// Log event with empty work ID for split (affects multiple works)
-		e.logWorkEvent("", "", station.ID, e.currentTime, string(EventWorkSplit))
-
-	case domain.StationTypeInspection:
-		// Inspection: quality status updated
-		work := station.Works[0]
-		e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkInspected))
-
-	default:
-		// Processing: normal completion
-		if len(station.Works) > 0 {
-			work := station.Works[0]
-			e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted))
-		}
+	// Log work event (Processing: normal completion)
+	if station.CurrentWork != nil {
+		e.logWorkEvent(station.CurrentWork.ID, station.CurrentWork.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted))
 	}
 
 	e.logStationStatus(station, "処理完了")
@@ -284,8 +248,10 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 
 // handleWorkDeparted handles the WorkDeparted event
 func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error {
-	// Save OutputIndex before getting work (for Split station routing)
-	outputIndex := station.OutputIndex
+	// Check interlock: OutputReady must be ON (except for Source stations)
+	if station.Type != domain.StationTypeSource && !station.IsOutputReady() {
+		return fmt.Errorf("interlock violation: station %s OutputReady=OFF (state=%s), cannot depart work", station.ID, station.State)
+	}
 
 	// Delegate to station logic
 	work, err := station.GetOutputWork()
@@ -297,8 +263,8 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted))
 	e.logStationStatus(station, "ワーク出発")
 
-	// Get next station with conditional routing
-	nextStation, err := e.getNextStation(station, work, outputIndex)
+	// Get next station
+	nextStation, err := e.getNextStation(station, work)
 	if err != nil {
 		return err
 	}
@@ -308,9 +274,10 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return nil
 	}
 
-	// Log routing for Discharge station
-	if station.Type == domain.StationTypeDischarge {
-		e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkRouted))
+	// Check interlock: Next station must have InputReady ON
+	if !nextStation.IsInputReady() {
+		// This should not happen with proper timing, but let's error out to detect issues
+		return fmt.Errorf("interlock violation: next station %s InputReady=OFF (state=%s), cannot send work", nextStation.ID, nextStation.State)
 	}
 
 	// Put work in transit
@@ -320,10 +287,14 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	arrivalTime := nextStation.GetFloatConfig("arrivalTime")
 	e.eventQueue.Push(NewEvent(EventWorkArrived, e.currentTime+arrivalTime, nextStation.ID, &work.ID))
 
-	// For Split stations, check if there are more outputs
-	if station.HasMoreOutputs() {
-		departureTime := station.GetFloatConfig("departureTime")
-		e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime+departureTime, station.ID, nil))
+	// For Source stations: Schedule next work creation (interlock: one at a time)
+	if station.Type == domain.StationTypeSource {
+		workCount := station.GetIntConfig("workCount")
+		if e.sourceWorkCounters[station.ID] < workCount {
+			// Create next work after configured departure time (interlock delay)
+			departureTime := station.GetFloatConfig("departureTime")
+			e.eventQueue.Push(NewEvent(EventWorkCreated, e.currentTime+departureTime, station.ID, nil))
+		}
 	}
 
 	return nil
@@ -340,7 +311,7 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDestroyed))
 
 	// Clear station
-	station.Works = nil
+	station.CurrentWork = nil
 	station.State = domain.StateIdle
 
 	e.logStationStatus(station, "ワーク破棄")
@@ -349,45 +320,21 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 }
 
 // getNextStation determines the next station based on routing conditions
-func (e *Engine) getNextStation(fromStation *domain.Station, work *domain.Work, outputIndex int) (*domain.Station, error) {
-	// Collect all matching connections
-	var matchingConns []domain.Connection
+func (e *Engine) getNextStation(fromStation *domain.Station, work *domain.Work) (*domain.Station, error) {
+	// Find the first matching connection
 	for _, conn := range e.scenario.Connections {
 		if conn.From != fromStation.ID {
 			continue
 		}
 
-		// Check routing condition
-		switch conn.Condition {
-		case domain.RoutingDefault:
-			matchingConns = append(matchingConns, conn)
-
-		case domain.RoutingQualityOK:
-			if work.QualityStatus == domain.QualityOK {
-				matchingConns = append(matchingConns, conn)
-			}
-
-		case domain.RoutingQualityNG:
-			if work.QualityStatus == domain.QualityNG {
-				matchingConns = append(matchingConns, conn)
-			}
+		// For now, only support default routing (no conditional routing in simplified version)
+		if conn.Condition == domain.RoutingDefault || conn.Condition == "" {
+			return e.scenario.GetStation(conn.To), nil
 		}
 	}
 
-	if len(matchingConns) == 0 {
-		// No matching route (terminal node)
-		return nil, nil
-	}
-
-	// For Split stations with multiple connections, use round-robin based on OutputIndex
-	if fromStation.Type == domain.StationTypeSplit && len(matchingConns) > 1 {
-		// Use saved OutputIndex for round-robin
-		idx := outputIndex % len(matchingConns)
-		return e.scenario.GetStation(matchingConns[idx].To), nil
-	}
-
-	// For other stations, return the first matching connection
-	return e.scenario.GetStation(matchingConns[0].To), nil
+	// No matching route (terminal node)
+	return nil, nil
 }
 
 // recordWorkLineage records work lineage for traceability
@@ -417,10 +364,8 @@ func (e *Engine) generateWorkID() (string, string) {
 func (e *Engine) findWorkByID(workID string) *domain.Work {
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
-		for _, work := range station.Works {
-			if work.ID == workID {
-				return work
-			}
+		if station.CurrentWork != nil && station.CurrentWork.ID == workID {
+			return station.CurrentWork
 		}
 	}
 	return nil

@@ -6,25 +6,19 @@ import "fmt"
 type StationType string
 
 const (
-	StationTypeSource     StationType = "source"
-	StationTypeProcessing StationType = "processing"
-	StationTypeDrain      StationType = "drain"
-	StationTypeMerge      StationType = "merge"
-	StationTypeSplit      StationType = "split"
-	StationTypeInspection StationType = "inspection"
-	StationTypeDischarge  StationType = "discharge"
+	StationTypeSource     StationType = "source"     // Simplified: Source only generates works
+	StationTypeProcessing StationType = "processing" // Base class: handles one work at a time
+	StationTypeDrain      StationType = "drain"      // Simplified: Drain only destroys works
 )
 
 // StationState represents the state of a station in the state machine
 type StationState string
 
 const (
-	StateIdle       StationState = "idle"       // Waiting (no work)
-	StateReceiving  StationState = "receiving"  // Receiving work
-	StateWaiting    StationState = "waiting"    // Waiting for more works (Merge only)
-	StateProcessing StationState = "processing" // Processing
-	StateOutputting StationState = "outputting" // Outputting works (Split only)
-	StateCompleted  StationState = "completed"  // Processing completed (waiting for departure)
+	StateIdle       StationState = "idle"       // Waiting (no work) - 搬入可=ON, 搬出可=OFF
+	StateReceiving  StationState = "receiving"  // Work arriving (transition) - 搬入可=OFF, 搬出可=OFF
+	StateProcessing StationState = "processing" // Processing work - 搬入可=OFF, 搬出可=OFF
+	StateCompleted  StationState = "completed"  // Processing completed (ready to depart) - 搬入可=OFF, 搬出可=ON
 )
 
 // StateTransition represents a state transition rule (for future JSON-based configuration)
@@ -35,21 +29,21 @@ type StateTransition struct {
 	Conditions []string     `json:"conditions,omitempty"` // Future: condition expressions
 }
 
-// Station represents a station in the factory simulation
+// Station represents a station in the factory simulation (Processing base class)
 type Station struct {
 	ID       string
 	Type     StationType
 	ParentID *string
 
-	// Unified work management
-	Works       []*Work // All station types: holds 0, 1, or multiple works
-	OutputIndex int     // For Split/Discharge: next work index to output
+	// Work management: Only ONE work at a time (interlock mechanism)
+	CurrentWork *Work // The work currently at this station (nil if idle)
 
 	// State machine
 	State StationState
 
-	// Future: JSON-based state transition definitions (unused for now)
-	StateTransitions []StateTransition `json:"stateTransitions,omitempty"`
+	// Interlock signals (derived from state)
+	// 搬入可 (InputReady): true when station can accept a new work
+	// 搬出可 (OutputReady): true when station has completed work and ready to send
 
 	// Timestamps (for logging)
 	StateChangedAt         *float64 // State change timestamp
@@ -65,12 +59,12 @@ type Station struct {
 // NewStation creates a new station
 func NewStation(id string, stationType StationType, config map[string]interface{}) *Station {
 	return &Station{
-		ID:       id,
-		Type:     stationType,
-		ParentID: nil,
-		Works:    []*Work{},
-		State:    StateIdle,
-		Config:   config,
+		ID:          id,
+		Type:        stationType,
+		ParentID:    nil,
+		CurrentWork: nil, // No work initially
+		State:       StateIdle,
+		Config:      config,
 	}
 }
 
@@ -94,151 +88,94 @@ func (s *Station) GetIntConfig(key string) int {
 	return 0
 }
 
-// CanAcceptWork checks if the station can accept a new work
-func (s *Station) CanAcceptWork() bool {
-	switch s.Type {
-	case StationTypeSource:
-		return false // Source does not accept external works
-	case StationTypeMerge:
-		// Merge can accept multiple works
-		return s.State == StateIdle || s.State == StateWaiting
-	default:
-		// Other stations accept only one work
-		return s.State == StateIdle
-	}
+// IsInputReady returns true if station can accept a new work (搬入可 signal)
+func (s *Station) IsInputReady() bool {
+	// Input ready only when station is idle (no work present)
+	return s.State == StateIdle && s.CurrentWork == nil
 }
 
-// AddWork adds a work to the station
+// IsOutputReady returns true if station has completed work and ready to send (搬出可 signal)
+func (s *Station) IsOutputReady() bool {
+	// Output ready only when station has completed processing
+	return s.State == StateCompleted && s.CurrentWork != nil
+}
+
+// CanAcceptWork checks if the station can accept a new work
+// This is the interlock mechanism: only accept when InputReady is ON
+func (s *Station) CanAcceptWork() bool {
+	if s.Type == StationTypeSource {
+		return false // Source does not accept external works
+	}
+	return s.IsInputReady()
+}
+
+// AddWork adds a work to the station (interlock-controlled)
 func (s *Station) AddWork(work *Work) error {
 	if !s.CanAcceptWork() {
-		return fmt.Errorf("station %s cannot accept work in state %s", s.ID, s.State)
+		return fmt.Errorf("station %s cannot accept work (InputReady=OFF, state=%s)", s.ID, s.State)
 	}
 
-	s.Works = append(s.Works, work)
-
-	// State transition based on station type
-	switch s.Type {
-	case StationTypeMerge:
-		requiredCount := s.GetIntConfig("requiredWorkCount")
-		if len(s.Works) < requiredCount {
-			s.State = StateWaiting // Still waiting for more works
-		} else {
-			s.State = StateReceiving // Required number reached
-		}
-	default:
-		s.State = StateReceiving
-	}
+	// Accept the work (turn OFF InputReady signal)
+	s.CurrentWork = work
+	s.State = StateReceiving
 
 	return nil
 }
 
 // CanStartProcessing checks if the station can start processing
 func (s *Station) CanStartProcessing() bool {
-	switch s.Type {
-	case StationTypeSource:
-		return false // Source has no processing
-	case StationTypeDrain:
-		return false // Drain has no processing
-	case StationTypeDischarge:
-		return false // Discharge has no processing (routing only)
-	case StationTypeMerge:
-		// Merge requires all works to be ready
-		requiredCount := s.GetIntConfig("requiredWorkCount")
-		return len(s.Works) >= requiredCount && s.State == StateReceiving
-	default:
-		// Other stations require one work
-		return len(s.Works) == 1 && s.State == StateReceiving
+	if s.Type == StationTypeSource || s.Type == StationTypeDrain {
+		return false // Source and Drain have no processing
 	}
+	// Processing station can start when work has arrived
+	return s.CurrentWork != nil && s.State == StateReceiving
 }
 
-// StartProcessing starts processing
+// StartProcessing starts processing (transition to Processing state)
 func (s *Station) StartProcessing() error {
 	if !s.CanStartProcessing() {
-		return fmt.Errorf("station %s cannot start processing", s.ID)
+		return fmt.Errorf("station %s cannot start processing (no work or wrong state)", s.ID)
 	}
 
 	s.State = StateProcessing
 	return nil
 }
 
-// CompleteProcessing completes processing and generates output works
+// CompleteProcessing completes processing (transition to Completed state)
+// For base Processing station: work passes through as-is
 func (s *Station) CompleteProcessing(newWorkIDFunc func() (string, string)) error {
 	if s.State != StateProcessing {
-		return fmt.Errorf("station %s is not processing", s.ID)
+		return fmt.Errorf("station %s is not processing (state=%s)", s.ID, s.State)
 	}
 
-	switch s.Type {
-	case StationTypeMerge:
-		// Merge multiple works into one
-		workID, friendlyName := newWorkIDFunc()
-		newWork := NewWork(workID, friendlyName)
-		// Inherit quality status from first work (or could be logic-based)
-		if len(s.Works) > 0 {
-			newWork.QualityStatus = s.Works[0].QualityStatus
-		}
-		s.Works = []*Work{newWork} // Replace with output work
-		s.State = StateCompleted
-
-	case StationTypeSplit:
-		// Split one work into multiple
-		outputCount := s.GetIntConfig("outputWorkCount")
-		inputWork := s.Works[0] // Original work
-		s.Works = make([]*Work, outputCount)
-		for i := 0; i < outputCount; i++ {
-			workID, friendlyName := newWorkIDFunc()
-			s.Works[i] = NewWork(workID, friendlyName)
-			s.Works[i].QualityStatus = inputWork.QualityStatus // Inherit quality status
-		}
-		s.OutputIndex = 0
-		s.State = StateOutputting
-
-	case StationTypeInspection:
-		// Inspect quality (Work remains, QualityStatus is updated in engine.go with random)
-		// Note: Quality status update is done in engine.go to access random generator
-		s.State = StateCompleted
-
-	default:
-		// Processing Station: output as-is
-		s.State = StateCompleted
+	if s.CurrentWork == nil {
+		return fmt.Errorf("station %s has no work to complete", s.ID)
 	}
+
+	// Processing Station: work passes through as-is
+	// Turn ON OutputReady signal
+	s.State = StateCompleted
 
 	return nil
 }
 
-// GetOutputWork retrieves an output work and updates state
+// GetOutputWork retrieves the output work and resets station to idle
+// This is called when OutputReady signal is ON (or for Source stations)
 func (s *Station) GetOutputWork() (*Work, error) {
-	if s.State == StateCompleted {
-		// Single work output (Processing, Merge, Inspection, Discharge)
-		if len(s.Works) == 0 {
-			return nil, fmt.Errorf("no work to output from station %s", s.ID)
-		}
-		work := s.Works[0]
-		s.Works = s.Works[1:] // Remove output work
-		if len(s.Works) == 0 {
-			s.State = StateIdle
-		}
-		return work, nil
-
-	} else if s.State == StateOutputting {
-		// Sequential output (Split)
-		if s.OutputIndex >= len(s.Works) {
-			return nil, fmt.Errorf("no more works to output from station %s", s.ID)
-		}
-		work := s.Works[s.OutputIndex]
-		s.OutputIndex++
-		if s.OutputIndex >= len(s.Works) {
-			// All outputs completed
-			s.Works = nil
-			s.OutputIndex = 0
-			s.State = StateIdle
-		}
-		return work, nil
+	// Source stations have special behavior
+	if s.Type != StationTypeSource && !s.IsOutputReady() {
+		return nil, fmt.Errorf("station %s is not ready to output (OutputReady=OFF, state=%s)", s.ID, s.State)
 	}
 
-	return nil, fmt.Errorf("station %s is not ready to output (state: %s)", s.ID, s.State)
-}
+	// Check if there's a work to output
+	if s.CurrentWork == nil {
+		return nil, fmt.Errorf("station %s has no work to output", s.ID)
+	}
 
-// HasMoreOutputs checks if there are more outputs to send (for Split stations)
-func (s *Station) HasMoreOutputs() bool {
-	return s.State == StateOutputting && s.OutputIndex < len(s.Works)
+	// Get the work and clear station (turn ON InputReady signal)
+	work := s.CurrentWork
+	s.CurrentWork = nil
+	s.State = StateIdle
+
+	return work, nil
 }

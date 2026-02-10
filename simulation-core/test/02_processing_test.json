@@ -1,0 +1,42 @@
+{
+  "name": "Processing Station テスト (インターロック版)",
+  "description": "Source → Processing → Drain (搬入可/搬出可の信号制御)",
+  "scenario": {
+    "name": "Test02_SourceProcessingDrain",
+    "stations": [
+      {
+        "id": "source-1",
+        "type": "source",
+        "config": {
+          "workCount": 3,
+          "departureTime": 5.0
+        }
+      },
+      {
+        "id": "processing-1",
+        "type": "processing",
+        "config": {
+          "processingTime": 2.0,
+          "arrivalTime": 1.0,
+          "departureTime": 1.0
+        }
+      },
+      {
+        "id": "drain-1",
+        "type": "drain",
+        "config": {
+          "arrivalTime": 1.0
+        }
+      }
+    ],
+    "connections": [
+      {"from": "source-1", "to": "processing-1"},
+      {"from": "processing-1", "to": "drain-1"}
+    ]
+  },
+  "expectedResults": {
+    "totalWorks": 3,
+    "processingEvents": 3,
+    "notes": "departureTime=5.0でインターロック違反を防ぐ(処理サイクル時間=4.0秒以上必要)"
+  }
+}

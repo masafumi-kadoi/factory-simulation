@@ -1,0 +1,43 @@
+{
+  "name": "シンプルデモ",
+  "stations": [
+    {
+      "id": "source-1",
+      "type": "source",
+      "config": {
+        "workCount": 5,
+        "departureTime": 3.0
+      }
+    },
+    {
+      "id": "proc-1",
+      "type": "processing",
+      "config": {
+        "processingTime": 1.0,
+        "arrivalTime": 0.5,
+        "departureTime": 0.5
+      }
+    },
+    {
+      "id": "proc-2",
+      "type": "processing",
+      "config": {
+        "processingTime": 1.0,
+        "arrivalTime": 0.5,
+        "departureTime": 0.5
+      }
+    },
+    {
+      "id": "drain-1",
+      "type": "drain",
+      "config": {
+        "arrivalTime": 0.5
+      }
+    }
+  ],
+  "connections": [
+    {"from": "source-1", "to": "proc-1"},
+    {"from": "proc-1", "to": "proc-2"},
+    {"from": "proc-2", "to": "drain-1"}
+  ]
+}

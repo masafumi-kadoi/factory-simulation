@@ -1,0 +1,36 @@
+{
+  "name": "基本機能テスト - Source to Drain",
+  "description": "最もシンプルなパターン: Source → Drain",
+  "scenario": {
+    "name": "Test01_SourceToDrain",
+    "stations": [
+      {
+        "id": "source-1",
+        "type": "source",
+        "config": {
+          "workCount": 3,
+          "departureTime": 1.0
+        }
+      },
+      {
+        "id": "drain-1",
+        "type": "drain",
+        "config": {
+          "arrivalTime": 1.0
+        }
+      }
+    ],
+    "connections": [
+      {"from": "source-1", "to": "drain-1"}
+    ]
+  },
+  "expectedResults": {
+    "totalWorks": 3,
+    "workCreated": 3,
+    "workDestroyed": 3,
+    "finalStations": {
+      "source-1": "idle",
+      "drain-1": "idle"
+    }
+  }
+}
