@@ -20,9 +20,24 @@ class App {
         const params = new URLSearchParams(window.location.search);
         const simId = params.get('sim');
 
+        console.log('[App] URL:', window.location.href);
+        console.log('[App] Query params:', window.location.search);
+        console.log('[App] Simulation ID:', simId);
+
         if (!simId) {
-            alert('シミュレーションIDが指定されていません');
-            window.location.href = '/';
+            // Show error message in the container instead of alert
+            const container = document.getElementById('container-3d');
+            container.innerHTML = `
+                <div style="padding: 40px; text-align: center; color: #333;">
+                    <h2>⚠️ シミュレーションIDが指定されていません</h2>
+                    <p style="margin-top: 20px; color: #666;">
+                        URLに <code>?sim=シミュレーションID</code> を指定してください。
+                    </p>
+                    <p style="margin-top: 20px; font-size: 14px; color: #999;">
+                        例: http://localhost:8081?sim=1263a957-cb9b-47c2-aed1-d8d67a97db41
+                    </p>
+                </div>
+            `;
             return;
         }
 
@@ -60,7 +75,18 @@ class App {
 
         } catch (error) {
             console.error('[App] Failed to load:', error);
-            alert('データの読み込みに失敗しました: ' + error.message);
+            const container = document.getElementById('container-3d');
+            container.innerHTML = `
+                <div style="padding: 40px; text-align: center; color: #d32f2f;">
+                    <h2>❌ データの読み込みに失敗しました</h2>
+                    <p style="margin-top: 20px; color: #666;">
+                        ${error.message}
+                    </p>
+                    <p style="margin-top: 20px; font-size: 14px; color: #999;">
+                        シミュレーションID: ${simId}
+                    </p>
+                </div>
+            `;
         }
     }
 
