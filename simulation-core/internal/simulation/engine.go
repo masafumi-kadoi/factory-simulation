@@ -49,10 +49,17 @@ type Engine struct {
 	random             *rand.Rand
 	worksInTransit     map[string]*domain.Work // Works in transit between stations
 	sourceWorkCounters map[string]int          // Counter for each source station (stationID -> count created)
+	simDB              *SimDB                  // SimDB for managing predefined work IDs
 }
 
-// NewEngine creates a new simulation engine
+// NewEngine creates a new simulation engine without initial conditions
 func NewEngine(scenario *domain.Scenario) *Engine {
+	return NewEngineWithInitialConditions(scenario, nil)
+}
+
+// NewEngineWithInitialConditions creates a new simulation engine with initial conditions
+// workIDsByStation: map of stationID -> list of predefined work IDs
+func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation map[string][]string) *Engine {
 	return &Engine{
 		scenario:           scenario,
 		eventQueue:         NewPriorityQueue(),
@@ -64,6 +71,7 @@ func NewEngine(scenario *domain.Scenario) *Engine {
 		random:             rand.New(rand.NewSource(time.Now().UnixNano())),
 		worksInTransit:     make(map[string]*domain.Work),
 		sourceWorkCounters: make(map[string]int),
+		simDB:              NewSimDB(workIDsByStation),
 	}
 }
 
@@ -146,8 +154,20 @@ func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error 
 	// Increment counter
 	e.sourceWorkCounters[station.ID]++
 
-	// Generate new work ID and friendly name
-	workID, friendlyName := e.generateWorkID()
+	// Try to get work ID from SimDB, otherwise generate UUID
+	var workID string
+	if e.simDB != nil {
+		workID = e.simDB.GetNextWorkID(station.ID)
+	}
+	if workID == "" {
+		// No predefined ID from SimDB, generate UUID
+		workID = GenerateWorkID()
+	}
+
+	// Generate friendly name using workCounter
+	e.workCounter++
+	friendlyName := fmt.Sprintf("work-%d", e.workCounter)
+
 	work := domain.NewWork(workID, friendlyName)
 
 	// Add to station (Source stations keep work internally)

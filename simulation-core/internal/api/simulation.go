@@ -16,7 +16,8 @@ type InitialConditionStation struct {
 		ID            string `json:"id"`
 		QualityStatus string `json:"qualityStatus"`
 	} `json:"currentWork"`
-	ElapsedTime float64 `json:"elapsedTime"`
+	ElapsedTime float64  `json:"elapsedTime"`
+	WorkIDs     []string `json:"workIds"` // Predefined work IDs for this station (for source stations)
 }
 
 // SimulationRequest represents a POST /api/simulations request
@@ -88,7 +89,15 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Apply initial conditions (for future implementation)
+	// Extract work IDs from initial conditions
+	workIDsByStation := make(map[string][]string)
+	if req.InitialConditions != nil {
+		for stationID, condition := range req.InitialConditions {
+			if len(condition.WorkIDs) > 0 {
+				workIDsByStation[stationID] = condition.WorkIDs
+			}
+		}
+	}
 
 	// Generate unique simulation ID using UUID
 	simulationID := uuid.New().String()
@@ -97,8 +106,8 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 	timestamp := time.Now().Format("2006-01-02T15:04:05")
 	friendlyName := fmt.Sprintf("%s_実行_%s", scenario.Name, timestamp)
 
-	// Run simulation
-	engine := simulation.NewEngine(scenario)
+	// Run simulation with initial conditions
+	engine := simulation.NewEngineWithInitialConditions(scenario, workIDsByStation)
 	sim, statusLogs, workEventLogs, workLineageLogs, err := engine.Run(simulationID, friendlyName, req.SimulationTime)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Simulation failed: %v", err))

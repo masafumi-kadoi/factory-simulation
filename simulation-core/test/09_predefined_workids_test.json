@@ -1,0 +1,40 @@
+{
+  "name": "事前定義ワークIDテスト",
+  "description": "SimDBから事前定義されたワークIDを使用してシミュレーションを実行",
+  "scenario": {
+    "name": "Test09_PredefinedWorkIDs",
+    "stations": [
+      {
+        "id": "source-1",
+        "type": "source",
+        "config": {
+          "workCount": 3,
+          "departureTime": 5.0
+        }
+      },
+      {
+        "id": "drain-1",
+        "type": "drain",
+        "config": {
+          "arrivalTime": 1.0
+        }
+      }
+    ],
+    "connections": [
+      {"from": "source-1", "to": "drain-1"}
+    ]
+  },
+  "initialConditions": {
+    "source-1": {
+      "workIds": [
+        "custom-work-id-001",
+        "custom-work-id-002",
+        "custom-work-id-003"
+      ]
+    }
+  },
+  "expectedResults": {
+    "totalWorks": 3,
+    "notes": "事前定義されたワークIDが使用されることを確認"
+  }
+}

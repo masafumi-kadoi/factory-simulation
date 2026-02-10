@@ -62,10 +62,18 @@ run_test() {
 
     echo "  Scenario ID: $scenario_id"
 
+    # Extract initial conditions (if any)
+    local initial_conditions=$(cat "$test_file" | jq '.initialConditions // {}')
+
     # Run simulation
+    local sim_request=$(jq -n \
+        --arg scenarioId "$scenario_id" \
+        --argjson initialConditions "$initial_conditions" \
+        '{scenarioId: $scenarioId, simulationTime: 1000.0, initialConditions: $initialConditions}')
+
     local sim_response=$(curl -s -X POST "$API_BASE/simulations" \
         -H "Content-Type: application/json" \
-        -d "{\"scenarioId\": \"$scenario_id\", \"simulationTime\": 1000.0, \"initialConditions\": {}}" 2>&1)
+        -d "$sim_request" 2>&1)
 
     local sim_id=$(echo "$sim_response" | grep -o '"simulationId":"[^"]*"' | cut -d'"' -f4)
     local sim_status=$(echo "$sim_response" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
