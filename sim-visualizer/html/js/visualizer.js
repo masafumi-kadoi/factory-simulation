@@ -288,7 +288,7 @@ export class Visualizer3D {
         return line;
     }
 
-    updateWorks(activeWorks) {
+    updateWorks(activeWorks, currentTime) {
         // Remove works that no longer exist
         const toRemove = [];
         this.works.forEach((work, workId) => {
@@ -300,10 +300,7 @@ export class Visualizer3D {
         toRemove.forEach(id => this.works.delete(id));
 
         // Add or update works
-        activeWorks.forEach((stationId, workId) => {
-            const station = this.stations.get(stationId);
-            if (!station) return;
-
+        activeWorks.forEach((workInfo, workId) => {
             if (!this.works.has(workId)) {
                 // Create new work (sphere with wireframe, opaque)
                 const geometry = new THREE.SphereGeometry(12, 32, 32);
@@ -332,48 +329,38 @@ export class Visualizer3D {
                 const group = new THREE.Group();
                 group.add(fillMesh);
                 group.add(wireframeMesh);
-                group.position.set(station.position.x, 40, station.position.z);
                 group.userData = { workId: workId };
 
                 this.scene.add(group);
-                this.works.set(workId, {
-                    mesh: group,
-                    currentStation: stationId,
-                    targetStation: null,
-                    progress: 1.0
-                });
-            } else {
-                // Update existing work
-                const work = this.works.get(workId);
+                this.works.set(workId, { mesh: group });
+            }
 
-                if (work.currentStation !== stationId) {
-                    // Start moving to new station
-                    const fromStation = this.stations.get(work.currentStation);
-                    const toStation = this.stations.get(stationId);
+            const work = this.works.get(workId);
 
-                    if (fromStation && toStation) {
-                        work.targetStation = stationId;
-                        work.fromPos = { ...fromStation.position };
-                        work.toPos = { ...toStation.position };
-                        work.progress = 0;
-                    }
+            if (workInfo.state === 'at_station') {
+                // Work is at station
+                const station = this.stations.get(workInfo.stationId);
+                if (station) {
+                    work.mesh.position.set(station.position.x, 40, station.position.z);
                 }
+            } else if (workInfo.state === 'moving') {
+                // Work is moving between stations
+                const fromStation = this.stations.get(workInfo.fromStation);
+                const toStation = this.stations.get(workInfo.toStation);
 
-                // Animate movement
-                if (work.targetStation && work.progress < 1.0) {
-                    work.progress += 0.02; // Smooth animation
+                if (fromStation && toStation) {
+                    // Calculate progress based on time
+                    const duration = workInfo.arriveTime - workInfo.departTime;
+                    const elapsed = currentTime - workInfo.departTime;
+                    const progress = Math.max(0, Math.min(1, elapsed / duration));
 
-                    if (work.progress >= 1.0) {
-                        work.progress = 1.0;
-                        work.currentStation = work.targetStation;
-                        work.targetStation = null;
-                    }
+                    // Interpolate position with easing
+                    const t = this._easeInOutCubic(progress);
+                    const x = fromStation.position.x + (toStation.position.x - fromStation.position.x) * t;
+                    const z = fromStation.position.z + (toStation.position.z - fromStation.position.z) * t;
+                    const y = 40 + Math.sin(t * Math.PI) * 30; // Arc movement
 
-                    // Interpolate position
-                    const t = this._easeInOutCubic(work.progress);
-                    work.mesh.position.x = work.fromPos.x + (work.toPos.x - work.fromPos.x) * t;
-                    work.mesh.position.z = work.fromPos.z + (work.toPos.z - work.fromPos.z) * t;
-                    work.mesh.position.y = 40 + Math.sin(t * Math.PI) * 30; // Arc movement
+                    work.mesh.position.set(x, y, z);
                 }
             }
         });

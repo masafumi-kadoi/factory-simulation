@@ -161,18 +161,49 @@ class App {
 
     _updateSimulation() {
         // Process work events up to current time
-        const activeWorks = new Map(); // Map<workId, stationId>
+        const activeWorks = new Map(); // Map<workId, {state, stationId, fromStation, toStation, departTime, arriveTime}>
 
         if (this.logs.workEvents) {
-            for (const event of this.logs.workEvents) {
+            // Build work state map
+            for (let i = 0; i < this.logs.workEvents.length; i++) {
+                const event = this.logs.workEvents[i];
                 if (event.Timestamp > this.currentTime) break;
 
                 const workId = event.WorkID;
                 const stationId = event.StationID;
 
                 if (event.EventType === 'WorkCreated' || event.EventType === 'WorkArrived') {
-                    activeWorks.set(workId, stationId);
-                } else if (event.EventType === 'WorkDeparted' || event.EventType === 'WorkDestroyed') {
+                    // Work is at station
+                    activeWorks.set(workId, {
+                        state: 'at_station',
+                        stationId: stationId
+                    });
+                } else if (event.EventType === 'WorkDeparted') {
+                    // Look ahead to find next arrival
+                    let nextArrival = null;
+                    for (let j = i + 1; j < this.logs.workEvents.length; j++) {
+                        const nextEvent = this.logs.workEvents[j];
+                        if (nextEvent.WorkID === workId &&
+                            (nextEvent.EventType === 'WorkArrived' || nextEvent.EventType === 'WorkDestroyed')) {
+                            nextArrival = nextEvent;
+                            break;
+                        }
+                    }
+
+                    if (nextArrival) {
+                        // Work is moving
+                        activeWorks.set(workId, {
+                            state: 'moving',
+                            fromStation: stationId,
+                            toStation: nextArrival.StationID,
+                            departTime: event.Timestamp,
+                            arriveTime: nextArrival.Timestamp
+                        });
+                    } else {
+                        // No next arrival (destroyed or end of log)
+                        activeWorks.delete(workId);
+                    }
+                } else if (event.EventType === 'WorkDestroyed') {
                     activeWorks.delete(workId);
                 }
             }
@@ -180,7 +211,7 @@ class App {
 
         // Update visualizer
         if (this.visualizer) {
-            this.visualizer.updateWorks(activeWorks);
+            this.visualizer.updateWorks(activeWorks, this.currentTime);
         }
     }
 
