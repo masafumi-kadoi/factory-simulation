@@ -56,6 +56,41 @@ export function validateScenario(scenario) {
         }
     }
 
+    // Check for invalid branching/merging patterns
+    // source, processing, drain can only have 1:1 connections
+    scenario.stations.forEach(station => {
+        const stationType = station.type;
+
+        // Only validate for basic station types (not future types like merge, split, etc.)
+        if (stationType === 'source' || stationType === 'processing' || stationType === 'drain') {
+            // Count outgoing connections (分岐チェック)
+            const outgoingCount = scenario.connections.filter(c => c.from === station.id).length;
+
+            // Count incoming connections (合流チェック)
+            const incomingCount = scenario.connections.filter(c => c.to === station.id).length;
+
+            // Source and Processing can only have 1 outgoing connection
+            if ((stationType === 'source' || stationType === 'processing') && outgoingCount > 1) {
+                errors.push(`${station.id} (${stationType}): 複数のステーションへの分岐は許可されていません（接続数: ${outgoingCount}）`);
+            }
+
+            // Processing and Drain can only have 1 incoming connection
+            if ((stationType === 'processing' || stationType === 'drain') && incomingCount > 1) {
+                errors.push(`${station.id} (${stationType}): 複数のステーションからの合流は許可されていません（接続数: ${incomingCount}）`);
+            }
+
+            // Source should not have incoming connections
+            if (stationType === 'source' && incomingCount > 0) {
+                errors.push(`${station.id} (source): Sourceステーションへの入力接続は許可されていません`);
+            }
+
+            // Drain should not have outgoing connections
+            if (stationType === 'drain' && outgoingCount > 0) {
+                errors.push(`${station.id} (drain): Drainステーションからの出力接続は許可されていません`);
+            }
+        }
+    });
+
     return errors;
 }
 
