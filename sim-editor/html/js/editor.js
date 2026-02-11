@@ -3,6 +3,7 @@ import { Canvas } from './canvas.js';
 import { PropertiesPanel } from './properties.js';
 import { validateScenario, validateStation } from './validation.js';
 import { apiClient } from './api.js';
+import { TooltipManager } from './tooltip.js';
 import {
     CommandManager,
     AddStationCommand,
@@ -25,6 +26,7 @@ class ScenarioEditor {
         this.canvas = null;
         this.propertiesPanel = null;
         this.commandManager = new CommandManager(this);
+        this.tooltipManager = new TooltipManager();
 
         this._init();
     }
@@ -117,6 +119,11 @@ class ScenarioEditor {
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
+            // Don't trigger shortcuts when typing in input fields
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+
             // Ctrl+Z / Cmd+Z for Undo
             if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
                 e.preventDefault();
@@ -138,6 +145,66 @@ class ScenarioEditor {
                     this._updateUndoRedoButtons();
                 }
             }
+            // Ctrl+S / Cmd+S for Save
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                this._saveScenario();
+            }
+            // Ctrl+E / Cmd+E for Export
+            if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+                e.preventDefault();
+                this._exportJSON();
+            }
+            // Ctrl+I / Cmd+I for Import
+            if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+                e.preventDefault();
+                document.getElementById('file-input').click();
+            }
+            // Delete key to delete selected item
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                if (this.selectedItem) {
+                    if (this.selectedItem.type === 'station') {
+                        if (confirm('このステーションを削除しますか？')) {
+                            this.deleteStation(this.selectedItem.id);
+                        }
+                    } else if (this.selectedItem.type === 'connection') {
+                        if (confirm('この接続を削除しますか？')) {
+                            this.deleteConnection(this.selectedItem.index);
+                        }
+                    }
+                }
+            }
+            // Tool shortcuts: V=Select, C=Connect, D=Delete, S=Source, P=Processing, R=Drain
+            if (e.key === 'v' || e.key === 'V') {
+                e.preventDefault();
+                this._selectTool('select');
+            }
+            if (e.key === 'c' || e.key === 'C') {
+                e.preventDefault();
+                this._selectTool('connect');
+            }
+            if (e.key === 'd' || e.key === 'D') {
+                e.preventDefault();
+                this._selectTool('delete');
+            }
+            if (e.key === 's' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                this._selectTool('source');
+            }
+            if (e.key === 'p' || e.key === 'P') {
+                e.preventDefault();
+                this._selectTool('processing');
+            }
+            if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                this._selectTool('drain');
+            }
+            // Escape to deselect
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                this.selectItem(null);
+            }
         });
 
         // Scenario name input
@@ -153,6 +220,14 @@ class ScenarioEditor {
             });
         });
 
+        // Setup tooltips for tool buttons
+        this._setupTooltips();
+
+        // Grid snap toggle
+        document.getElementById('grid-snap-toggle').addEventListener('change', (e) => {
+            this.canvas.snapToGrid = e.target.checked;
+        });
+
         // Prevent accidental page leave
         window.addEventListener('beforeunload', (e) => {
             if (this.dirty) {
@@ -160,6 +235,33 @@ class ScenarioEditor {
                 e.returnValue = '';
             }
         });
+    }
+
+    _setupTooltips() {
+        // Tool buttons tooltips
+        const toolTooltips = {
+            'source': 'Sourceステーション配置 (S)',
+            'processing': 'Processingステーション配置 (P)',
+            'drain': 'Drainステーション配置 (R)',
+            'select': '選択/移動モード (V)',
+            'connect': '接続作成モード (C) | Shiftキー押しながらドラッグでも接続作成可能',
+            'delete': '削除モード (D) | Deleteキーでも削除可能'
+        };
+
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            const tool = btn.dataset.tool;
+            if (toolTooltips[tool]) {
+                this.tooltipManager.attach(btn, toolTooltips[tool]);
+            }
+        });
+
+        // Header buttons tooltips
+        this.tooltipManager.attach(document.getElementById('back-btn'), '一覧に戻る');
+        this.tooltipManager.attach(document.getElementById('undo-btn'), '元に戻す (Ctrl+Z)');
+        this.tooltipManager.attach(document.getElementById('redo-btn'), 'やり直し (Ctrl+Shift+Z)');
+        this.tooltipManager.attach(document.getElementById('import-btn'), 'JSONインポート (Ctrl+I)');
+        this.tooltipManager.attach(document.getElementById('save-btn'), 'APIに保存 (Ctrl+S)');
+        this.tooltipManager.attach(document.getElementById('export-btn'), 'JSONエクスポート (Ctrl+E)');
     }
 
     _selectTool(tool) {
@@ -177,12 +279,12 @@ class ScenarioEditor {
 
         // Update info text
         const infoTexts = {
-            select: 'クリックで選択 | ドラッグで移動',
-            source: 'クリックでSourceステーション配置',
-            processing: 'クリックでProcessingステーション配置',
-            drain: 'クリックでDrainステーション配置',
-            connect: 'ステーションをクリックして接続作成',
-            delete: 'クリックで削除'
+            select: 'クリックで選択 | ドラッグで移動 | マウスホイールでズーム | 中ボタンドラッグでパン',
+            source: 'クリックでSourceステーション配置 | マウスホイールでズーム',
+            processing: 'クリックでProcessingステーション配置 | マウスホイールでズーム',
+            drain: 'クリックでDrainステーション配置 | マウスホイールでズーム',
+            connect: 'ステーションをドラッグして接続作成 | Shiftキー+ドラッグでも可',
+            delete: 'クリックで削除 | Deleteキーでも可'
         };
         document.getElementById('canvas-info').textContent = infoTexts[tool] || '';
     }

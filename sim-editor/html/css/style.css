@@ -10,6 +10,36 @@ body {
     color: #333;
 }
 
+/* Tooltip */
+.tooltip {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    pointer-events: none;
+    z-index: 10000;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.tooltip.show {
+    opacity: 1;
+}
+
+.tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: rgba(0, 0, 0, 0.85) transparent transparent transparent;
+}
+
 /* Common Buttons */
 .btn-primary {
     background: linear-gradient(135deg, #4a9eff 0%, #3d7ed0 100%);
