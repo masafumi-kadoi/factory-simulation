@@ -1,0 +1,73 @@
+// Portal API Client
+const SIMULATION_CORE_URL = 'http://localhost:8080/api';
+const EXECUTOR_API_URL = 'http://localhost:8084/api/executor';
+
+const HEALTH_CHECK_TIMEOUT = 3000;
+
+const PortalAPI = {
+    // --- Scenario APIs (via sim-executor for execution count) ---
+
+    async getScenarios() {
+        const response = await fetch(`${EXECUTOR_API_URL}/scenarios`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    },
+
+    async getScenario(scenarioId) {
+        const response = await fetch(`${SIMULATION_CORE_URL}/scenarios/${scenarioId}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    },
+
+    // --- Execution APIs ---
+
+    async getExecutions(scenarioId) {
+        const response = await fetch(`${EXECUTOR_API_URL}/executions?scenarioId=${encodeURIComponent(scenarioId)}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    },
+
+    // --- Health Check ---
+
+    async checkHealth(url) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
+
+        try {
+            const response = await fetch(url, { signal: controller.signal, mode: 'no-cors' });
+            clearTimeout(timeoutId);
+            // mode: 'no-cors' returns opaque response (status 0), but no error means reachable
+            return { status: 'up' };
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                return { status: 'down', reason: 'timeout' };
+            }
+            return { status: 'down', reason: err.message };
+        }
+    },
+
+    async checkAllServices() {
+        const services = [
+            { name: 'simulation-core', url: 'http://localhost:8080/api/scenarios', port: 8080 },
+            { name: 'sim-executor-backend', url: 'http://localhost:8084/api/executor/scenarios', port: 8084 },
+            { name: 'sim-editor', url: 'http://localhost:8082/', port: 8082 },
+            { name: 'sim-executor', url: 'http://localhost:8083/', port: 8083 },
+            { name: 'sim-visualizer', url: 'http://localhost:8081/', port: 8081 },
+            { name: 'PostgreSQL', url: null, port: 5432 }
+        ];
+
+        const results = await Promise.all(
+            services.map(async (svc) => {
+                if (!svc.url) {
+                    // Can't directly check DB from browser
+                    return { ...svc, status: 'unknown', reason: 'Not checkable from browser' };
+                }
+                const health = await PortalAPI.checkHealth(svc.url);
+                return { ...svc, ...health };
+            })
+        );
+
+        return results;
+    }
+};

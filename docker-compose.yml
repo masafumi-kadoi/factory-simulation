@@ -103,6 +103,19 @@ services:
     networks:
       - factory-network
 
+  sim-portal:
+    build:
+      context: ./sim-portal
+      dockerfile: Dockerfile
+    container_name: factory-sim-portal
+    ports:
+      - "8085:80"
+    depends_on:
+      - simulation-core
+      - sim-executor-backend
+    networks:
+      - factory-network
+
 volumes:
   postgres_data:
     driver: local

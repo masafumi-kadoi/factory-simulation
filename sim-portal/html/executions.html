@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sim-portal - Executions</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="header">
+        <h1>sim-portal</h1>
+        <nav class="header-nav">
+            <a href="index.html">Dashboard</a>
+            <a href="scenarios.html">Scenarios</a>
+            <a href="executions.html" class="active">Executions</a>
+            <a href="status.html">Status</a>
+        </nav>
+    </header>
+
+    <main class="main-content">
+        <div class="section-header">
+            <h2 class="section-title">Execution History</h2>
+        </div>
+
+        <div id="filter-container" class="filter-bar">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="completed">Completed</button>
+            <button class="filter-btn" data-filter="running">Running</button>
+            <button class="filter-btn" data-filter="error">Error</button>
+        </div>
+
+        <div id="executions-container">
+            <div class="loading">Loading executions...</div>
+        </div>
+    </main>
+
+    <script src="js/api.js"></script>
+    <script src="js/executions.js"></script>
+</body>
+</html>

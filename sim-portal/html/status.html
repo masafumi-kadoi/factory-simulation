@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sim-portal - System Status</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="header">
+        <h1>sim-portal</h1>
+        <nav class="header-nav">
+            <a href="index.html">Dashboard</a>
+            <a href="scenarios.html">Scenarios</a>
+            <a href="executions.html">Executions</a>
+            <a href="status.html" class="active">Status</a>
+        </nav>
+    </header>
+
+    <main class="main-content">
+        <div class="section-header">
+            <h2 class="section-title">System Status</h2>
+            <button id="btn-refresh" class="btn btn-outline btn-sm">Refresh</button>
+        </div>
+
+        <div id="services-container" class="service-grid">
+            <div class="loading">Checking services...</div>
+        </div>
+    </main>
+
+    <script src="js/api.js"></script>
+    <script src="js/status.js"></script>
+</body>
+</html>

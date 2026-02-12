@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sim-portal - Factory Simulation</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="header">
+        <h1>sim-portal</h1>
+        <nav class="header-nav">
+            <a href="index.html" class="active">Dashboard</a>
+            <a href="scenarios.html">Scenarios</a>
+            <a href="executions.html">Executions</a>
+            <a href="status.html">Status</a>
+        </nav>
+    </header>
+
+    <main class="main-content">
+        <!-- Statistics -->
+        <div id="stats-container" class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-scenarios">-</div>
+                <div class="stat-label">Scenarios</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-executions">-</div>
+                <div class="stat-label">Total Executions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-services">-</div>
+                <div class="stat-label">Services Online</div>
+            </div>
+        </div>
+
+        <!-- Tool Cards -->
+        <div class="section-header">
+            <h2 class="section-title">Tools</h2>
+        </div>
+        <div id="tools-container" class="tools-grid"></div>
+
+        <!-- Recent Executions -->
+        <div class="section-header mt-2">
+            <h2 class="section-title">Recent Executions</h2>
+            <a href="executions.html" class="btn btn-outline btn-sm">View All</a>
+        </div>
+        <div id="recent-container">
+            <div class="loading">Loading...</div>
+        </div>
+    </main>
+
+    <script src="js/api.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
