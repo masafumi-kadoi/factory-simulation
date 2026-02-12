@@ -10,10 +10,11 @@ import (
 
 // StationRequest represents a station in the request
 type StationRequest struct {
-	ID       string                 `json:"id"`
-	Type     string                 `json:"type"`
-	ParentID *string                `json:"parentId"`
-	Config   map[string]interface{} `json:"config"`
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"`
+	ParentID   *string                `json:"parentId"`
+	LocationID *int64                 `json:"locationId,omitempty"`
+	Config     map[string]interface{} `json:"config"`
 }
 
 // ConnectionRequest represents a connection in the request
@@ -23,9 +24,19 @@ type ConnectionRequest struct {
 	Condition string `json:"condition"` // default, quality_ok, quality_ng
 }
 
+// SimDBConfigRequest represents SimDB connection settings in the request
+type SimDBConfigRequest struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Database string `json:"database"`
+	User     string `json:"user"`
+	Password string `json:"password,omitempty"`
+}
+
 // ScenarioRequest represents a POST /api/scenarios request
 type ScenarioRequest struct {
 	Name        string              `json:"name"`
+	SimDBConfig *SimDBConfigRequest `json:"simdbConfig,omitempty"`
 	Stations    []StationRequest    `json:"stations"`
 	Connections []ConnectionRequest `json:"connections"`
 }
@@ -119,6 +130,7 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		stationType := domain.StationType(st.Type)
 		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
 		stations[i].ParentID = st.ParentID
+		stations[i].LocationID = st.LocationID
 	}
 
 	connections := make([]domain.Connection, len(req.Connections))
@@ -139,6 +151,17 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	scenarioID := uuid.New().String()
 
 	scenario := domain.NewScenario(scenarioID, req.Name, stations, connections)
+
+	// Set SimDB config if provided
+	if req.SimDBConfig != nil {
+		scenario.SimDBConfig = &domain.SimDBConfig{
+			Host:     req.SimDBConfig.Host,
+			Port:     req.SimDBConfig.Port,
+			Database: req.SimDBConfig.Database,
+			User:     req.SimDBConfig.User,
+			Password: req.SimDBConfig.Password,
+		}
+	}
 
 	// Store scenario in memory (for backward compatibility)
 	h.mu.Lock()
@@ -185,16 +208,18 @@ func (h *Handler) GetScenario(scenarioID string) (*domain.Scenario, error) {
 type ScenarioDetailResponse struct {
 	ScenarioID  string              `json:"scenarioId"`
 	Name        string              `json:"name"`
+	SimDBConfig *SimDBConfigRequest `json:"simdbConfig,omitempty"`
 	Stations    []StationRequest    `json:"stations"`
 	Connections []ConnectionRequest `json:"connections"`
 }
 
 // ScenarioListItem represents a single scenario in the list
 type ScenarioListItem struct {
-	ScenarioID     string `json:"scenarioId"`
-	Name           string `json:"name"`
-	StationCount   int    `json:"stationCount"`
-	ConnectionCount int   `json:"connectionCount"`
+	ScenarioID      string              `json:"scenarioId"`
+	Name            string              `json:"name"`
+	SimDBConfig     *SimDBConfigRequest `json:"simdbConfig,omitempty"`
+	StationCount    int                 `json:"stationCount"`
+	ConnectionCount int                 `json:"connectionCount"`
 }
 
 // ScenarioListResponse represents a GET /api/scenarios response
@@ -220,10 +245,20 @@ func (h *Handler) HandleListScenarios(w http.ResponseWriter, r *http.Request) {
 	// Convert to response format
 	items := make([]ScenarioListItem, len(scenarios))
 	for i, scenario := range scenarios {
+		var simdbConfig *SimDBConfigRequest
+		if scenario.SimDBConfig != nil {
+			simdbConfig = &SimDBConfigRequest{
+				Host:     scenario.SimDBConfig.Host,
+				Port:     scenario.SimDBConfig.Port,
+				Database: scenario.SimDBConfig.Database,
+				User:     scenario.SimDBConfig.User,
+			}
+		}
 		items[i] = ScenarioListItem{
-			ScenarioID:     scenario.ID,
-			Name:           scenario.Name,
-			StationCount:   len(scenario.Stations),
+			ScenarioID:      scenario.ID,
+			Name:            scenario.Name,
+			SimDBConfig:     simdbConfig,
+			StationCount:    len(scenario.Stations),
 			ConnectionCount: len(scenario.Connections),
 		}
 	}
@@ -258,10 +293,11 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 	stations := make([]StationRequest, len(scenario.Stations))
 	for i, st := range scenario.Stations {
 		stations[i] = StationRequest{
-			ID:       st.ID,
-			Type:     string(st.Type),
-			ParentID: st.ParentID,
-			Config:   st.Config,
+			ID:         st.ID,
+			Type:       string(st.Type),
+			ParentID:   st.ParentID,
+			LocationID: st.LocationID,
+			Config:     st.Config,
 		}
 	}
 
@@ -274,9 +310,21 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Build SimDB config response (password masked)
+	var simdbConfig *SimDBConfigRequest
+	if scenario.SimDBConfig != nil {
+		simdbConfig = &SimDBConfigRequest{
+			Host:     scenario.SimDBConfig.Host,
+			Port:     scenario.SimDBConfig.Port,
+			Database: scenario.SimDBConfig.Database,
+			User:     scenario.SimDBConfig.User,
+		}
+	}
+
 	respondJSON(w, http.StatusOK, ScenarioDetailResponse{
 		ScenarioID:  scenario.ID,
 		Name:        scenario.Name,
+		SimDBConfig: simdbConfig,
 		Stations:    stations,
 		Connections: connections,
 	})

@@ -16,10 +16,20 @@ type Connection struct {
 	Condition RoutingCondition
 }
 
+// SimDBConfig represents connection info for a SimDB (per manufacturing line)
+type SimDBConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Database string `json:"database"`
+	User     string `json:"user"`
+	Password string `json:"password,omitempty"`
+}
+
 // Scenario represents a simulation scenario
 type Scenario struct {
 	ID          string
 	Name        string
+	SimDBConfig *SimDBConfig
 	Stations    []Station
 	Connections []Connection
 }

@@ -31,9 +31,10 @@ type StateTransition struct {
 
 // Station represents a station in the factory simulation (Processing base class)
 type Station struct {
-	ID       string
-	Type     StationType
-	ParentID *string
+	ID         string
+	Type       StationType
+	ParentID   *string
+	LocationID *int64
 
 	// Work management: Only ONE work at a time (interlock mechanism)
 	CurrentWork *Work // The work currently at this station (nil if idle)

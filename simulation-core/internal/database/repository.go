@@ -372,12 +372,27 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 	}
 	defer tx.Rollback()
 
-	// Insert scenario
+	// Insert scenario with SimDB config
+	var simdbHost, simdbDatabase, simdbUser, simdbPassword *string
+	var simdbPort *int
+	if scenario.SimDBConfig != nil {
+		simdbHost = &scenario.SimDBConfig.Host
+		simdbPort = &scenario.SimDBConfig.Port
+		simdbDatabase = &scenario.SimDBConfig.Database
+		simdbUser = &scenario.SimDBConfig.User
+		simdbPassword = &scenario.SimDBConfig.Password
+	}
 	_, err = tx.Exec(`
-		INSERT INTO scenarios (id, name)
-		VALUES ($1, $2)
-		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
-	`, scenario.ID, scenario.Name)
+		INSERT INTO scenarios (id, name, simdb_host, simdb_port, simdb_database, simdb_user, simdb_password)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			simdb_host = EXCLUDED.simdb_host,
+			simdb_port = EXCLUDED.simdb_port,
+			simdb_database = EXCLUDED.simdb_database,
+			simdb_user = EXCLUDED.simdb_user,
+			simdb_password = EXCLUDED.simdb_password
+	`, scenario.ID, scenario.Name, simdbHost, simdbPort, simdbDatabase, simdbUser, simdbPassword)
 	if err != nil {
 		return fmt.Errorf("failed to insert scenario: %w", err)
 	}
@@ -401,9 +416,9 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 		}
 
 		_, err = tx.Exec(`
-			INSERT INTO scenario_stations (scenario_id, station_id, station_type, parent_id, config)
-			VALUES ($1, $2, $3, $4, $5)
-		`, scenario.ID, station.ID, station.Type, station.ParentID, configJSON)
+			INSERT INTO scenario_stations (scenario_id, station_id, station_type, parent_id, config, location_id)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, scenario.ID, station.ID, station.Type, station.ParentID, configJSON, station.LocationID)
 		if err != nil {
 			return fmt.Errorf("failed to insert station: %w", err)
 		}
@@ -425,18 +440,30 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 
 // GetScenario retrieves a scenario from the database
 func (r *Repository) GetScenario(id string) (*domain.Scenario, error) {
-	// Get scenario basic info
+	return r.getScenario(id, false)
+}
+
+// GetScenarioWithPassword retrieves a scenario including the SimDB password
+func (r *Repository) GetScenarioWithPassword(id string) (*domain.Scenario, error) {
+	return r.getScenario(id, true)
+}
+
+func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scenario, error) {
+	// Get scenario basic info with SimDB config
 	var name string
+	var simdbHost, simdbDatabase, simdbUser, simdbPassword *string
+	var simdbPort *int
 	err := r.db.GetConnection().QueryRow(`
-		SELECT name FROM scenarios WHERE id = $1
-	`, id).Scan(&name)
+		SELECT name, simdb_host, simdb_port, simdb_database, simdb_user, simdb_password
+		FROM scenarios WHERE id = $1
+	`, id).Scan(&name, &simdbHost, &simdbPort, &simdbDatabase, &simdbUser, &simdbPassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get scenario: %w", err)
 	}
 
 	// Get stations
 	rows, err := r.db.GetConnection().Query(`
-		SELECT station_id, station_type, parent_id, config
+		SELECT station_id, station_type, parent_id, config, location_id
 		FROM scenario_stations
 		WHERE scenario_id = $1
 	`, id)
@@ -449,9 +476,10 @@ func (r *Repository) GetScenario(id string) (*domain.Scenario, error) {
 	for rows.Next() {
 		var stationID, stationType string
 		var parentID *string
+		var locationID *int64
 		var configJSON []byte
 
-		if err := rows.Scan(&stationID, &stationType, &parentID, &configJSON); err != nil {
+		if err := rows.Scan(&stationID, &stationType, &parentID, &configJSON, &locationID); err != nil {
 			return nil, fmt.Errorf("failed to scan station: %w", err)
 		}
 
@@ -462,6 +490,7 @@ func (r *Repository) GetScenario(id string) (*domain.Scenario, error) {
 
 		station := domain.NewStation(stationID, domain.StationType(stationType), config)
 		station.ParentID = parentID
+		station.LocationID = locationID
 		stations = append(stations, *station)
 	}
 
@@ -490,7 +519,30 @@ func (r *Repository) GetScenario(id string) (*domain.Scenario, error) {
 		})
 	}
 
-	return domain.NewScenario(id, name, stations, connections), nil
+	// Build SimDBConfig if available
+	scenario := domain.NewScenario(id, name, stations, connections)
+	if simdbHost != nil && *simdbHost != "" {
+		cfg := &domain.SimDBConfig{
+			Host:     *simdbHost,
+			Database: "",
+			User:     "",
+		}
+		if simdbPort != nil {
+			cfg.Port = *simdbPort
+		}
+		if simdbDatabase != nil {
+			cfg.Database = *simdbDatabase
+		}
+		if simdbUser != nil {
+			cfg.User = *simdbUser
+		}
+		if includePassword && simdbPassword != nil {
+			cfg.Password = *simdbPassword
+		}
+		scenario.SimDBConfig = cfg
+	}
+
+	return scenario, nil
 }
 
 // ListScenarios retrieves all scenarios from the database
