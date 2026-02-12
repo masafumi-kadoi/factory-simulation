@@ -13,6 +13,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+      - ./database/migrations/002_add_friendly_names.sql:/docker-entrypoint-initdb.d/002_add_friendly_names.sql
+      - ./database/migrations/003_add_scenario_storage.sql:/docker-entrypoint-initdb.d/003_add_scenario_storage.sql
+      - ./database/migrations/004_add_simdb_and_executor.sql:/docker-entrypoint-initdb.d/004_add_simdb_and_executor.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -62,6 +65,41 @@ services:
       - "8082:80"
     depends_on:
       - simulation-core
+    networks:
+      - factory-network
+
+  sim-executor:
+    build:
+      context: ./sim-executor
+      dockerfile: Dockerfile
+    container_name: factory-sim-executor
+    ports:
+      - "8083:80"
+    depends_on:
+      - sim-executor-backend
+    networks:
+      - factory-network
+
+  sim-executor-backend:
+    build:
+      context: ./sim-executor
+      dockerfile: Dockerfile.backend
+    container_name: factory-sim-executor-backend
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: factory_simulation
+      PORT: 8084
+      SIMULATION_CORE_URL: http://simulation-core:8080
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      simulation-core:
+        condition: service_started
     networks:
       - factory-network
 

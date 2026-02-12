@@ -57,6 +57,16 @@ class ScenarioEditor {
     }
 
     _loadScenario() {
+        // Check if loading from API via scenarioId query param
+        const params = new URLSearchParams(window.location.search);
+        const apiScenarioId = params.get('scenarioId');
+
+        if (apiScenarioId) {
+            // Load from API
+            this._loadScenarioFromAPI(apiScenarioId);
+            return;
+        }
+
         const scenarios = JSON.parse(localStorage.getItem('sim-editor-scenarios') || '[]');
         this.scenario = scenarios.find(s => s.id === this.scenarioId);
 
@@ -68,6 +78,39 @@ class ScenarioEditor {
 
         // Set scenario name in header
         document.getElementById('scenario-name').value = this.scenario.name;
+    }
+
+    async _loadScenarioFromAPI(apiScenarioId) {
+        try {
+            const data = await apiClient.getScenario(apiScenarioId);
+            this.scenarioId = apiScenarioId;
+            this.scenario = {
+                id: apiScenarioId,
+                apiScenarioId: apiScenarioId,
+                name: data.name,
+                simdbConfig: data.simdbConfig || null,
+                stations: (data.stations || []).map((s, i) => ({
+                    id: s.id,
+                    type: s.type,
+                    locationId: s.locationId || null,
+                    config: s.config || {},
+                    x: 100 + i * 200,
+                    y: 300
+                })),
+                connections: (data.connections || []).map(c => ({
+                    from: c.from,
+                    to: c.to,
+                    condition: c.condition || 'default'
+                }))
+            };
+            this.savedToAPI = true;
+
+            document.getElementById('scenario-name').value = this.scenario.name;
+            this._render();
+        } catch (err) {
+            console.error('Failed to load from API:', err);
+            alert('APIからシナリオを読み込めませんでした: ' + err.message);
+        }
     }
 
     _setupEventListeners() {
@@ -409,9 +452,11 @@ class ScenarioEditor {
             // Prepare scenario data for API
             const scenarioData = {
                 name: this.scenario.name,
+                simdbConfig: this.scenario.simdbConfig || undefined,
                 stations: this.scenario.stations.map(s => ({
                     id: s.id,
                     type: s.type,
+                    locationId: s.locationId || undefined,
                     config: s.config
                 })),
                 connections: this.scenario.connections.map(c => ({
@@ -468,11 +513,13 @@ class ScenarioEditor {
         const exportData = {
             name: this.scenario.name,
             description: this.scenario.description || '',
+            simdbConfig: this.scenario.simdbConfig || undefined,
             scenario: {
                 name: this.scenario.name.replace(/\s+/g, '_'),
                 stations: this.scenario.stations.map(s => ({
                     id: s.id,
                     type: s.type,
+                    locationId: s.locationId || undefined,
                     config: s.config
                 })),
                 connections: this.scenario.connections.map(c => ({
@@ -514,6 +561,7 @@ class ScenarioEditor {
                 id: this.scenarioId,
                 name: data.name || data.scenario.name || 'インポートされたシナリオ',
                 description: data.description || '',
+                simdbConfig: data.simdbConfig || null,
                 stations: [],
                 connections: []
             };
@@ -523,6 +571,7 @@ class ScenarioEditor {
                 const station = {
                     id: st.id,
                     type: st.type,
+                    locationId: st.locationId || null,
                     config: st.config || {},
                     x: 0,
                     y: 0

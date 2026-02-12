@@ -56,6 +56,32 @@ export function validateScenario(scenario) {
         }
     }
 
+    // Check location_id when SimDB is configured
+    if (scenario.simdbConfig && scenario.simdbConfig.host) {
+        scenario.stations.forEach(station => {
+            if (!station.locationId) {
+                errors.push(`${station.id}: locationIdが設定されていません`);
+            }
+        });
+
+        const locationIds = scenario.stations
+            .filter(s => s.locationId)
+            .map(s => ({ stationId: s.id, locationId: s.locationId }));
+        const seen = new Map();
+        locationIds.forEach(({ stationId, locationId }) => {
+            if (seen.has(locationId)) {
+                seen.get(locationId).push(stationId);
+            } else {
+                seen.set(locationId, [stationId]);
+            }
+        });
+        for (const [locId, stationIds] of seen) {
+            if (stationIds.length > 1) {
+                errors.push(`locationId ${locId} が重複しています: ${stationIds.join(', ')}`);
+            }
+        }
+    }
+
     // Check for invalid branching/merging patterns
     // source, processing, drain can only have 1:1 connections
     scenario.stations.forEach(station => {

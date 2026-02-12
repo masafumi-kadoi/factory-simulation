@@ -1,10 +1,12 @@
 // Properties Panel
 import { validateStation } from './validation.js';
+import { apiClient } from './api.js';
 
 export class PropertiesPanel {
     constructor(container, editor) {
         this.container = container;
         this.editor = editor;
+        this._locationMasterCache = null;
     }
 
     render() {
@@ -21,6 +23,8 @@ export class PropertiesPanel {
 
     _renderScenarioInfo() {
         const scenario = this.editor.scenario;
+        const simdb = scenario.simdbConfig || {};
+
         this.container.innerHTML = `
             <div class="property-group">
                 <label class="property-label">シナリオ名</label>
@@ -37,6 +41,38 @@ export class PropertiesPanel {
                     <div>接続: ${scenario.connections.length}</div>
                 </div>
             </div>
+            <div class="simdb-section">
+                <div class="property-group">
+                    <label class="property-label simdb-section-title">SimDB設定</label>
+                </div>
+                <div class="property-group">
+                    <label class="property-label">Host</label>
+                    <input type="text" class="property-input" id="prop-simdb-host" value="${this._escape(simdb.host || '')}" placeholder="localhost">
+                </div>
+                <div class="property-group">
+                    <label class="property-label">Port</label>
+                    <input type="number" class="property-input" id="prop-simdb-port" value="${simdb.port || 5432}" min="1" max="65535">
+                </div>
+                <div class="property-group">
+                    <label class="property-label">Database</label>
+                    <input type="text" class="property-input" id="prop-simdb-database" value="${this._escape(simdb.database || '')}" placeholder="simdb">
+                </div>
+                <div class="property-group">
+                    <label class="property-label">User</label>
+                    <input type="text" class="property-input" id="prop-simdb-user" value="${this._escape(simdb.user || '')}" placeholder="postgres">
+                </div>
+                <div class="property-group">
+                    <label class="property-label">Password</label>
+                    <input type="password" class="property-input" id="prop-simdb-password" value="${this._escape(simdb.password || '')}" placeholder="パスワード">
+                </div>
+                <div class="property-group">
+                    <button class="btn-primary" id="simdb-save-btn" style="width: 100%;">SimDB設定を保存</button>
+                </div>
+                <div class="property-group">
+                    <button class="btn-secondary" id="simdb-test-btn" style="width: 100%;">接続テスト</button>
+                    <div id="simdb-test-result" style="margin-top: 0.5rem; font-size: 0.8rem;"></div>
+                </div>
+            </div>
         `;
 
         this.container.querySelector('#prop-scenario-name').addEventListener('change', (e) => {
@@ -49,6 +85,64 @@ export class PropertiesPanel {
             this.editor.scenario.description = e.target.value;
             this.editor._markDirty();
         });
+
+        this.container.querySelector('#simdb-save-btn').addEventListener('click', () => {
+            this._saveSimDBConfig();
+        });
+
+        this.container.querySelector('#simdb-test-btn').addEventListener('click', () => {
+            this._testSimDBConnection();
+        });
+    }
+
+    _saveSimDBConfig() {
+        const host = this.container.querySelector('#prop-simdb-host').value.trim();
+        const port = parseInt(this.container.querySelector('#prop-simdb-port').value) || 5432;
+        const database = this.container.querySelector('#prop-simdb-database').value.trim();
+        const user = this.container.querySelector('#prop-simdb-user').value.trim();
+        const password = this.container.querySelector('#prop-simdb-password').value;
+
+        if (!host) {
+            this.editor.scenario.simdbConfig = null;
+        } else {
+            this.editor.scenario.simdbConfig = { host, port, database, user, password };
+        }
+        this.editor._markDirty();
+    }
+
+    async _testSimDBConnection() {
+        const resultEl = this.container.querySelector('#simdb-test-result');
+        const btn = this.container.querySelector('#simdb-test-btn');
+
+        const scenarioId = this.editor.scenario.apiScenarioId;
+        if (!scenarioId) {
+            resultEl.innerHTML = '<span style="color: #dc3545;">先にシナリオをAPIに保存してください</span>';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'テスト中...';
+        resultEl.innerHTML = '';
+
+        try {
+            const result = await apiClient.testSimDBConnection(scenarioId);
+            if (result.success) {
+                if (result.locations && result.locations.length > 0) {
+                    this._locationMasterCache = result.locations;
+                    resultEl.innerHTML = `<span style="color: #28a745;">&#10003; ${this._escape(result.message)}</span>`;
+                } else {
+                    this._locationMasterCache = [];
+                    resultEl.innerHTML = `<span style="color: #28a745;">&#10003; ${this._escape(result.message)}</span>`;
+                }
+            } else {
+                resultEl.innerHTML = `<span style="color: #dc3545;">&#10007; ${this._escape(result.message)}</span>`;
+            }
+        } catch (err) {
+            resultEl.innerHTML = `<span style="color: #dc3545;">&#10007; ${this._escape(err.message)}</span>`;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '接続テスト';
+        }
     }
 
     _renderStationProperties(stationId) {
@@ -57,6 +151,7 @@ export class PropertiesPanel {
 
         const configFields = this._getConfigFields(station.type);
         const errors = validateStation(station);
+        const locationSelectHtml = this._renderLocationSelect(station);
 
         this.container.innerHTML = `
             <div class="property-group">
@@ -67,6 +162,7 @@ export class PropertiesPanel {
                 <label class="property-label">Type</label>
                 <input type="text" class="property-input" value="${station.type}" disabled>
             </div>
+            ${locationSelectHtml}
             ${configFields.map(field => `
                 <div class="property-group">
                     <label class="property-label">${field.label}</label>
@@ -93,6 +189,13 @@ export class PropertiesPanel {
                 newConfig[field.key] = value;
             });
 
+            // Save locationId
+            const locationSelect = this.container.querySelector('#prop-location-id');
+            if (locationSelect) {
+                const val = locationSelect.value;
+                station.locationId = val ? parseInt(val) : null;
+            }
+
             this.editor.updateStation(stationId, newConfig);
         });
 
@@ -101,6 +204,37 @@ export class PropertiesPanel {
                 this.editor.deleteStation(stationId);
             }
         });
+    }
+
+    _renderLocationSelect(station) {
+        const locations = this._locationMasterCache;
+        const currentLocationId = station.locationId;
+
+        if (!locations || locations.length === 0) {
+            return `
+                <div class="property-group">
+                    <label class="property-label">Location</label>
+                    <select class="property-input" id="prop-location-id" disabled>
+                        <option value="">${currentLocationId ? `ID: ${currentLocationId}` : '(SimDB接続テストで取得)'}</option>
+                    </select>
+                </div>
+            `;
+        }
+
+        const options = locations.map(loc => {
+            const selected = currentLocationId === loc.id ? 'selected' : '';
+            return `<option value="${loc.id}" ${selected}>${this._escape(loc.name)} (ID: ${loc.id})</option>`;
+        }).join('');
+
+        return `
+            <div class="property-group">
+                <label class="property-label">Location</label>
+                <select class="property-input" id="prop-location-id">
+                    <option value="">-- 選択 --</option>
+                    ${options}
+                </select>
+            </div>
+        `;
     }
 
     _renderConnectionProperties(connectionIndex) {

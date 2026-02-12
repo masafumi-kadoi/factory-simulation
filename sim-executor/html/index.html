@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sim-executor</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="header">
+        <h1>sim-executor</h1>
+        <nav class="header-nav">
+            <a href="http://localhost:8082" target="_blank">sim-editor</a>
+            <a href="http://localhost:8081" target="_blank">sim-visualizer</a>
+        </nav>
+    </header>
+
+    <main class="main-content">
+        <div class="section-header">
+            <h2 class="section-title">Scenarios</h2>
+        </div>
+
+        <div id="scenarios-container">
+            <div class="loading">Loading scenarios...</div>
+        </div>
+    </main>
+
+    <script src="js/api.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

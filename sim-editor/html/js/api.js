@@ -1,9 +1,11 @@
 // API Client
 const API_BASE = 'http://localhost:8080/api';
+const EXECUTOR_API_BASE = 'http://localhost:8084/api/executor';
 
 export class APIClient {
     constructor() {
         this.baseURL = API_BASE;
+        this.executorBaseURL = EXECUTOR_API_BASE;
     }
 
     async request(endpoint, options = {}) {
@@ -62,6 +64,24 @@ export class APIClient {
 
     async getSimulationLogs(simulationId) {
         return this.request(`/simulations/${simulationId}/logs`, { method: 'GET' });
+    }
+
+    // SimDB APIs (via sim-executor backend)
+    async testSimDBConnection(scenarioId) {
+        const url = `${this.executorBaseURL}/simdb/test-connection`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenarioId }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || `HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
     }
 }
 

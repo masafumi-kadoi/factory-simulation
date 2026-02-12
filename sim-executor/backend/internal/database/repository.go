@@ -31,6 +31,11 @@ func NewRepository(db *DB) *Repository {
 	return &Repository{db: db}
 }
 
+// GetDB returns the underlying database connection
+func (r *Repository) GetDB() *DB {
+	return r.db
+}
+
 // SaveExecution inserts a new execution config
 func (r *Repository) SaveExecution(exec *ExecutionConfig) error {
 	query := `
