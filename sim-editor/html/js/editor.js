@@ -4,6 +4,7 @@ import { PropertiesPanel } from './properties.js';
 import { validateScenario, validateStation } from './validation.js';
 import { apiClient } from './api.js';
 import { TooltipManager } from './tooltip.js';
+import { InterlockModal } from './interlock-modal.js';
 import {
     CommandManager,
     AddStationCommand,
@@ -25,6 +26,7 @@ class ScenarioEditor {
 
         this.canvas = null;
         this.propertiesPanel = null;
+        this.interlockModal = new InterlockModal();
         this.commandManager = new CommandManager(this);
         this.tooltipManager = new TooltipManager();
 
@@ -49,6 +51,7 @@ class ScenarioEditor {
         // Initialize canvas and properties panel
         this.canvas = new Canvas(document.getElementById('canvas'), this);
         this.propertiesPanel = new PropertiesPanel(document.getElementById('properties-content'), this);
+        this.propertiesPanel.setInterlockModal(this.interlockModal);
 
         // Setup event listeners
         this._setupEventListeners();

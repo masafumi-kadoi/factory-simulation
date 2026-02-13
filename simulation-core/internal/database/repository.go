@@ -65,8 +65,8 @@ func (r *Repository) SaveStationStatusLogs(simulationID string, logs []simulatio
 	}
 
 	query := `
-		INSERT INTO station_status_logs (simulation_run_id, station_id, timestamp, status_type, value)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO station_status_logs (simulation_run_id, station_id, timestamp, status_type, value, signal_name, old_value, rule_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	tx, err := r.db.GetConnection().Begin()
@@ -88,6 +88,9 @@ func (r *Repository) SaveStationStatusLogs(simulationID string, logs []simulatio
 			log.Timestamp,
 			log.StatusType,
 			log.Value,
+			log.SignalName,
+			log.OldValue,
+			log.RuleID,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert station status log: %w", err)
@@ -185,7 +188,7 @@ func (r *Repository) GetSimulation(id string) (*domain.Simulation, error) {
 // GetStationStatusLogs retrieves station status logs from the database
 func (r *Repository) GetStationStatusLogs(simulationID string) ([]simulation.StationStatusLog, error) {
 	query := `
-		SELECT station_id, timestamp, status_type, value
+		SELECT station_id, timestamp, status_type, value, COALESCE(signal_name, ''), COALESCE(old_value, FALSE), COALESCE(rule_id, '')
 		FROM station_status_logs
 		WHERE simulation_run_id = $1
 		ORDER BY timestamp ASC
@@ -200,7 +203,7 @@ func (r *Repository) GetStationStatusLogs(simulationID string) ([]simulation.Sta
 	var logs []simulation.StationStatusLog
 	for rows.Next() {
 		var log simulation.StationStatusLog
-		if err := rows.Scan(&log.StationID, &log.Timestamp, &log.StatusType, &log.Value); err != nil {
+		if err := rows.Scan(&log.StationID, &log.Timestamp, &log.StatusType, &log.Value, &log.SignalName, &log.OldValue, &log.RuleID); err != nil {
 			return nil, fmt.Errorf("failed to scan station status log: %w", err)
 		}
 		logs = append(logs, log)

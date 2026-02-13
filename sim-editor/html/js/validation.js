@@ -83,6 +83,15 @@ export function validateScenario(scenario) {
         }
     }
 
+    // Validate interlockRules if present
+    scenario.stations.forEach(station => {
+        if (station.config.interlockRules) {
+            const ilErrors = validateInterlockRules(station, scenario);
+            ilErrors.errors.forEach(e => errors.push(`${station.id}: ${e}`));
+            ilErrors.warnings.forEach(w => warnings.push(`${station.id}: ${w}`));
+        }
+    });
+
     // Check for invalid branching/merging patterns
     // source, processing, drain can only have 1:1 connections
     scenario.stations.forEach(station => {
@@ -166,6 +175,56 @@ function hasCycle(nodeId, graph, visited) {
     }
 
     return false;
+}
+
+export function validateInterlockRules(station, scenario) {
+    const errors = [];
+    const warnings = [];
+    const config = station.config.interlockRules;
+
+    if (!config || !config.rules) return { errors, warnings };
+
+    const signalNames = new Set((config.signals || []).map(s => s.name));
+
+    for (const rule of config.rules) {
+        if (!rule.target) {
+            errors.push('ルールのターゲットが未指定です');
+        }
+        for (const cond of (rule.conditions || [])) {
+            if (!signalNames.has(cond.signal)) {
+                errors.push(`信号 '${cond.signal}' は定義されていません`);
+            }
+            if (cond.stationId) {
+                const exists = scenario.stations.some(s => s.id === cond.stationId);
+                if (!exists) {
+                    errors.push(`ステーション '${cond.stationId}' は存在しません`);
+                }
+            }
+        }
+    }
+
+    // Check main signal rules
+    const irOn = config.rules.find(r => r.target === 'inputReady' && r.value === true);
+    const irOff = config.rules.find(r => r.target === 'inputReady' && r.value === false);
+    const orOn = config.rules.find(r => r.target === 'outputReady' && r.value === true);
+    const orOff = config.rules.find(r => r.target === 'outputReady' && r.value === false);
+
+    if (!irOn || (irOn.conditions || []).length === 0) {
+        warnings.push('搬入可がONになる条件がありません');
+    }
+    if (!orOn || (orOn.conditions || []).length === 0) {
+        warnings.push('搬出可がONになる条件がありません');
+    }
+
+    // Check R5 for processing stations
+    if (station.type === 'processing') {
+        const hasR5 = config.rules.some(r => r.target === 'processingComplete' && r.value === false);
+        if (!hasR5) {
+            warnings.push('処理完了リセットルールがありません');
+        }
+    }
+
+    return { errors, warnings };
 }
 
 function hasCycleAdvanced(nodeId, graph, visited, recStack) {

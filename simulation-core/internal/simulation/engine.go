@@ -15,6 +15,10 @@ type StationStatusLog struct {
 	Timestamp  float64
 	StatusType string
 	Value      bool
+	// Signal change fields (used when StatusType == "signal_change")
+	SignalName string
+	OldValue   bool
+	RuleID     string
 }
 
 // WorkEventLog represents a log entry for work events
@@ -79,7 +83,24 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, []WorkLineageLog, error) {
 	simulation := domain.NewSimulation(simulationID, friendlyName, e.scenario.ID)
 
-	// Initialize: Schedule FIRST WorkCreated event for each source station
+	// Step 1: Initialize interlock rules and signals for all stations
+	for i := range e.scenario.Stations {
+		station := &e.scenario.Stations[i]
+		if station.InterlockRules == nil {
+			station.InterlockRules = domain.GetDefaultInterlockConfig(station.Type)
+		}
+		station.InitializeSignals()
+	}
+
+	// Step 2: Evaluate rules to set initial control signals
+	for i := range e.scenario.Stations {
+		station := &e.scenario.Stations[i]
+		if err := e.evaluateAndLogSignals(station); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("initial rule evaluation failed: %w", err)
+		}
+	}
+
+	// Step 3: Schedule FIRST WorkCreated event for each source station
 	// Subsequent works will be created after each work departs (one at a time)
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
@@ -177,8 +198,16 @@ func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error 
 	station.CurrentWork = work
 	station.State = domain.StateCompleted
 
+	// Update signal: workPresent=ON
+	station.SetSignal("workPresent", true)
+
 	// Log work event
 	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated))
+
+	// Evaluate interlock rules after signal change
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
+	}
 
 	// Schedule WorkDeparted event immediately
 	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, &workID))
@@ -205,9 +234,17 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return err
 	}
 
+	// Update signal: workPresent=ON
+	station.SetSignal("workPresent", true)
+
 	// Log work event
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived))
 	e.logStationStatus(station, "ワーク到着")
+
+	// Evaluate interlock rules after signal change
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
+	}
 
 	// For Drain station, schedule immediate destruction
 	if station.Type == domain.StationTypeDrain {
@@ -254,12 +291,20 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 		return err
 	}
 
+	// Update signal: processingComplete=ON
+	station.SetSignal("processingComplete", true)
+
 	// Log work event (Processing: normal completion)
 	if station.CurrentWork != nil {
 		e.logWorkEvent(station.CurrentWork.ID, station.CurrentWork.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted))
 	}
 
 	e.logStationStatus(station, "処理完了")
+
+	// Evaluate interlock rules after signal change
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
+	}
 
 	// Schedule WorkDeparted event immediately
 	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
@@ -280,9 +325,17 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return err
 	}
 
+	// Update signal: workPresent=OFF
+	station.SetSignal("workPresent", false)
+
 	// Log work event
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted))
 	e.logStationStatus(station, "ワーク出発")
+
+	// Evaluate interlock rules after signal change (cascading: OR=OFF → PC=OFF → IR=ON)
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
+	}
 
 	// Get next station
 	nextStation, err := e.getNextStation(station, work)
@@ -338,7 +391,15 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	station.CurrentWork = nil
 	station.State = domain.StateIdle
 
+	// Update signal: workPresent=OFF
+	station.SetSignal("workPresent", false)
+
 	e.logStationStatus(station, "ワーク破棄")
+
+	// Evaluate interlock rules after signal change
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -423,4 +484,27 @@ func (e *Engine) logStationStatus(station *domain.Station, statusType string) {
 		StatusType: statusType,
 		Value:      value,
 	})
+}
+
+// evaluateAndLogSignals evaluates interlock rules and logs signal changes
+func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
+	changes, err := evaluateRules(station, e.scenario, e.currentTime)
+	if err != nil {
+		return err
+	}
+
+	// Convert signal changes to status logs
+	for _, change := range changes {
+		e.statusLogs = append(e.statusLogs, StationStatusLog{
+			StationID:  change.StationID,
+			Timestamp:  change.Timestamp,
+			StatusType: "signal_change",
+			Value:      change.NewValue,
+			SignalName: change.SignalName,
+			OldValue:   change.OldValue,
+			RuleID:     change.RuleID,
+		})
+	}
+
+	return nil
 }

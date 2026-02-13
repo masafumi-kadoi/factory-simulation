@@ -495,6 +495,318 @@ body {
     margin-top: 0.25rem;
 }
 
+/* ===== Interlock Modal ===== */
+.interlock-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.interlock-modal {
+    background: white;
+    border-radius: 8px;
+    width: 700px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.interlock-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.interlock-modal-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.interlock-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    line-height: 1;
+}
+
+.interlock-modal-close:hover {
+    color: #333;
+}
+
+.interlock-modal-body {
+    padding: 1rem 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.interlock-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #dee2e6;
+}
+
+/* Mode row */
+.interlock-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.interlock-radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.interlock-preset-area {
+    margin-left: auto;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.interlock-preset-select {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* Tabs */
+.interlock-tabs {
+    display: flex;
+    border-bottom: 2px solid #dee2e6;
+    margin-bottom: 1rem;
+}
+
+.interlock-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #6c757d;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.interlock-tab:hover {
+    color: #333;
+}
+
+.interlock-tab.active {
+    color: #4a9eff;
+    border-bottom-color: #4a9eff;
+}
+
+/* Tab content */
+.interlock-tab-content {
+    min-height: 150px;
+}
+
+.interlock-tab-header {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.25rem;
+}
+
+.interlock-tab-desc {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-bottom: 0.75rem;
+}
+
+.interlock-conditions-empty {
+    font-size: 0.8rem;
+    color: #adb5bd;
+    padding: 1rem;
+    text-align: center;
+    border: 1px dashed #dee2e6;
+    border-radius: 4px;
+}
+
+.interlock-conditions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+/* Condition row */
+.interlock-condition-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.interlock-condition-row.readonly {
+    background: #f0f4f8;
+    color: #495057;
+}
+
+.interlock-condition-num {
+    font-weight: 600;
+    color: #6c757d;
+    min-width: 1.5em;
+}
+
+.interlock-inline-select {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.2rem 0.3rem;
+    font-size: 0.8rem;
+    background: white;
+}
+
+.interlock-inline-select:focus {
+    outline: none;
+    border-color: #4a9eff;
+}
+
+.interlock-value-select {
+    max-width: 60px;
+}
+
+.interlock-remove-btn {
+    background: none;
+    border: none;
+    color: #dc3545;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0 0.25rem;
+    line-height: 1;
+    margin-left: auto;
+}
+
+.interlock-remove-btn:hover {
+    color: #a71d2a;
+}
+
+.interlock-add-condition-btn,
+.interlock-add-rule-btn {
+    background: none;
+    border: 1px dashed #4a9eff;
+    color: #4a9eff;
+    cursor: pointer;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    width: 100%;
+    text-align: center;
+}
+
+.interlock-add-condition-btn:hover,
+.interlock-add-rule-btn:hover {
+    background: #e7f3ff;
+}
+
+.interlock-default-notice {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: #f0f4f8;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+/* Other tab */
+.interlock-other-rule {
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+}
+
+.interlock-other-rule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background: #f8f9fa;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.interlock-other-rule-body {
+    padding: 0.75rem;
+}
+
+.interlock-other-then-row {
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.interlock-other-conditions-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 0.3rem;
+}
+
+/* Signals info bar */
+.interlock-signals-info {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: #f0f4f8;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.interlock-signals-title {
+    font-weight: 500;
+    color: #495057;
+    margin-right: 0.5rem;
+}
+
+.interlock-signal-badge {
+    display: inline-block;
+    background: #e9ecef;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    color: #495057;
+    margin: 0.1rem;
+}
+
+/* Interlock section in properties panel */
+.interlock-section {
+    border-top: 1px solid #e0e0e0;
+    margin-top: 1rem;
+    padding-top: 1rem;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
     .editor-container::before {

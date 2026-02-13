@@ -1,12 +1,18 @@
 // Properties Panel
 import { validateStation } from './validation.js';
 import { apiClient } from './api.js';
+import { getDefaultPreset, SIGNAL_DISPLAY } from './interlock-presets.js';
 
 export class PropertiesPanel {
     constructor(container, editor) {
         this.container = container;
         this.editor = editor;
         this._locationMasterCache = null;
+        this._interlockModal = null;
+    }
+
+    setInterlockModal(modal) {
+        this._interlockModal = modal;
     }
 
     render() {
@@ -209,6 +215,7 @@ export class PropertiesPanel {
                     ${errors[field.key] ? `<div class="property-error">${errors[field.key]}</div>` : ''}
                 </div>
             `).join('')}
+            ${this._renderInterlockSection(station)}
             <div class="property-actions">
                 <button class="btn-primary" id="update-btn">更新</button>
                 <button class="btn-danger" id="delete-btn">削除</button>
@@ -254,6 +261,51 @@ export class PropertiesPanel {
                 this.editor.deleteStation(stationId);
             }
         });
+
+        // Interlock config button
+        const interlockBtn = this.container.querySelector('#interlock-config-btn');
+        if (interlockBtn) {
+            interlockBtn.addEventListener('click', () => {
+                if (this._interlockModal) {
+                    this._interlockModal.open(station, this.editor.scenario, () => {
+                        this.editor._markDirty();
+                        this.render();
+                    });
+                }
+            });
+        }
+    }
+
+    _renderInterlockSection(station) {
+        const isCustom = !!station.config.interlockRules;
+        const modeLabel = isCustom ? 'Custom' : 'Default';
+        const typeLabel = station.type.charAt(0).toUpperCase() + station.type.slice(1);
+
+        // Build summary of current rules
+        let summaryHtml = '';
+        const rules = isCustom ? station.config.interlockRules.rules : (getDefaultPreset(station.type) || {}).rules || [];
+        const mainRules = rules.filter(r => r.target === 'inputReady' || r.target === 'outputReady');
+        if (mainRules.length > 0) {
+            summaryHtml = mainRules.slice(0, 4).map(r => {
+                const abbr = SIGNAL_DISPLAY[r.target] ? SIGNAL_DISPLAY[r.target].abbr : r.target;
+                const condStr = r.conditions.map(c => {
+                    const cAbbr = SIGNAL_DISPLAY[c.signal] ? SIGNAL_DISPLAY[c.signal].abbr : c.signal;
+                    const prefix = c.stationId ? `${c.stationId}.` : '';
+                    return `${prefix}${cAbbr}=${c.value ? 'ON' : 'OFF'}`;
+                }).join(' & ');
+                return `<div style="font-size: 0.75rem; color: #6c757d; margin-top: 0.15rem;">${condStr} → ${abbr}=${r.value ? 'ON' : 'OFF'}</div>`;
+            }).join('');
+        }
+
+        return `
+            <div class="interlock-section">
+                <div class="property-group">
+                    <label class="property-label">Interlock: ${modeLabel} (${typeLabel})</label>
+                    ${summaryHtml}
+                    <button class="btn-secondary" id="interlock-config-btn" style="width: 100%; margin-top: 0.5rem;">条件設定...</button>
+                </div>
+            </div>
+        `;
     }
 
     _renderLocationSelect(station) {

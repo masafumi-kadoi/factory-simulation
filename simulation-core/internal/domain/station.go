@@ -55,6 +55,10 @@ type Station struct {
 
 	// Configuration (processing time, arrival time, departure time, etc.)
 	Config map[string]interface{}
+
+	// Signal-based interlock
+	Signals        map[string]bool  // Current signal values
+	InterlockRules *InterlockConfig // Rule definitions (nil = use type default)
 }
 
 // NewStation creates a new station
@@ -101,14 +105,46 @@ func (s *Station) GetBoolConfig(key string) bool {
 
 // IsInputReady returns true if station can accept a new work (搬入可 signal)
 func (s *Station) IsInputReady() bool {
-	// Input ready only when station is idle (no work present)
+	if s.Signals != nil {
+		return s.Signals["inputReady"]
+	}
+	// Fallback: legacy behavior
 	return s.State == StateIdle && s.CurrentWork == nil
 }
 
 // IsOutputReady returns true if station has completed work and ready to send (搬出可 signal)
 func (s *Station) IsOutputReady() bool {
-	// Output ready only when station has completed processing
+	if s.Signals != nil {
+		return s.Signals["outputReady"]
+	}
+	// Fallback: legacy behavior
 	return s.State == StateCompleted && s.CurrentWork != nil
+}
+
+// InitializeSignals sets all signals to their initial values from the interlock config
+func (s *Station) InitializeSignals() {
+	if s.InterlockRules == nil {
+		return
+	}
+	s.Signals = make(map[string]bool)
+	for _, sig := range s.InterlockRules.Signals {
+		s.Signals[sig.Name] = sig.Initial
+	}
+}
+
+// SetSignal sets a signal value
+func (s *Station) SetSignal(name string, value bool) {
+	if s.Signals != nil {
+		s.Signals[name] = value
+	}
+}
+
+// GetSignal gets a signal value
+func (s *Station) GetSignal(name string) bool {
+	if s.Signals != nil {
+		return s.Signals[name]
+	}
+	return false
 }
 
 // CanAcceptWork checks if the station can accept a new work
