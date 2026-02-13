@@ -207,10 +207,9 @@ func (s *Station) CompleteProcessing(newWorkIDFunc func() (string, string)) erro
 }
 
 // GetOutputWork retrieves the output work and resets station to idle
-// This is called when OutputReady signal is ON (or for Source stations)
+// This is called when OutputReady signal is ON (handshake verified)
 func (s *Station) GetOutputWork() (*Work, error) {
-	// Source stations have special behavior
-	if s.Type != StationTypeSource && !s.IsOutputReady() {
+	if !s.IsOutputReady() {
 		return nil, fmt.Errorf("station %s is not ready to output (OutputReady=OFF, state=%s)", s.ID, s.State)
 	}
 

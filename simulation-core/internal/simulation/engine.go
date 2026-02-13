@@ -53,6 +53,8 @@ type Engine struct {
 	random             *rand.Rand
 	worksInTransit     map[string]*domain.Work // Works in transit between stations
 	sourceWorkCounters map[string]int          // Counter for each source station (stationID -> count created)
+	pendingDepartures  map[string]bool         // Tracks stations with a pending WorkDeparted event (avoid duplicates)
+	reservedStations   map[string]bool         // Stations that have a work in transit heading to them (prevents double-send)
 	simDB              *SimDB                  // SimDB for managing predefined work IDs
 }
 
@@ -75,6 +77,8 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 		random:             rand.New(rand.NewSource(time.Now().UnixNano())),
 		worksInTransit:     make(map[string]*domain.Work),
 		sourceWorkCounters: make(map[string]int),
+		pendingDepartures:  make(map[string]bool),
+		reservedStations:   make(map[string]bool),
 		simDB:              NewSimDB(workIDsByStation),
 	}
 }
@@ -205,24 +209,23 @@ func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error 
 	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated))
 
 	// Evaluate interlock rules after signal change
+	// checkHandshakes (called within) will schedule WorkDeparted if handshake is satisfied
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
 	}
-
-	// Schedule WorkDeparted event immediately
-	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, &workID))
 
 	return nil
 }
 
 // handleWorkArrived handles the WorkArrived event
 func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error {
-	// Retrieve work from transit
+	// Retrieve work from transit and clear reservation
 	work, ok := e.worksInTransit[*event.WorkID]
 	if !ok {
 		return fmt.Errorf("work not found in transit: %s", *event.WorkID)
 	}
 	delete(e.worksInTransit, *event.WorkID)
+	delete(e.reservedStations, station.ID)
 
 	// Check interlock: InputReady must be ON
 	if !station.IsInputReady() {
@@ -302,21 +305,32 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 	e.logStationStatus(station, "処理完了")
 
 	// Evaluate interlock rules after signal change
+	// checkHandshakes (called within) will schedule WorkDeparted if handshake is satisfied
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
 	}
-
-	// Schedule WorkDeparted event immediately
-	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
 
 	return nil
 }
 
 // handleWorkDeparted handles the WorkDeparted event
+// This event is triggered by checkHandshakes when upstream.outputReady=ON AND downstream.inputReady=ON
 func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error {
-	// Check interlock: OutputReady must be ON (except for Source stations)
-	if station.Type != domain.StationTypeSource && !station.IsOutputReady() {
-		return fmt.Errorf("interlock violation: station %s OutputReady=OFF (state=%s), cannot depart work", station.ID, station.State)
+	// Clear pending departure flag
+	delete(e.pendingDepartures, station.ID)
+
+	// Re-verify handshake: conditions may have changed since scheduling
+	if !station.IsOutputReady() || station.CurrentWork == nil {
+		return nil // Conditions changed, skip departure
+	}
+
+	// Verify downstream inputReady and not already reserved
+	nextStation, err := e.getNextStation(station, station.CurrentWork)
+	if err != nil {
+		return err
+	}
+	if nextStation != nil && (!nextStation.IsInputReady() || e.reservedStations[nextStation.ID]) {
+		return nil // Downstream not ready or already reserved, skip departure
 	}
 
 	// Delegate to station logic
@@ -333,26 +347,18 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	e.logStationStatus(station, "ワーク出発")
 
 	// Evaluate interlock rules after signal change (cascading: OR=OFF → PC=OFF → IR=ON)
+	// checkHandshakes (called within) may schedule further departures for upstream stations
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
 	}
 
-	// Get next station
-	nextStation, err := e.getNextStation(station, work)
-	if err != nil {
-		return err
-	}
-
 	if nextStation == nil {
-		// No next station (terminal node)
 		return nil
 	}
 
-	// Note: Interlock check for InputReady is done at WorkArrived event, not here.
-	// WorkDeparted represents the start of departure, and the work will arrive after departureTime + arrivalTime.
-
-	// Put work in transit
+	// Put work in transit and reserve the destination station
 	e.worksInTransit[work.ID] = work
+	e.reservedStations[nextStation.ID] = true
 
 	// Schedule WorkArrived event at next station (departureTime + arrivalTime)
 	departureTime := station.GetFloatConfig("departureTime")
@@ -486,7 +492,7 @@ func (e *Engine) logStationStatus(station *domain.Station, statusType string) {
 	})
 }
 
-// evaluateAndLogSignals evaluates interlock rules and logs signal changes
+// evaluateAndLogSignals evaluates interlock rules, logs signal changes, and checks handshakes
 func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 	changes, err := evaluateRules(station, e.scenario, e.currentTime)
 	if err != nil {
@@ -504,6 +510,41 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 			OldValue:   change.OldValue,
 			RuleID:     change.RuleID,
 		})
+	}
+
+	// After signal changes, check if any transfer handshakes are newly satisfied
+	return e.checkHandshakes(station)
+}
+
+// checkHandshakes checks if transfer handshakes are satisfied after signal changes.
+// A transfer begins when upstream.outputReady=ON AND downstream.inputReady=ON.
+// This is called after every signal evaluation to detect newly satisfied conditions.
+func (e *Engine) checkHandshakes(station *domain.Station) error {
+	// Case 1: This station is upstream — its outputReady may have just turned ON
+	if station.IsOutputReady() && station.CurrentWork != nil && !e.pendingDepartures[station.ID] {
+		for _, conn := range e.scenario.Connections {
+			if conn.From == station.ID {
+				toStation := e.scenario.GetStation(conn.To)
+				if toStation != nil && toStation.IsInputReady() && !e.reservedStations[toStation.ID] {
+					e.pendingDepartures[station.ID] = true
+					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
+					break
+				}
+			}
+		}
+	}
+
+	// Case 2: This station is downstream — its inputReady may have just turned ON
+	if station.IsInputReady() && !e.reservedStations[station.ID] {
+		for _, conn := range e.scenario.Connections {
+			if conn.To == station.ID {
+				fromStation := e.scenario.GetStation(conn.From)
+				if fromStation != nil && fromStation.IsOutputReady() && fromStation.CurrentWork != nil && !e.pendingDepartures[fromStation.ID] {
+					e.pendingDepartures[fromStation.ID] = true
+					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil))
+				}
+			}
+		}
 	}
 
 	return nil
