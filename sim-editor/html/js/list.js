@@ -1,15 +1,16 @@
 // Scenario List Screen
-const API_BASE = 'http://localhost:8080/api';
+import { apiClient } from './api.js';
 
 class ScenarioList {
     constructor() {
-        this.scenarios = [];
+        this.localScenarios = [];
+        this.apiScenarios = [];
         this._init();
     }
 
     async _init() {
-        // Load scenarios from localStorage (later: from API)
         this._loadFromLocalStorage();
+        await this._loadFromAPI();
         this._render();
         this._setupEventListeners();
     }
@@ -18,23 +19,44 @@ class ScenarioList {
         const stored = localStorage.getItem('sim-editor-scenarios');
         if (stored) {
             try {
-                this.scenarios = JSON.parse(stored);
+                this.localScenarios = JSON.parse(stored);
             } catch (e) {
                 console.error('Failed to parse scenarios:', e);
-                this.scenarios = [];
+                this.localScenarios = [];
             }
         }
     }
 
+    async _loadFromAPI() {
+        try {
+            const data = await apiClient.listScenarios();
+            this.apiScenarios = (data.scenarios || []).map(s => ({
+                id: s.scenarioId,
+                apiScenarioId: s.scenarioId,
+                name: s.name,
+                stationCount: s.stationCount,
+                connectionCount: s.connectionCount,
+                simdbConfig: s.simdbConfig || null,
+                source: 'api'
+            }));
+        } catch (e) {
+            console.error('Failed to load scenarios from API:', e);
+            this.apiScenarios = [];
+        }
+    }
+
     _saveToLocalStorage() {
-        localStorage.setItem('sim-editor-scenarios', JSON.stringify(this.scenarios));
+        localStorage.setItem('sim-editor-scenarios', JSON.stringify(this.localScenarios));
     }
 
     _render() {
         const listElement = document.getElementById('scenario-list');
         const emptyState = document.getElementById('empty-state');
 
-        if (this.scenarios.length === 0) {
+        const hasLocal = this.localScenarios.length > 0;
+        const hasAPI = this.apiScenarios.length > 0;
+
+        if (!hasLocal && !hasAPI) {
             listElement.style.display = 'none';
             emptyState.style.display = 'block';
             return;
@@ -43,24 +65,52 @@ class ScenarioList {
         listElement.style.display = 'grid';
         emptyState.style.display = 'none';
 
-        listElement.innerHTML = this.scenarios.map((scenario, index) => `
-            <div class="scenario-card" data-index="${index}">
-                <div class="scenario-card-header">
-                    <h3 class="scenario-card-title">${this._escapeHtml(scenario.name)}</h3>
+        let html = '';
+
+        // API scenarios
+        if (hasAPI) {
+            html += '<div class="scenario-section-label">Saved Scenarios</div>';
+            html += this.apiScenarios.map(scenario => `
+                <div class="scenario-card">
+                    <div class="scenario-card-header">
+                        <h3 class="scenario-card-title">${this._escapeHtml(scenario.name)}</h3>
+                    </div>
+                    <div class="scenario-card-meta">
+                        Stations: ${scenario.stationCount} | Connections: ${scenario.connectionCount}
+                    </div>
+                    <div class="scenario-card-actions">
+                        <a href="editor.html?scenarioId=${encodeURIComponent(scenario.apiScenarioId)}" class="btn-primary" style="text-decoration:none;text-align:center;">Edit</a>
+                    </div>
                 </div>
-                <div class="scenario-card-meta">
-                    作成日: ${new Date(scenario.createdAt).toLocaleString('ja-JP')}
+            `).join('');
+        }
+
+        // Local scenarios
+        if (hasLocal) {
+            if (hasAPI) {
+                html += '<div class="scenario-section-label">Local Drafts</div>';
+            }
+            html += this.localScenarios.map((scenario, index) => `
+                <div class="scenario-card" data-index="${index}">
+                    <div class="scenario-card-header">
+                        <h3 class="scenario-card-title">${this._escapeHtml(scenario.name)}</h3>
+                    </div>
+                    <div class="scenario-card-meta">
+                        作成日: ${new Date(scenario.createdAt).toLocaleString('ja-JP')}
+                    </div>
+                    <div class="scenario-card-meta">
+                        Stations: ${scenario.stations.length} | Connections: ${scenario.connections.length}
+                    </div>
+                    <div class="scenario-card-actions">
+                        <button class="btn-primary edit-btn" data-index="${index}">Edit</button>
+                        <button class="btn-secondary duplicate-btn" data-index="${index}">Duplicate</button>
+                        <button class="btn-danger delete-btn" data-index="${index}">Delete</button>
+                    </div>
                 </div>
-                <div class="scenario-card-meta">
-                    ステーション: ${scenario.stations.length} | 接続: ${scenario.connections.length}
-                </div>
-                <div class="scenario-card-actions">
-                    <button class="btn-primary edit-btn" data-index="${index}">編集</button>
-                    <button class="btn-secondary duplicate-btn" data-index="${index}">複製</button>
-                    <button class="btn-danger delete-btn" data-index="${index}">削除</button>
-                </div>
-            </div>
-        `).join('');
+            `).join('');
+        }
+
+        listElement.innerHTML = html;
     }
 
     _setupEventListeners() {
@@ -94,7 +144,7 @@ class ScenarioList {
             dirty: true
         };
 
-        this.scenarios.push(newScenario);
+        this.localScenarios.push(newScenario);
         this._saveToLocalStorage();
 
         // Navigate to editor
@@ -102,12 +152,12 @@ class ScenarioList {
     }
 
     _editScenario(index) {
-        const scenario = this.scenarios[index];
+        const scenario = this.localScenarios[index];
         window.location.href = `editor.html?id=${scenario.id}`;
     }
 
     _duplicateScenario(index) {
-        const original = this.scenarios[index];
+        const original = this.localScenarios[index];
         const duplicate = {
             ...JSON.parse(JSON.stringify(original)),
             id: this._generateId(),
@@ -115,15 +165,15 @@ class ScenarioList {
             createdAt: new Date().toISOString()
         };
 
-        this.scenarios.push(duplicate);
+        this.localScenarios.push(duplicate);
         this._saveToLocalStorage();
         this._render();
     }
 
     _deleteScenario(index) {
-        const scenario = this.scenarios[index];
+        const scenario = this.localScenarios[index];
         if (confirm(`「${scenario.name}」を削除しますか？`)) {
-            this.scenarios.splice(index, 1);
+            this.localScenarios.splice(index, 1);
             this._saveToLocalStorage();
             this._render();
         }

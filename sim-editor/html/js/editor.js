@@ -441,14 +441,35 @@ class ScenarioEditor {
 
     async _saveScenario() {
         // Validate
-        const errors = validateScenario(this.scenario);
+        const { errors, warnings } = validateScenario(this.scenario);
+
         if (errors.length > 0) {
-            const confirmMsg = 'バリデーションエラー/警告:\n' + errors.join('\n') + '\n\n無視して保存しますか？';
+            const confirmMsg = 'バリデーションエラー:\n' + errors.join('\n')
+                + (warnings.length > 0 ? '\n\n警告:\n' + warnings.join('\n') : '')
+                + '\n\nエラーを無視して保存しますか？';
             if (!confirm(confirmMsg)) {
                 return;
             }
+        } else if (warnings.length > 0) {
+            // Warnings only — show informational message but don't block
+            const infoMsg = '警告:\n' + warnings.join('\n') + '\n\n保存を続行します。';
+            alert(infoMsg);
         }
 
+        await this._saveToAPI();
+    }
+
+    // Save to API without validation dialog (used by properties panel for auto-save before SimDB test)
+    async saveToAPIQuiet() {
+        const { errors } = validateScenario(this.scenario);
+        // Block only on structural errors, not warnings
+        if (errors.length > 0) {
+            throw new Error('バリデーションエラーがあるため保存できません:\n' + errors.join('\n'));
+        }
+        await this._saveToAPI();
+    }
+
+    async _saveToAPI() {
         try {
             // Prepare scenario data for API
             const scenarioData = {

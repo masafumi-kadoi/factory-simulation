@@ -114,10 +114,31 @@ export class PropertiesPanel {
         const resultEl = this.container.querySelector('#simdb-test-result');
         const btn = this.container.querySelector('#simdb-test-btn');
 
-        const scenarioId = this.editor.scenario.apiScenarioId;
-        if (!scenarioId) {
-            resultEl.innerHTML = '<span style="color: #dc3545;">先にシナリオをAPIに保存してください</span>';
+        // Apply current SimDB config from form fields before testing
+        this._saveSimDBConfig();
+
+        if (!this.editor.scenario.simdbConfig || !this.editor.scenario.simdbConfig.host) {
+            resultEl.innerHTML = '<span style="color: #dc3545;">SimDB接続情報を入力してください</span>';
             return;
+        }
+
+        let scenarioId = this.editor.scenario.apiScenarioId;
+
+        // Auto-save if not yet saved to API
+        if (!scenarioId) {
+            resultEl.innerHTML = '<span style="color: #6c757d;">シナリオを自動保存中...</span>';
+            try {
+                await this.editor.saveToAPIQuiet();
+                scenarioId = this.editor.scenario.apiScenarioId;
+            } catch (err) {
+                resultEl.innerHTML = `<span style="color: #dc3545;">自動保存に失敗しました: ${this._escape(err.message)}</span>`;
+                return;
+            }
+
+            if (!scenarioId) {
+                resultEl.innerHTML = '<span style="color: #dc3545;">シナリオの保存に失敗しました</span>';
+                return;
+            }
         }
 
         btn.disabled = true;

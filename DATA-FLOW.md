@@ -344,3 +344,10 @@ DynamicParameter の管理と、simulation-coreへの実行委譲。
 - [README.md](README.md) - システム概要
 - [TESTING.md](TESTING.md) - テスト・動作確認ガイド
 - [ARCHITECTURE.md](ARCHITECTURE.md) - アーキテクチャ設計書
+
+### 各サービスの通信フロー詳細
+
+- [sim-portal/COMMUNICATION.md](sim-portal/COMMUNICATION.md) - ポータルの通信フロー
+- [sim-editor/COMMUNICATION.md](sim-editor/COMMUNICATION.md) - エディタの通信フロー
+- [sim-executor/COMMUNICATION.md](sim-executor/COMMUNICATION.md) - 実行管理の通信フロー
+- [sim-visualizer/COMMUNICATION.md](sim-visualizer/COMMUNICATION.md) - 可視化の通信フロー

@@ -157,9 +157,20 @@ body {
     margin-top: 1rem;
 }
 
-.scenario-card-actions button {
+.scenario-card-actions button,
+.scenario-card-actions a {
     padding: 0.5rem 1rem;
     font-size: 0.875rem;
+}
+
+.scenario-section-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.5rem 0;
+    grid-column: 1 / -1;
 }
 
 .empty-state {

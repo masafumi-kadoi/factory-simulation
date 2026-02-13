@@ -2,6 +2,7 @@
 
 export function validateScenario(scenario) {
     const errors = [];
+    const warnings = [];
 
     // Check if there's at least one source
     const sources = scenario.stations.filter(s => s.type === 'source');
@@ -56,11 +57,11 @@ export function validateScenario(scenario) {
         }
     }
 
-    // Check location_id when SimDB is configured
+    // Check location_id when SimDB is configured (warnings, not errors)
     if (scenario.simdbConfig && scenario.simdbConfig.host) {
         scenario.stations.forEach(station => {
             if (!station.locationId) {
-                errors.push(`${station.id}: locationIdが設定されていません`);
+                warnings.push(`${station.id}: locationIdが未設定です（SimDB接続テスト後に設定できます）`);
             }
         });
 
@@ -117,7 +118,7 @@ export function validateScenario(scenario) {
         }
     });
 
-    return errors;
+    return { errors, warnings };
 }
 
 export function validateStation(station) {
