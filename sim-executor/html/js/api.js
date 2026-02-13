@@ -1,8 +1,16 @@
 // sim-executor API client
 
 const API_BASE = 'http://localhost:8084/api/executor';
+const CORE_API_BASE = 'http://localhost:8080/api';
 
 const ExecutorAPI = {
+    // Get scenario detail (stations, connections) from simulation-core
+    async getScenarioDetail(scenarioId) {
+        const resp = await fetch(`${CORE_API_BASE}/scenarios/${encodeURIComponent(scenarioId)}`);
+        if (!resp.ok) throw new Error(`Failed to get scenario detail: ${resp.statusText}`);
+        return resp.json();
+    },
+
     // Get scenarios list (with execution count)
     async getScenarios() {
         const resp = await fetch(`${API_BASE}/scenarios`);

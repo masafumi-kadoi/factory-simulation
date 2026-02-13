@@ -174,6 +174,16 @@ export class PropertiesPanel {
         const errors = validateStation(station);
         const locationSelectHtml = this._renderLocationSelect(station);
 
+        const continuousHtml = station.type === 'source' ? `
+            <div class="property-group">
+                <label class="property-label">
+                    <input type="checkbox" id="prop-continuous" ${station.config.continuous ? 'checked' : ''}>
+                    Continuous (Duration満了まで生成)
+                </label>
+                <div class="property-hint">ONの場合、Work CountはDurationに応じて自動計算されます</div>
+            </div>
+        ` : '';
+
         this.container.innerHTML = `
             <div class="property-group">
                 <label class="property-label">ID</label>
@@ -184,6 +194,7 @@ export class PropertiesPanel {
                 <input type="text" class="property-input" value="${station.type}" disabled>
             </div>
             ${locationSelectHtml}
+            ${continuousHtml}
             ${configFields.map(field => `
                 <div class="property-group">
                     <label class="property-label">${field.label}</label>
@@ -193,7 +204,8 @@ export class PropertiesPanel {
                         id="prop-${field.key}"
                         value="${station.config[field.key] || ''}"
                         step="${field.step || '0.1'}"
-                        min="${field.min || '0'}">
+                        min="${field.min || '0'}"
+                        ${field.key === 'workCount' && station.config.continuous ? 'disabled' : ''}>
                     ${errors[field.key] ? `<div class="property-error">${errors[field.key]}</div>` : ''}
                 </div>
             `).join('')}
@@ -203,12 +215,29 @@ export class PropertiesPanel {
             </div>
         `;
 
+        // Continuous toggle behavior
+        const continuousCheckbox = this.container.querySelector('#prop-continuous');
+        if (continuousCheckbox) {
+            continuousCheckbox.addEventListener('change', () => {
+                const workCountInput = this.container.querySelector('#prop-workCount');
+                if (workCountInput) {
+                    workCountInput.disabled = continuousCheckbox.checked;
+                }
+            });
+        }
+
         this.container.querySelector('#update-btn').addEventListener('click', () => {
             const newConfig = {};
             configFields.forEach(field => {
                 const value = parseFloat(this.container.querySelector(`#prop-${field.key}`).value);
                 newConfig[field.key] = value;
             });
+
+            // Save continuous flag for source stations
+            const continuousEl = this.container.querySelector('#prop-continuous');
+            if (continuousEl) {
+                newConfig.continuous = continuousEl.checked;
+            }
 
             // Save locationId
             const locationSelect = this.container.querySelector('#prop-location-id');

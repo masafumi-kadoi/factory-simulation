@@ -2,6 +2,8 @@
 
 let currentScenarioId = null;
 let currentInitialConditions = null;
+let currentStations = []; // Station list from scenario
+let isManualMode = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);
@@ -27,10 +29,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Fetch conditions button
     document.getElementById('btn-fetch-conditions').addEventListener('click', fetchInitialConditions);
 
+    // Manual conditions button
+    document.getElementById('btn-manual-conditions').addEventListener('click', setManualConditions);
+
+    // Clear conditions button
+    document.getElementById('btn-clear-conditions').addEventListener('click', clearConditions);
+
     // Execute button
     document.getElementById('btn-execute').addEventListener('click', executeSimulation);
 
     loadScenarioSummary();
+    loadStationList();
 });
 
 function setupRadioButtons() {
@@ -90,6 +99,126 @@ async function loadScenarioSummary() {
     }
 }
 
+async function loadStationList() {
+    try {
+        const data = await ExecutorAPI.getScenarioDetail(currentScenarioId);
+        currentStations = (data.stations || []).map(s => ({
+            id: s.id,
+            type: s.type
+        }));
+    } catch (err) {
+        console.error('Failed to load station list:', err);
+        currentStations = [];
+    }
+}
+
+function setManualConditions() {
+    if (currentStations.length === 0) {
+        document.getElementById('conditions-container').innerHTML =
+            '<div class="error-message">Station list not available. Please wait for scenario to load.</div>';
+        return;
+    }
+
+    isManualMode = true;
+
+    // Pre-populate with existing conditions if available
+    const existing = currentInitialConditions || {};
+
+    renderEditableConditionsTable(existing);
+    document.getElementById('btn-clear-conditions').style.display = '';
+    document.getElementById('btn-execute').disabled = false;
+    document.getElementById('warnings-container').innerHTML = '';
+}
+
+function clearConditions() {
+    currentInitialConditions = null;
+    isManualMode = false;
+    document.getElementById('btn-clear-conditions').style.display = 'none';
+    document.getElementById('btn-execute').disabled = true;
+    document.getElementById('warnings-container').innerHTML = '';
+    document.getElementById('conditions-container').innerHTML = `
+        <div class="empty-state" style="padding: 1.5rem">
+            <p class="empty-hint">Click "Fetch from SimDB" or "Set Manually" to configure initial conditions</p>
+        </div>
+    `;
+}
+
+function renderEditableConditionsTable(conditions) {
+    const container = document.getElementById('conditions-container');
+
+    const rows = currentStations.map(station => {
+        const cond = conditions[station.id];
+        const workId = cond && cond.currentWork ? cond.currentWork.id : '';
+        const elapsed = cond ? (cond.elapsedTime || 0) : 0;
+        const quality = cond && cond.currentWork ? (cond.currentWork.qualityStatus || '') : '';
+        const hasWork = !!(cond && cond.currentWork);
+
+        return `
+            <tr data-station-id="${escapeHtml(station.id)}">
+                <td>
+                    <span class="station-id-label">${escapeHtml(station.id)}</span>
+                    <span class="station-type-tag type-${station.type}">${station.type}</span>
+                </td>
+                <td><input type="text" class="condition-input" data-field="workId" value="${escapeHtml(workId)}" placeholder="(empty)"></td>
+                <td><input type="number" class="condition-input" data-field="elapsed" value="${hasWork ? elapsed : ''}" placeholder="0" min="0" step="1"></td>
+                <td>
+                    <select class="condition-input" data-field="quality">
+                        <option value="">-</option>
+                        <option value="OK" ${quality === 'OK' ? 'selected' : ''}>OK</option>
+                        <option value="NG" ${quality === 'NG' ? 'selected' : ''}>NG</option>
+                    </select>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <table class="conditions-table conditions-editable">
+            <thead>
+                <tr>
+                    <th>Station</th>
+                    <th>Work ID</th>
+                    <th>Elapsed (sec)</th>
+                    <th>Quality</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+        <div class="conditions-help">
+            Work IDが空のステーションはワークなし(idle)として扱われます
+        </div>
+    `;
+}
+
+function collectManualConditions() {
+    const conditions = {};
+    const rows = document.querySelectorAll('.conditions-editable tbody tr');
+
+    rows.forEach(row => {
+        const stationId = row.dataset.stationId;
+        const workId = row.querySelector('[data-field="workId"]').value.trim();
+        const elapsed = parseFloat(row.querySelector('[data-field="elapsed"]').value) || 0;
+        const quality = row.querySelector('[data-field="quality"]').value || null;
+
+        if (workId) {
+            conditions[stationId] = {
+                currentWork: {
+                    id: workId,
+                    qualityStatus: quality
+                },
+                elapsedTime: elapsed
+            };
+        } else {
+            conditions[stationId] = {
+                currentWork: null,
+                elapsedTime: 0
+            };
+        }
+    });
+
+    return conditions;
+}
+
 async function fetchInitialConditions() {
     const btn = document.getElementById('btn-fetch-conditions');
     const container = document.getElementById('conditions-container');
@@ -113,6 +242,7 @@ async function fetchInitialConditions() {
     try {
         const data = await ExecutorAPI.getInitialConditions(currentScenarioId, startTimeISO);
         currentInitialConditions = data.initialConditions || {};
+        isManualMode = false;
 
         renderConditionsTable(currentInitialConditions);
 
@@ -123,6 +253,7 @@ async function fetchInitialConditions() {
             ).join('');
         }
 
+        document.getElementById('btn-clear-conditions').style.display = '';
         document.getElementById('btn-execute').disabled = false;
     } catch (err) {
         container.innerHTML = `<div class="error-message">${escapeHtml(err.message)}</div>`;
@@ -201,6 +332,11 @@ async function executeSimulation() {
             return;
         }
         endCondition = { type: 'absolute', value: `${endDate}T${endTime}:00` };
+    }
+
+    // Collect conditions from editable table if in manual mode
+    if (isManualMode) {
+        currentInitialConditions = collectManualConditions();
     }
 
     btn.disabled = true;

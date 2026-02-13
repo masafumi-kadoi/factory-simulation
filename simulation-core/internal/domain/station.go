@@ -89,6 +89,16 @@ func (s *Station) GetIntConfig(key string) int {
 	return 0
 }
 
+// GetBoolConfig retrieves a boolean configuration value
+func (s *Station) GetBoolConfig(key string) bool {
+	if val, ok := s.Config[key]; ok {
+		if bval, ok := val.(bool); ok {
+			return bval
+		}
+	}
+	return false
+}
+
 // IsInputReady returns true if station can accept a new work (搬入可 signal)
 func (s *Station) IsInputReady() bool {
 	// Input ready only when station is idle (no work present)

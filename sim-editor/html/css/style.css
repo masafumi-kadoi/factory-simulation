@@ -375,6 +375,12 @@ body {
     margin-top: 0.25rem;
 }
 
+.property-hint {
+    font-size: 0.7rem;
+    color: #6c757d;
+    margin-top: 0.25rem;
+}
+
 .property-actions {
     display: flex;
     gap: 0.5rem;

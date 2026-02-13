@@ -145,10 +145,13 @@ func (e *Engine) processEvent(event *Event, simulation *domain.Simulation) error
 // handleWorkCreated handles the WorkCreated event
 func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error {
 	// Check if we should create more works for this source
-	workCount := station.GetIntConfig("workCount")
-	if e.sourceWorkCounters[station.ID] >= workCount {
-		// Already created all works for this source
-		return nil
+	continuous := station.GetBoolConfig("continuous")
+	if !continuous {
+		workCount := station.GetIntConfig("workCount")
+		if e.sourceWorkCounters[station.ID] >= workCount {
+			// Already created all works for this source
+			return nil
+		}
 	}
 
 	// Increment counter
@@ -306,9 +309,13 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 
 	// For Source stations: Schedule next work creation (interlock: one at a time)
 	if station.Type == domain.StationTypeSource {
-		workCount := station.GetIntConfig("workCount")
-		if e.sourceWorkCounters[station.ID] < workCount {
-			// Create next work after configured departure time (interlock delay)
+		continuous := station.GetBoolConfig("continuous")
+		shouldCreate := continuous
+		if !continuous {
+			workCount := station.GetIntConfig("workCount")
+			shouldCreate = e.sourceWorkCounters[station.ID] < workCount
+		}
+		if shouldCreate {
 			departureTime := station.GetFloatConfig("departureTime")
 			e.eventQueue.Push(NewEvent(EventWorkCreated, e.currentTime+departureTime, station.ID, nil))
 		}

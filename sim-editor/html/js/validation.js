@@ -126,8 +126,8 @@ export function validateStation(station) {
     const config = station.config;
 
     if (station.type === 'source') {
-        if (!config.workCount || config.workCount < 1) {
-            errors.workCount = 'workCountは1以上である必要があります';
+        if (!config.continuous && (!config.workCount || config.workCount < 1)) {
+            errors.workCount = 'workCountは1以上である必要があります（またはContinuousをONにしてください）';
         }
         if (!config.departureTime || config.departureTime <= 0) {
             errors.departureTime = 'departureTimeは0より大きい必要があります';
