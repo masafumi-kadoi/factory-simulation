@@ -6,8 +6,9 @@
 3. [基本動作確認](#基本動作確認)
 4. [自動テストの実行](#自動テストの実行)
 5. [インターロック機構の確認](#インターロック機構の確認)
-6. [3D可視化の確認](#3d可視化の確認)
-7. [トラブルシューティング](#トラブルシューティング)
+6. [各ツールの動作確認](#各ツールの動作確認)
+7. [3D可視化の確認](#3d可視化の確認)
+8. [トラブルシューティング](#トラブルシューティング)
 
 ---
 
@@ -51,7 +52,17 @@ Factory Simulationは**インターロック制御方式**を採用した離散�
 
 - Docker がインストールされている
 - Docker Compose がインストールされている
-- ポート 8080 (API), 8081 (可視化), 5432 (PostgreSQL) が空いている
+- 以下のポートが空いている:
+
+| ポート | サービス |
+|--------|---------|
+| 5432 | PostgreSQL |
+| 8080 | simulation-core (API) |
+| 8081 | sim-visualizer |
+| 8082 | sim-editor |
+| 8083 | sim-executor (Frontend) |
+| 8084 | sim-executor-backend (API) |
+| 8085 | sim-portal |
 
 ### 起動手順
 
@@ -65,22 +76,29 @@ docker-compose up -d
 
 **期待される出力:**
 ```
-✔ Container factory-simulation-db      Started
-✔ Container factory-simulation-core    Started
-✔ Container factory-sim-visualizer     Started
+✔ Container factory-simulation-db          Started
+✔ Container factory-simulation-core        Started
+✔ Container factory-sim-visualizer         Started
+✔ Container factory-sim-editor             Started
+✔ Container factory-sim-executor-backend   Started
+✔ Container factory-sim-executor           Started
+✔ Container factory-sim-portal             Started
 ```
 
 ### 起動確認
 
 ```bash
-# コンテナの状態確認
+# コンテナの状態確認（7コンテナすべてがUpであること）
 docker-compose ps
 
 # APIの疎通確認
 curl http://localhost:8080/api/scenarios
 
-# 可視化サーバーの確認
-curl -I http://localhost:8081
+# Executor APIの疎通確認
+curl http://localhost:8084/api/executor/scenarios
+
+# ポータルの疎通確認
+curl -I http://localhost:8085
 ```
 
 すべて正常にレスポンスが返れば起動成功です。
@@ -163,9 +181,9 @@ curl -X POST http://localhost:8080/api/simulations \
 ```
 
 **確認ポイント:**
-- ✅ `status` が `"completed"` であること
-- ✅ `endReason` が `"event_exhausted"` であること（イベント枯渇で正常終了）
-- ✅ `endTime` が妥当な値であること（この例では約9秒）
+- `status` が `"completed"` であること
+- `endReason` が `"event_exhausted"` であること（イベント枯渇で正常終了）
+- `endTime` が妥当な値であること（この例では約9秒）
 
 ### ステップ3: ワークイベントログの確認
 
@@ -200,9 +218,9 @@ curl -s "http://localhost:8080/api/simulations/$SIM_ID/logs" | \
 ```
 
 **確認ポイント:**
-- ✅ ワークが逐次生成されている（t=0, 2, 4）
-- ✅ 各ワークが `Created → Departed → Arrived → Destroyed` のライフサイクルを持つ
-- ✅ ワークが重複して存在していない（1ステーション1ワーク）
+- ワークが逐次生成されている（t=0, 2, 4）
+- 各ワークが `Created → Departed → Arrived → Destroyed` のライフサイクルを持つ
+- ワークが重複して存在していない（1ステーション1ワーク）
 
 ---
 
@@ -286,7 +304,7 @@ Failed: 0
 **期待される動作:**
 - 3つのワークが逐次生成される
 - 各ワークがDrainで消滅する
-- 全ワークイベント数: 12 (各ワーク4イベント × 3)
+- 全ワークイベント数: 12 (各ワーク4イベント x 3)
 
 #### テスト2: Processing テスト (02_processing_test.json)
 
@@ -305,12 +323,12 @@ Failed: 0
 - 3つのワークが逐次生成される
 - 各ワークがProcessingステーションで2秒間処理される
 - インターロック機構により、次のワークはProcessingが空くまで待機
-- 全ワークイベント数: 24 (各ワーク8イベント × 3)
+- 全ワークイベント数: 24 (各ワーク8イベント x 3)
 
 **確認ポイント:**
-- ✅ Processingステーションで `WorkArrived → ProcessingStarted → ProcessingCompleted → WorkDeparted` のフローが発生
-- ✅ インターロック違反が発生しない（エラーログなし）
-- ✅ ワークが重複してProcessingに入らない
+- Processingステーションで `WorkArrived → ProcessingStarted → ProcessingCompleted → WorkDeparted` のフローが発生
+- インターロック違反が発生しない（エラーログなし）
+- ワークが重複してProcessingに入らない
 
 #### テスト3: ストレステスト (07_stress_test.json)
 
@@ -328,12 +346,12 @@ Failed: 0
 **期待される動作:**
 - 20個のワークが逐次生成・処理される
 - 高速処理でもインターロック機構が正常に動作する
-- 全ワークイベント数: 160 (各ワーク8イベント × 20)
+- 全ワークイベント数: 160 (各ワーク8イベント x 20)
 
 **確認ポイント:**
-- ✅ 大量ワークでもシミュレーションが完走する
-- ✅ メモリリークやパフォーマンス劣化がない
-- ✅ すべてのワークが正しく処理・破棄される
+- 大量ワークでもシミュレーションが完走する
+- メモリリークやパフォーマンス劣化がない
+- すべてのワークが正しく処理・破棄される
 
 ---
 
@@ -412,12 +430,103 @@ departureTime >= (次ステーションのサイクル時間)
 {
   "id": "source-1",
   "config": {
-    "departureTime": 3.0  // 3.0秒以上に設定
+    "departureTime": 3.0
   }
 }
 ```
 
 これにより、次のワークが到着する前に前のワークが完全に処理されます。
+
+---
+
+## 各ツールの動作確認
+
+### sim-portal（統合管理ポータル）
+
+http://localhost:8085 にアクセス。
+
+**ダッシュボード (index.html):**
+- シナリオ数・実行件数の統計が表示される
+- 各ツールへのリンクカード（sim-editor, sim-executor, sim-visualizer, sim-explorer）が表示される
+- 最近の実行履歴（最新5件）が表示される
+
+**シナリオ管理 (scenarios.html):**
+- 登録済みシナリオの一覧テーブルが表示される
+- 各シナリオにEdit / Execute / Historyのアクションリンクがある
+- Edit → sim-editor、Execute → sim-executor へ遷移する
+
+**実行履歴 (executions.html):**
+- 全シナリオの実行履歴が時系列で表示される
+- ステータスフィルタ（All / Completed / Running / Error）で絞り込みができる
+
+**システムステータス (status.html):**
+- 各サービスの稼働状態（Online / Offline / Unknown）が表示される
+- Refreshボタンで最新状態を再チェックできる
+
+### sim-editor（シナリオエディタ）
+
+http://localhost:8082 にアクセス。
+
+**シナリオ一覧 (index.html):**
+- 登録済みシナリオの一覧が表示される
+- 「New Scenario」ボタンで新規作成画面に遷移する
+
+**ビジュアルエディタ (editor.html):**
+- 左パネル: ツールパレット（Source, Processing, Drain）
+- 中央: SVGキャンバス（ドラッグ&ドロップでステーション配置）
+- 右パネル: プロパティ編集（ステーション設定、SimDB接続設定）
+- Undo/Redo、Import/Export、Grid Snap機能
+
+**確認ポイント:**
+- ステーションをキャンバスにドラッグ&ドロップで配置できる
+- ステーション間を接続線で結べる
+- 右パネルでプロパティ（処理時間等）を編集できる
+- 保存後、APIに反映される
+
+### sim-executor（シミュレーション実行管理）
+
+http://localhost:8083 にアクセス。
+
+**ダッシュボード (index.html):**
+- シナリオ一覧が表示される
+- 各シナリオをクリックして詳細画面へ遷移する
+
+**シナリオ詳細 (scenario.html):**
+- シナリオ情報の表示
+- 過去の実行履歴テーブル
+- 「New Execution」ボタンで実行設定画面へ
+
+**実行設定 (execution.html):**
+- シミュレーション開始日時の設定
+- 終了条件の設定（Duration / Absolute）
+- SimDBからの初期条件取得（「Fetch from SimDB」ボタン）
+- 「Execute Simulation」ボタンで実行
+- 実行結果の表示（ステータス、終了理由）
+
+**確認ポイント:**
+- シナリオを選択して実行設定ができる
+- 実行後、結果（completed / error）が表示される
+- 実行履歴が記録される
+
+### sim-visualizer（3D可視化）
+
+http://localhost:8081 にアクセス。
+
+**シミュレーション一覧 (index-list.html):**
+- 過去のシミュレーション一覧
+- クリックして3Dビューアへ
+
+**3Dビューア (index.html?sim={simulationId}):**
+- Three.jsによる3Dアニメーション
+- タイムラインスライダー
+- 再生コントロール（Play / Pause / Reset / 速度調整）
+- 表示オプション（ステーション名、ワークID表示トグル）
+
+**確認ポイント:**
+- ワークがステーション間をスムーズに移動する
+- Processingステーションでワークが停止（処理中）する
+- 複数ワークが同時にステーション内に存在しない
+- タイムスタンプが正しく進む
 
 ---
 
@@ -433,8 +542,6 @@ SIM_ID="yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
 
 # ブラウザで開く
 open "http://localhost:8081?sim=$SIM_ID"
-# または
-# Windowsの場合: start http://localhost:8081?sim=%SIM_ID%
 ```
 
 ### 可視化画面の操作
@@ -445,10 +552,10 @@ open "http://localhost:8081?sim=$SIM_ID"
 - 右ドラッグ: パン（視点移動）
 
 **コントロール:**
-- ▶ (Play): シミュレーション再生
-- ⏸ (Pause): 一時停止
-- 🔄 (Reset): 最初に戻る
-- Speed: 再生速度調整（0.5x, 1x, 2x, 4x）
+- Play: シミュレーション再生
+- Pause: 一時停止
+- Reset: 最初に戻る
+- Speed: 再生速度調整（0.5x, 1x, 2x, 5x, 10x）
 
 ### 確認ポイント
 
@@ -461,12 +568,6 @@ open "http://localhost:8081?sim=$SIM_ID"
 - 小さな球体として表示
 - ステーション間をスムーズに移動
 - 同時に複数のワークがステーション内に存在しない（1ステーション1ワーク）
-
-**動作確認:**
-- ✅ ワークがステーション間をスムーズに移動する
-- ✅ Processingステーションでワークが停止（処理中）する
-- ✅ 複数ワークが同時にステーション内に存在しない
-- ✅ タイムスタンプが正しく進む
 
 ---
 
@@ -484,8 +585,9 @@ curl: (7) Failed to connect to localhost port 8080
 # コンテナの状態を確認
 docker-compose ps
 
-# simulation-coreのログを確認
+# 特定サービスのログを確認
 docker-compose logs simulation-core
+docker-compose logs sim-executor-backend
 
 # 必要に応じて再起動
 docker-compose restart simulation-core
@@ -514,7 +616,7 @@ docker-compose up -d
 ```json
 {
   "config": {
-    "departureTime": 5.0  // より長い値に設定
+    "departureTime": 5.0
   }
 }
 ```
@@ -541,12 +643,27 @@ sleep 5
 docker-compose exec postgres psql -U postgres -d factory_simulation -c "\dt"
 ```
 
-### テストが失敗する
+### フロントエンドのCORSエラー
 
 **症状:**
+ブラウザのコンソールに `CORS policy` エラーが表示される。
+
+**原因:**
+- sim-portalやsim-executorのフロントエンドから、simulation-core APIやsim-executor-backend APIにリクエストしている
+- Docker環境内ではCORSヘッダーが正しく設定されている必要がある
+
+**対処法:**
+```bash
+# simulation-coreのログでCORS関連エラーを確認
+docker-compose logs simulation-core | grep -i cors
+
+# sim-executor-backendのログを確認
+docker-compose logs sim-executor-backend | grep -i cors
 ```
-Failed: X
-```
+
+各バックエンドサービスはCORSミドルウェアで `Access-Control-Allow-Origin: *` を設定しています。エラーが出る場合はコンテナを再ビルドしてください。
+
+### テストが失敗する
 
 **対処法:**
 
@@ -586,14 +703,14 @@ Error: port is already allocated
 
 **対処法:**
 ```bash
-# 8080ポートを使用しているプロセスを確認
-lsof -i :8080
-
-# 5432ポートを使用しているプロセスを確認
-lsof -i :5432
-
-# 8081ポートを使用しているプロセスを確認
-lsof -i :8081
+# 使用中のポートを確認
+lsof -i :8080  # simulation-core
+lsof -i :8081  # sim-visualizer
+lsof -i :8082  # sim-editor
+lsof -i :8083  # sim-executor
+lsof -i :8084  # sim-executor-backend
+lsof -i :8085  # sim-portal
+lsof -i :5432  # PostgreSQL
 
 # プロセスを停止するか、docker-compose.ymlのポート番号を変更
 ```
@@ -619,7 +736,10 @@ docker-compose exec postgres psql -U postgres -d factory_simulation
                    List of relations
  Schema |         Name          | Type  |  Owner
 --------+-----------------------+-------+----------
+ public | execution_configs     | table | postgres
  public | scenarios             | table | postgres
+ public | scenario_connections  | table | postgres
+ public | scenario_stations     | table | postgres
  public | simulation_runs       | table | postgres
  public | station_status_logs   | table | postgres
  public | work_events           | table | postgres
@@ -629,9 +749,21 @@ docker-compose exec postgres psql -U postgres -d factory_simulation
 ### データ確認クエリ
 
 ```sql
+-- シナリオ一覧
+SELECT id, name, created_at
+FROM scenarios
+ORDER BY created_at DESC
+LIMIT 5;
+
 -- シミュレーション実行一覧
 SELECT simulation_id, friendly_name, status, end_time
 FROM simulation_runs
+ORDER BY created_at DESC
+LIMIT 5;
+
+-- sim-executor実行履歴
+SELECT id, scenario_id, status, created_at
+FROM execution_configs
 ORDER BY created_at DESC
 LIMIT 5;
 
@@ -660,11 +792,11 @@ GROUP BY station_id;
 
 ### システム起動
 - [ ] Docker Composeでシステムが起動できた
-- [ ] 3つのコンテナ（db, simulation-core, sim-visualizer）が全て起動している
-- [ ] APIにアクセスできる（http://localhost:8080）
-- [ ] 可視化サーバーにアクセスできる（http://localhost:8081）
+- [ ] 7つのコンテナがすべて起動している
+- [ ] simulation-core API にアクセスできる（http://localhost:8080）
+- [ ] sim-executor-backend APIにアクセスできる（http://localhost:8084）
 
-### 基本動作
+### 基本動作（API）
 - [ ] シナリオ登録APIが正常に動作した
 - [ ] シミュレーション実行APIが正常に動作した
 - [ ] シミュレーション結果取得APIが正常に動作した
@@ -680,8 +812,27 @@ GROUP BY station_id;
 - [ ] 搬入可・搬出可の信号制御が動作している
 - [ ] ワークの逐次処理が正しく行われている
 
-### 3D可視化
-- [ ] シミュレーション結果が3Dで表示される
+### sim-portal
+- [ ] ダッシュボードが表示される（http://localhost:8085）
+- [ ] 統計（シナリオ数、実行件数）が表示される
+- [ ] シナリオ管理ページで一覧が表示される
+- [ ] 実行履歴ページで履歴が表示される
+- [ ] システムステータスページでサービス状態が表示される
+
+### sim-editor
+- [ ] シナリオ一覧が表示される（http://localhost:8082）
+- [ ] ビジュアルエディタでステーションを配置できる
+- [ ] ステーション間を接続できる
+- [ ] シナリオを保存できる
+
+### sim-executor
+- [ ] ダッシュボードが表示される（http://localhost:8083）
+- [ ] シナリオを選択して実行設定ができる
+- [ ] シミュレーションを実行できる
+- [ ] 実行履歴が表示される
+
+### sim-visualizer
+- [ ] シミュレーション結果が3Dで表示される（http://localhost:8081）
 - [ ] ワークが滑らかに移動する
 - [ ] 再生・一時停止・リセット操作ができる
 - [ ] 速度調整ができる
@@ -690,23 +841,11 @@ GROUP BY station_id;
 - [ ] PostgreSQLにデータが正しく保存されている
 - [ ] シミュレーション結果が再取得できる
 
-すべてチェックが付いたら、Factory Simulationのインターロック機構が正常に動作していることが確認できました！ 🎉
-
----
-
-## 次のステップ
-
-基本動作確認が完了したら、以下を試してみてください：
-
-1. **独自シナリオの作成**: より複雑なステーション構成を設計
-2. **パラメータチューニング**: 処理時間や到着時間を調整して最適化
-3. **ステーション種別の追加**: Merge, Split, Inspection, Dischargeの実装（今後の課題）
-
 ---
 
 ## 関連ドキュメント
 
-- `README.md` - システム概要とクイックスタート
-- `docs/architecture.md` - アーキテクチャ設計書（未作成）
+- [README.md](README.md) - システム概要とクイックスタート
+- [ARCHITECTURE.md](ARCHITECTURE.md) - アーキテクチャ設計書
 - `simulation-core/internal/domain/station.go` - ステーション実装
 - `simulation-core/internal/simulation/engine.go` - シミュレーションエンジン実装

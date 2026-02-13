@@ -11,7 +11,11 @@ Factory Simulationは、工場の生産ラインにおけるワークフロー�
 - **インターロック機構**: 搬入可・搬出可の2信号による厳密な制御
 - **1ステーション1ワーク**: 各ステーションは同時に1つのワークのみ保持
 - **逐次処理**: ワークは並列処理されず、1つずつ順番に処理
-- **3D可視化**: Three.jsによる美しい3Dアニメーション
+- **ビジュアルシナリオ設計**: ドラッグ&ドロップによるシナリオエディタ
+- **SimDB連携**: 外部生産データベースからの初期条件取得
+- **実行管理**: シミュレーション実行の設定・履歴管理
+- **3D可視化**: Three.jsによる3Dアニメーション
+- **統合ポータル**: 全ツールを一元管理するダッシュボード
 - **高速シミュレーション**: Go言語による高性能な離散イベントシミュレーションエンジン
 - **データ永続化**: PostgreSQLによる結果の保存・分析
 
@@ -19,7 +23,7 @@ Factory Simulationは、工場の生産ラインにおけるワークフロー�
 
 ```
 factory-simulation/
-├── simulation-core/        # シミュレーションエンジン (Go)
+├── simulation-core/        # シミュレーションエンジン + REST API (Go)
 │   ├── cmd/server/         # APIサーバー
 │   ├── internal/
 │   │   ├── domain/         # ドメインモデル（Station, Work, Simulation）
@@ -27,13 +31,34 @@ factory-simulation/
 │   │   ├── api/            # REST APIハンドラ
 │   │   └── database/       # PostgreSQLリポジトリ
 │   └── test/               # テストシナリオ
+├── sim-editor/             # シナリオエディタ (HTML/JS)
+│   └── html/
+│       ├── index.html      # シナリオ一覧
+│       ├── editor.html     # ビジュアルエディタ
+│       └── js/             # editor, canvas, properties, validation 等
+├── sim-executor/           # シミュレーション実行管理
+│   ├── html/               # フロントエンド (HTML/JS)
+│   │   ├── index.html      # ダッシュボード
+│   │   ├── scenario.html   # シナリオ詳細・実行履歴
+│   │   └── execution.html  # 実行設定
+│   └── backend/            # バックエンド API (Go)
+│       ├── cmd/server/
+│       └── internal/
+│           ├── api/        # REST APIハンドラ
+│           ├── database/   # 実行履歴リポジトリ
+│           └── simdb/      # SimDB接続クライアント
 ├── sim-visualizer/         # 3D可視化 (Three.js)
 │   └── html/
-│       ├── index.html
-│       └── js/
-│           ├── app.js                      # アプリケーションロジック
-│           └── visualizer.js               # Three.js 3Dレンダリング
-├── postgres/               # PostgreSQLマイグレーション
+│       ├── index.html      # 3Dビューア
+│       └── index-list.html # シミュレーション一覧
+├── sim-portal/             # 統合管理ポータル (HTML/JS)
+│   └── html/
+│       ├── index.html      # ダッシュボード
+│       ├── scenarios.html  # シナリオ管理
+│       ├── executions.html # 実行履歴
+│       └── status.html     # システムステータス
+├── database/
+│   └── migrations/         # PostgreSQLマイグレーション (001-004)
 └── docker-compose.yml      # コンテナ構成
 ```
 
@@ -41,9 +66,13 @@ factory-simulation/
 
 | コンテナ | 役割 | ポート |
 |----------|------|--------|
+| **postgres** | データベース | 5432 |
 | **simulation-core** | シミュレーションエンジン + REST API | 8080 |
 | **sim-visualizer** | 3D可視化 (Nginx + Three.js) | 8081 |
-| **postgres** | データベース | 5432 |
+| **sim-editor** | シナリオエディタ (Nginx) | 8082 |
+| **sim-executor** | 実行管理フロントエンド (Nginx) | 8083 |
+| **sim-executor-backend** | 実行管理バックエンド API (Go) | 8084 |
+| **sim-portal** | 統合管理ポータル (Nginx) | 8085 |
 
 ## クイックスタート
 
@@ -62,12 +91,24 @@ docker-compose up -d
 ### 動作確認
 
 ```bash
+# 全コンテナの状態確認
+docker-compose ps
+
 # APIの疎通確認
 curl http://localhost:8080/api/scenarios
 
-# 可視化サーバーの確認
-curl -I http://localhost:8081
+# ポータル画面の確認
+curl -I http://localhost:8085
 ```
+
+### 各ツールへのアクセス
+
+| ツール | URL | 説明 |
+|--------|-----|------|
+| sim-portal | http://localhost:8085 | 統合管理ポータル（ここから各ツールへアクセス） |
+| sim-editor | http://localhost:8082 | シナリオのビジュアル設計 |
+| sim-executor | http://localhost:8083 | シミュレーション実行管理 |
+| sim-visualizer | http://localhost:8081 | 結果の3D可視化 |
 
 ### シンプルなシミュレーションを実行
 
@@ -105,6 +146,13 @@ curl -s "http://localhost:8080/api/simulations/$SIM_ID" | jq
 echo "Open: http://localhost:8081?sim=$SIM_ID"
 ```
 
+または、GUIでシナリオを作成する場合:
+
+1. http://localhost:8082 でsim-editorを開く
+2. ステーションをドラッグ&ドロップで配置
+3. ステーション間を接続
+4. 保存後、http://localhost:8083 でsim-executorから実行
+
 ## アーキテクチャ
 
 ### インターロック機構
@@ -122,19 +170,11 @@ echo "Open: http://localhost:8081?sim=$SIM_ID"
 
 ### ステーション種別
 
-現在実装されているステーション:
-
 | 種別 | 役割 | 特徴 |
 |------|------|------|
 | **Source** | ワーク生成 | 指定個数のワークを逐次生成 |
 | **Processing** | 処理（基底クラス） | 1ワークを受け取り、処理して送出 |
 | **Drain** | ワーク消滅 | ワークを破棄して終了 |
-
-将来実装予定:
-- **Merge**: 複数ワークを1つに統合
-- **Split**: 1ワークを複数に分割
-- **Inspection**: 品質検査とOK/NG判定
-- **Discharge**: 品質ステータスに応じた経路分岐
 
 ### 状態遷移
 
@@ -152,47 +192,71 @@ Completed (搬入可=OFF, 搬出可=ON)
 Idle (搬入可=ON, 搬出可=OFF)
 ```
 
+### SimDB連携
+
+外部の生産データベース(SimDB)と連携し、実際の製造ラインの状態をシミュレーションの初期条件として取得できます。
+
+- **LocationMaster**: 製造ライン上の場所定義
+- **ActionInfo**: 各場所での作業情報
+- **ItemStatus**: アイテムの品質ステータス
+
+シナリオのステーションにLocationIDを紐付け、SimDBから現在のワーク配置や品質状態を取得してシミュレーションに反映します。
+
 ## API仕様
 
-### シナリオ登録
+### simulation-core API (ポート 8080)
 
-```bash
+#### シナリオ登録
+
+```
 POST /api/scenarios
-Content-Type: application/json
+```
 
+```json
 {
   "name": "シナリオ名",
+  "simdbConfig": {
+    "host": "db-host", "port": 5432,
+    "database": "db-name", "user": "user", "password": "pass"
+  },
   "stations": [
     {
       "id": "station-id",
       "type": "source|processing|drain",
+      "locationId": 123,
       "config": {
-        "workCount": 3,          // Source: 生成するワーク数
-        "departureTime": 2.0,    // ワーク送出にかかる時間
-        "processingTime": 1.0,   // Processing: 処理時間
-        "arrivalTime": 0.5       // ワーク受入にかかる時間
+        "workCount": 3,
+        "departureTime": 2.0,
+        "processingTime": 1.0,
+        "arrivalTime": 0.5
       }
     }
   ],
   "connections": [
-    {"from": "station-id-1", "to": "station-id-2"}
+    {"from": "station-id-1", "to": "station-id-2", "condition": "default"}
   ]
 }
 ```
 
-**レスポンス:**
-```json
-{
-  "scenarioId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-}
+#### シナリオ一覧取得
+
+```
+GET /api/scenarios
 ```
 
-### シミュレーション実行
+#### シナリオ詳細取得
 
-```bash
+```
+GET /api/scenarios/{scenarioId}
+```
+
+#### シミュレーション実行
+
+```
 POST /api/simulations
-Content-Type: application/json
+```
 
+```json
 {
   "scenarioId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
   "simulationTime": 100.0,
@@ -200,70 +264,27 @@ Content-Type: application/json
 }
 ```
 
-**レスポンス:**
-```json
-{
-  "simulationId": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
-  "friendlyName": "シナリオ名_実行_2026-02-10T...",
-  "status": "completed",
-  "endTime": 15.5,
-  "endReason": "event_exhausted"
-}
+#### シミュレーション結果取得
+
 ```
-
-### 結果取得
-
-```bash
 GET /api/simulations/{simulationId}
 ```
 
-**レスポンス:**
-```json
-{
-  "simulationId": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
-  "scenarioId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-  "status": "completed",
-  "startTime": 0.0,
-  "endTime": 15.5,
-  "endReason": "event_exhausted",
-  "summary": {
-    "totalWorksCreated": 3,
-    "totalWorksDestroyed": 3,
-    "totalEvents": 24
-  }
-}
+#### シミュレーションログ取得
+
 ```
-
-### ログ取得
-
-```bash
 GET /api/simulations/{simulationId}/logs
 ```
 
-**レスポンス:**
-```json
-{
-  "simulationId": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
-  "stationStatusLogs": [
-    {
-      "stationId": "source-1",
-      "timestamp": 0.0,
-      "statusType": "ワーク到着",
-      "value": true
-    }
-  ],
-  "workEvents": [
-    {
-      "workId": "...",
-      "workFriendlyName": "work-1",
-      "stationId": "source-1",
-      "timestamp": 0.0,
-      "eventType": "WorkCreated"
-    }
-  ],
-  "workLineage": []
-}
-```
+### sim-executor-backend API (ポート 8084)
+
+| エンドポイント | メソッド | 説明 |
+|---------------|---------|------|
+| `/api/executor/scenarios` | GET | シナリオ一覧（実行回数付き） |
+| `/api/executor/executions?scenarioId=...` | GET | 実行履歴取得 |
+| `/api/executor/execute` | POST | シミュレーション実行 |
+| `/api/executor/initial-conditions` | POST | SimDBから初期条件取得 |
+| `/api/executor/simdb/test-connection` | POST | SimDB接続テスト |
 
 ## テスト
 
@@ -278,13 +299,6 @@ bash run_all_tests.sh
 - `01_basic_test.json`: Source → Drain（基本動作）
 - `02_processing_test.json`: Source → Processing → Drain（処理ステーション）
 - `07_stress_test.json`: 20ワークの負荷テスト
-
-**期待される結果:**
-```
-Total tests: 3
-Passed: 3
-Failed: 0
-```
 
 詳細は [TESTING.md](TESTING.md) を参照してください。
 
@@ -301,14 +315,12 @@ go run cmd/server/main.go
 ### ログの確認
 
 ```bash
-# simulation-coreのログ
+# 特定サービスのログ
 docker-compose logs -f simulation-core
+docker-compose logs -f sim-executor-backend
 
-# PostgreSQLのログ
-docker-compose logs -f postgres
-
-# 可視化サーバーのログ
-docker-compose logs -f sim-visualizer
+# 全サービスのログ
+docker-compose logs -f
 ```
 
 ### データベースのリセット
@@ -322,9 +334,13 @@ docker-compose up -d
 ### コードの再ビルド
 
 ```bash
-# simulation-coreを再ビルド
+# 特定サービスを再ビルド
 docker-compose build simulation-core
 docker-compose up -d simulation-core
+
+# 全サービスを再ビルド
+docker-compose build --no-cache
+docker-compose up -d
 ```
 
 ## トラブルシューティング
@@ -333,11 +349,13 @@ docker-compose up -d simulation-core
 
 ```bash
 # 使用中のポートを確認
-lsof -i :8080  # API
-lsof -i :8081  # 可視化
+lsof -i :8080  # simulation-core
+lsof -i :8081  # sim-visualizer
+lsof -i :8082  # sim-editor
+lsof -i :8083  # sim-executor
+lsof -i :8084  # sim-executor-backend
+lsof -i :8085  # sim-portal
 lsof -i :5432  # PostgreSQL
-
-# プロセスを停止するか、docker-compose.ymlでポート番号を変更
 ```
 
 ### コンテナが起動しない
@@ -383,13 +401,6 @@ MIT
 ## 関連ドキュメント
 
 - [TESTING.md](TESTING.md) - 詳細なテスト・動作確認ガイド
+- [ARCHITECTURE.md](ARCHITECTURE.md) - アーキテクチャ設計書
 - [simulation-core/internal/domain/station.go](simulation-core/internal/domain/station.go) - ステーション実装
 - [simulation-core/internal/simulation/engine.go](simulation-core/internal/simulation/engine.go) - シミュレーションエンジン実装
-
-## 今後の予定
-
-- [ ] Merge, Split, Inspection, Dischargeステーションの実装
-- [ ] 複数経路対応（分岐・合流）
-- [ ] リアルタイムシミュレーション機能
-- [ ] パフォーマンスダッシュボード
-- [ ] WebSocketによるリアルタイム更新
