@@ -33,8 +33,9 @@ class ScenarioEditor {
 
     async _init() {
         // Get scenario ID from URL
+        // 'id' = localStorage scenario, 'scenarioId' = API scenario
         const params = new URLSearchParams(window.location.search);
-        this.scenarioId = params.get('id');
+        this.scenarioId = params.get('id') || params.get('scenarioId');
 
         if (!this.scenarioId) {
             alert('シナリオIDが指定されていません');

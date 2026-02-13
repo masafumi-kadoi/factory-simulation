@@ -401,6 +401,7 @@ MIT
 ## 関連ドキュメント
 
 - [TESTING.md](TESTING.md) - 詳細なテスト・動作確認ガイド
+- [DATA-FLOW.md](DATA-FLOW.md) - データ構成・通信フロー
 - [ARCHITECTURE.md](ARCHITECTURE.md) - アーキテクチャ設計書
 - [simulation-core/internal/domain/station.go](simulation-core/internal/domain/station.go) - ステーション実装
 - [simulation-core/internal/simulation/engine.go](simulation-core/internal/simulation/engine.go) - シミュレーションエンジン実装
