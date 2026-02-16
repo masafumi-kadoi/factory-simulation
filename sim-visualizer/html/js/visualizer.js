@@ -25,6 +25,8 @@ export class Visualizer3D {
         this.connections = [];
         this.showWorkIDs = true; // Default: show work IDs
         this.showStationNames = true; // Default: show station names
+        this.ground = null;
+        this.gridHelper = null;
 
         this._initScene();
         this._animate();
@@ -65,22 +67,8 @@ export class Visualizer3D {
         directionalLight.shadow.camera.far = 1000;
         this.scene.add(directionalLight);
 
-        // Ground
-        const groundGeometry = new THREE.PlaneGeometry(2000, 2000);
-        const groundMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1a1a2e,
-            roughness: 0.8,
-            metalness: 0.2
-        });
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        ground.rotation.x = -Math.PI / 2;
-        ground.receiveShadow = true;
-        this.scene.add(ground);
-
-        // Grid
-        const gridHelper = new THREE.GridHelper(2000, 40, 0x2a3f5f, 0x1a2332);
-        gridHelper.position.y = 0.1;
-        this.scene.add(gridHelper);
+        // Ground and Grid (initial size, will be resized when scenario loads)
+        this._createGroundAndGrid(2000);
 
         // Controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -103,6 +91,83 @@ export class Visualizer3D {
         this.renderer.setSize(width, height);
     }
 
+    _createGroundAndGrid(size) {
+        // Remove old ground and grid if they exist
+        if (this.ground) {
+            this.scene.remove(this.ground);
+            this.ground.geometry.dispose();
+            this.ground.material.dispose();
+        }
+        if (this.gridHelper) {
+            this.scene.remove(this.gridHelper);
+            this.gridHelper.geometry.dispose();
+            this.gridHelper.material.dispose();
+        }
+
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(size, size);
+        const groundMaterial = new THREE.MeshStandardMaterial({
+            color: 0x1a1a2e,
+            roughness: 0.8,
+            metalness: 0.2
+        });
+        this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.ground.receiveShadow = true;
+        this.scene.add(this.ground);
+
+        // Grid - keep grid cells roughly 50 units
+        const divisions = Math.max(10, Math.round(size / 50));
+        this.gridHelper = new THREE.GridHelper(size, divisions, 0x2a3f5f, 0x1a2332);
+        this.gridHelper.position.y = 0.1;
+        this.scene.add(this.gridHelper);
+    }
+
+    _adjustSceneToPositions(positions) {
+        if (positions.size === 0) return;
+
+        // Calculate bounding box of all station positions
+        let minX = Infinity, maxX = -Infinity;
+        let minZ = Infinity, maxZ = -Infinity;
+        positions.forEach(pos => {
+            minX = Math.min(minX, pos.x);
+            maxX = Math.max(maxX, pos.x);
+            minZ = Math.min(minZ, pos.z);
+            maxZ = Math.max(maxZ, pos.z);
+        });
+
+        const rangeX = maxX - minX;
+        const rangeZ = maxZ - minZ;
+        const maxRange = Math.max(rangeX, rangeZ, 200); // minimum 200
+        const padding = maxRange * 0.5 + 200; // 50% padding + 200 base margin
+        const floorSize = maxRange + padding * 2;
+
+        // Center of stations
+        const centerX = (minX + maxX) / 2;
+        const centerZ = (minZ + maxZ) / 2;
+
+        // Recreate ground and grid at appropriate size, centered at station center
+        this._createGroundAndGrid(floorSize);
+        this.ground.position.set(centerX, 0, centerZ);
+        this.gridHelper.position.set(centerX, 0.1, centerZ);
+
+        // Adjust fog to match scene size
+        this.scene.fog.near = floorSize * 0.3;
+        this.scene.fog.far = floorSize * 1.5;
+
+        // Adjust camera to frame the stations
+        const viewDistance = maxRange * 1.2 + 400;
+        this.camera.position.set(centerX, viewDistance * 0.6, centerZ + viewDistance);
+        this.camera.lookAt(centerX, 0, centerZ);
+        this.camera.far = floorSize * 3;
+        this.camera.updateProjectionMatrix();
+
+        // Adjust controls target and limits
+        this.controls.target.set(centerX, 0, centerZ);
+        this.controls.maxDistance = floorSize * 1.5;
+        this.controls.update();
+    }
+
     _animate() {
         requestAnimationFrame(() => this._animate());
         this.controls.update();
@@ -117,6 +182,9 @@ export class Visualizer3D {
         const positions = hasSavedPositions
             ? this._positionsFromSaved(scenario.stations)
             : this._calculateLayout(scenario.stations, scenario.connections);
+
+        // Adjust floor, grid, camera, fog to fit station positions
+        this._adjustSceneToPositions(positions);
 
         // Create stations
         scenario.stations.forEach(station => {
