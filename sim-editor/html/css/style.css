@@ -109,6 +109,35 @@ body {
     color: #333;
 }
 
+.list-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.header-link {
+    text-decoration: none;
+    font-size: 0.875rem;
+}
+
+.btn-outline {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: transparent;
+    color: #495057;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-outline:hover {
+    background: #f8f9fa;
+    border-color: #adb5bd;
+}
+
 .list-main {
     min-height: 400px;
 }

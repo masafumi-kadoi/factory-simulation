@@ -63,7 +63,7 @@ async function loadScenarioInfo() {
                 <span class="info-value">${escapeHtml(simdbInfo)}</span>
             </div>
             <div style="margin-top: 1rem">
-                <a href="http://localhost:8082/editor.html?scenarioId=${encodeURIComponent(currentScenarioId)}" target="_blank" class="btn btn-outline btn-sm">Edit in sim-editor</a>
+                <a href="http://localhost:8082/editor.html?scenarioId=${encodeURIComponent(currentScenarioId)}" target="_blank" class="btn btn-outline btn-sm">Edit in Scenario Editor</a>
             </div>
         `;
 
