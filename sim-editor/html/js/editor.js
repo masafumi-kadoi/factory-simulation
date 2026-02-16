@@ -459,7 +459,24 @@ class ScenarioEditor {
             alert(infoMsg);
         }
 
-        await this._saveToAPI();
+        // If this scenario was loaded from API, ask whether to overwrite or save as new
+        if (this.scenario.apiScenarioId) {
+            const choice = prompt(
+                '保存方法を選択してください:\n' +
+                '1: 上書き保存（既存シナリオを更新）\n' +
+                '2: 新規保存（新しいシナリオとして作成）\n\n' +
+                '番号を入力:',
+                '1'
+            );
+            if (choice === null) return; // cancelled
+            if (choice.trim() === '2') {
+                await this._saveToAPI(false);
+            } else {
+                await this._saveToAPI(true);
+            }
+        } else {
+            await this._saveToAPI(false);
+        }
     }
 
     // Save to API without validation dialog (used by properties panel for auto-save before SimDB test)
@@ -469,10 +486,11 @@ class ScenarioEditor {
         if (errors.length > 0) {
             throw new Error('バリデーションエラーがあるため保存できません:\n' + errors.join('\n'));
         }
-        await this._saveToAPI();
+        // Overwrite if already saved to API, otherwise create new
+        await this._saveToAPI(!!this.scenario.apiScenarioId);
     }
 
-    async _saveToAPI() {
+    async _saveToAPI(overwrite = false) {
         try {
             // Prepare scenario data for API
             const scenarioData = {
@@ -493,8 +511,14 @@ class ScenarioEditor {
                 }))
             };
 
-            // Save to API
-            const response = await apiClient.createScenario(scenarioData);
+            let response;
+            if (overwrite && this.scenario.apiScenarioId) {
+                // Overwrite existing scenario
+                response = await apiClient.updateScenario(this.scenario.apiScenarioId, scenarioData);
+            } else {
+                // Create new scenario
+                response = await apiClient.createScenario(scenarioData);
+            }
 
             // Store scenario ID from API response
             if (response.scenarioId) {
@@ -515,7 +539,8 @@ class ScenarioEditor {
             localStorage.setItem('sim-editor-scenarios', JSON.stringify(scenarios));
 
             this.dirty = false;
-            alert(`保存しました\nシナリオID: ${response.scenarioId || 'localStorage'}`);
+            const saveType = overwrite ? '上書き保存' : '新規保存';
+            alert(`${saveType}しました\nシナリオID: ${response.scenarioId || 'localStorage'}`);
         } catch (error) {
             console.error('Save failed:', error);
             alert('API保存に失敗しました。localStorageに保存します。\nエラー: ' + error.message);

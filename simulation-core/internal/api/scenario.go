@@ -183,6 +183,89 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleUpdateScenario handles PUT /api/scenarios/:id
+func (h *Handler) HandleUpdateScenario(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Extract scenario ID from path
+	scenarioID := r.URL.Path[len("/api/scenarios/"):]
+	if scenarioID == "" {
+		respondError(w, http.StatusBadRequest, "Scenario ID is required")
+		return
+	}
+
+	var req ScenarioRequest
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Validate request
+	if req.Name == "" {
+		respondError(w, http.StatusBadRequest, "Scenario name is required")
+		return
+	}
+	if len(req.Stations) == 0 {
+		respondError(w, http.StatusBadRequest, "At least one station is required")
+		return
+	}
+
+	// Convert request to domain model
+	stations := make([]domain.Station, len(req.Stations))
+	for i, st := range req.Stations {
+		stationType := domain.StationType(st.Type)
+		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
+		stations[i].ParentID = st.ParentID
+		stations[i].LocationID = st.LocationID
+		stations[i].PositionX = st.PositionX
+		stations[i].PositionY = st.PositionY
+	}
+
+	connections := make([]domain.Connection, len(req.Connections))
+	for i, conn := range req.Connections {
+		condition := conn.Condition
+		if condition == "" {
+			condition = "default"
+		}
+		connections[i] = domain.Connection{
+			From:      conn.From,
+			To:        conn.To,
+			Condition: domain.RoutingCondition(condition),
+		}
+	}
+
+	scenario := domain.NewScenario(scenarioID, req.Name, stations, connections)
+
+	// Set SimDB config if provided
+	if req.SimDBConfig != nil {
+		scenario.SimDBConfig = &domain.SimDBConfig{
+			Host:     req.SimDBConfig.Host,
+			Port:     req.SimDBConfig.Port,
+			Database: req.SimDBConfig.Database,
+			User:     req.SimDBConfig.User,
+			Password: req.SimDBConfig.Password,
+		}
+	}
+
+	// Update in memory
+	h.mu.Lock()
+	h.scenarios[scenarioID] = scenario
+	h.mu.Unlock()
+
+	// Save to database (ON CONFLICT DO UPDATE handles the overwrite)
+	if err := h.repo.SaveScenario(scenario); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update scenario: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, ScenarioResponse{
+		ScenarioID: scenarioID,
+	})
+}
+
 // GetScenario retrieves a scenario by ID
 func (h *Handler) GetScenario(scenarioID string) (*domain.Scenario, error) {
 	// Try to get from memory first

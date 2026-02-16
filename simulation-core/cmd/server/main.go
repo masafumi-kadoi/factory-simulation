@@ -42,14 +42,16 @@ func main() {
 		// Route based on path
 		if r.URL.Path == "/api/scenarios" || r.URL.Path == "/api/scenarios/" {
 			if r.Method == http.MethodGet {
-				// GET /api/scenarios - list all scenarios
 				log.Println("Calling HandleListScenarios")
 				handler.HandleListScenarios(w, r)
 			} else {
-				// POST /api/scenarios - create scenario
 				log.Println("Calling HandleCreateScenario")
 				handler.HandleCreateScenario(w, r)
 			}
+		} else if r.Method == http.MethodPut {
+			// PUT /api/scenarios/:id - update scenario
+			log.Println("Calling HandleUpdateScenario")
+			handler.HandleUpdateScenario(w, r)
 		} else {
 			// GET /api/scenarios/:id - get scenario details
 			log.Println("Calling HandleGetScenario")

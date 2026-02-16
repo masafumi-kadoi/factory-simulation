@@ -50,6 +50,13 @@ export class APIClient {
         });
     }
 
+    async updateScenario(scenarioId, scenarioData) {
+        return this.request(`/scenarios/${scenarioId}`, {
+            method: 'PUT',
+            body: JSON.stringify(scenarioData),
+        });
+    }
+
     // Simulation APIs
     async runSimulation(simulationRequest) {
         return this.request('/simulations', {
