@@ -266,6 +266,33 @@ func (h *Handler) HandleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleDeleteScenario handles DELETE /api/scenarios/:id
+func (h *Handler) HandleDeleteScenario(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	scenarioID := r.URL.Path[len("/api/scenarios/"):]
+	if scenarioID == "" {
+		respondError(w, http.StatusBadRequest, "Scenario ID is required")
+		return
+	}
+
+	// Remove from memory cache
+	h.mu.Lock()
+	delete(h.scenarios, scenarioID)
+	h.mu.Unlock()
+
+	// Delete from database
+	if err := h.repo.DeleteScenario(scenarioID); err != nil {
+		respondError(w, http.StatusNotFound, fmt.Sprintf("Failed to delete scenario: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Scenario deleted"})
+}
+
 // GetScenario retrieves a scenario by ID
 func (h *Handler) GetScenario(scenarioID string) (*domain.Scenario, error) {
 	// Try to get from memory first

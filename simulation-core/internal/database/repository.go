@@ -441,6 +441,37 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 	return tx.Commit()
 }
 
+// DeleteScenario deletes a scenario and its stations/connections from the database
+func (r *Repository) DeleteScenario(id string) error {
+	tx, err := r.db.GetConnection().Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec("DELETE FROM scenario_connections WHERE scenario_id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete connections: %w", err)
+	}
+
+	_, err = tx.Exec("DELETE FROM scenario_stations WHERE scenario_id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete stations: %w", err)
+	}
+
+	result, err := tx.Exec("DELETE FROM scenarios WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete scenario: %w", err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("scenario not found: %s", id)
+	}
+
+	return tx.Commit()
+}
+
 // GetScenario retrieves a scenario from the database
 func (r *Repository) GetScenario(id string) (*domain.Scenario, error) {
 	return r.getScenario(id, false)

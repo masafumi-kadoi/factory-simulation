@@ -57,6 +57,12 @@ export class APIClient {
         });
     }
 
+    async deleteScenario(scenarioId) {
+        return this.request(`/scenarios/${scenarioId}`, {
+            method: 'DELETE',
+        });
+    }
+
     // Simulation APIs
     async runSimulation(simulationRequest) {
         return this.request('/simulations', {

@@ -70,7 +70,7 @@ class ScenarioList {
         // API scenarios
         if (hasAPI) {
             html += '<div class="scenario-section-label">Saved Scenarios</div>';
-            html += this.apiScenarios.map(scenario => `
+            html += this.apiScenarios.map((scenario, index) => `
                 <div class="scenario-card">
                     <div class="scenario-card-header">
                         <h3 class="scenario-card-title">${this._escapeHtml(scenario.name)}</h3>
@@ -80,6 +80,8 @@ class ScenarioList {
                     </div>
                     <div class="scenario-card-actions">
                         <a href="editor.html?scenarioId=${encodeURIComponent(scenario.apiScenarioId)}" class="btn-primary" style="text-decoration:none;text-align:center;">Edit</a>
+                        <button class="btn-secondary api-duplicate-btn" data-api-index="${index}">Duplicate</button>
+                        <button class="btn-danger api-delete-btn" data-api-index="${index}">Delete</button>
                     </div>
                 </div>
             `).join('');
@@ -119,15 +121,26 @@ class ScenarioList {
         });
 
         document.getElementById('scenario-list').addEventListener('click', (e) => {
+            // Local scenario actions
             const index = e.target.dataset.index;
-            if (!index) return;
+            if (index != null) {
+                if (e.target.classList.contains('edit-btn')) {
+                    this._editScenario(parseInt(index));
+                } else if (e.target.classList.contains('duplicate-btn')) {
+                    this._duplicateScenario(parseInt(index));
+                } else if (e.target.classList.contains('delete-btn')) {
+                    this._deleteScenario(parseInt(index));
+                }
+            }
 
-            if (e.target.classList.contains('edit-btn')) {
-                this._editScenario(parseInt(index));
-            } else if (e.target.classList.contains('duplicate-btn')) {
-                this._duplicateScenario(parseInt(index));
-            } else if (e.target.classList.contains('delete-btn')) {
-                this._deleteScenario(parseInt(index));
+            // API scenario actions
+            const apiIndex = e.target.dataset.apiIndex;
+            if (apiIndex != null) {
+                if (e.target.classList.contains('api-delete-btn')) {
+                    this._deleteAPIScenario(parseInt(apiIndex));
+                } else if (e.target.classList.contains('api-duplicate-btn')) {
+                    this._duplicateAPIScenario(parseInt(apiIndex));
+                }
             }
         });
     }
@@ -176,6 +189,66 @@ class ScenarioList {
             this.localScenarios.splice(index, 1);
             this._saveToLocalStorage();
             this._render();
+        }
+    }
+
+    async _deleteAPIScenario(index) {
+        const scenario = this.apiScenarios[index];
+        if (!scenario) return;
+
+        if (!confirm(`「${scenario.name}」を削除しますか？\nこの操作は取り消せません。`)) {
+            return;
+        }
+
+        try {
+            await apiClient.deleteScenario(scenario.apiScenarioId);
+            this.apiScenarios.splice(index, 1);
+            this._render();
+        } catch (err) {
+            console.error('Failed to delete API scenario:', err);
+            alert('削除に失敗しました: ' + err.message);
+        }
+    }
+
+    async _duplicateAPIScenario(index) {
+        const scenario = this.apiScenarios[index];
+        if (!scenario) return;
+
+        const newName = prompt('新しいシナリオ名を入力してください:', scenario.name + ' (コピー)');
+        if (newName === null) return; // cancelled
+        if (newName.trim() === '') {
+            alert('シナリオ名を入力してください');
+            return;
+        }
+
+        try {
+            // Fetch the full scenario data from API
+            const fullScenario = await apiClient.getScenario(scenario.apiScenarioId);
+
+            // Create a new scenario with the new name
+            const scenarioData = {
+                name: newName.trim(),
+                simdbConfig: fullScenario.simdbConfig || undefined,
+                stations: fullScenario.stations || [],
+                connections: fullScenario.connections || []
+            };
+
+            const response = await apiClient.createScenario(scenarioData);
+
+            // Add to list and re-render
+            this.apiScenarios.push({
+                id: response.scenarioId,
+                apiScenarioId: response.scenarioId,
+                name: newName.trim(),
+                stationCount: (fullScenario.stations || []).length,
+                connectionCount: (fullScenario.connections || []).length,
+                simdbConfig: fullScenario.simdbConfig || null,
+                source: 'api'
+            });
+            this._render();
+        } catch (err) {
+            console.error('Failed to duplicate API scenario:', err);
+            alert('複製に失敗しました: ' + err.message);
         }
     }
 

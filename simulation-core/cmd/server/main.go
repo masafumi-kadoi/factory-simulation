@@ -52,6 +52,10 @@ func main() {
 			// PUT /api/scenarios/:id - update scenario
 			log.Println("Calling HandleUpdateScenario")
 			handler.HandleUpdateScenario(w, r)
+		} else if r.Method == http.MethodDelete {
+			// DELETE /api/scenarios/:id - delete scenario
+			log.Println("Calling HandleDeleteScenario")
+			handler.HandleDeleteScenario(w, r)
 		} else {
 			// GET /api/scenarios/:id - get scenario details
 			log.Println("Calling HandleGetScenario")
