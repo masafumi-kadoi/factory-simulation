@@ -15,6 +15,8 @@ type StationRequest struct {
 	ParentID   *string                `json:"parentId"`
 	LocationID *int64                 `json:"locationId,omitempty"`
 	Config     map[string]interface{} `json:"config"`
+	PositionX  *float64               `json:"positionX,omitempty"`
+	PositionY  *float64               `json:"positionY,omitempty"`
 }
 
 // ConnectionRequest represents a connection in the request
@@ -131,6 +133,8 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
 		stations[i].ParentID = st.ParentID
 		stations[i].LocationID = st.LocationID
+		stations[i].PositionX = st.PositionX
+		stations[i].PositionY = st.PositionY
 	}
 
 	connections := make([]domain.Connection, len(req.Connections))
@@ -298,6 +302,8 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 			ParentID:   st.ParentID,
 			LocationID: st.LocationID,
 			Config:     st.Config,
+			PositionX:  st.PositionX,
+			PositionY:  st.PositionY,
 		}
 	}
 

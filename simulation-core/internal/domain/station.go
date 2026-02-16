@@ -35,6 +35,8 @@ type Station struct {
 	Type       StationType
 	ParentID   *string
 	LocationID *int64
+	PositionX  *float64
+	PositionY  *float64
 
 	// Work management: Only ONE work at a time (interlock mechanism)
 	CurrentWork *Work // The work currently at this station (nil if idle)

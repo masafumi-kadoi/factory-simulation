@@ -98,8 +98,8 @@ class ScenarioEditor {
                     type: s.type,
                     locationId: s.locationId || null,
                     config: s.config || {},
-                    x: 100 + i * 200,
-                    y: 300
+                    x: (s.positionX != null) ? s.positionX : 100 + i * 200,
+                    y: (s.positionY != null) ? s.positionY : 300
                 })),
                 connections: (data.connections || []).map(c => ({
                     from: c.from,
@@ -482,7 +482,9 @@ class ScenarioEditor {
                     id: s.id,
                     type: s.type,
                     locationId: s.locationId || undefined,
-                    config: s.config
+                    config: s.config,
+                    positionX: s.x,
+                    positionY: s.y
                 })),
                 connections: this.scenario.connections.map(c => ({
                     from: c.from,

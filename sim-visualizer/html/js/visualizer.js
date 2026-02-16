@@ -112,8 +112,11 @@ export class Visualizer3D {
     loadScenario(scenario) {
         console.log('[Visualizer3D] Loading scenario:', scenario.name);
 
-        // Calculate station layout
-        const positions = this._calculateLayout(scenario.stations, scenario.connections);
+        // Use saved positions if available, otherwise calculate layout
+        const hasSavedPositions = scenario.stations.some(s => s.positionX != null && s.positionY != null);
+        const positions = hasSavedPositions
+            ? this._positionsFromSaved(scenario.stations)
+            : this._calculateLayout(scenario.stations, scenario.connections);
 
         // Create stations
         scenario.stations.forEach(station => {
@@ -135,6 +138,19 @@ export class Visualizer3D {
         });
 
         console.log(`[Visualizer3D] Created ${this.stations.size} stations and ${this.connections.length} connections`);
+    }
+
+    _positionsFromSaved(stations) {
+        const positions = new Map();
+        stations.forEach(station => {
+            // Map editor 2D coordinates (x, y) to 3D space (x, 0, z)
+            positions.set(station.id, {
+                x: station.positionX || 0,
+                y: 0,
+                z: station.positionY || 0
+            });
+        });
+        return positions;
     }
 
     _calculateLayout(stations, connections) {

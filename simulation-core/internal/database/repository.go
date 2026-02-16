@@ -419,9 +419,9 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 		}
 
 		_, err = tx.Exec(`
-			INSERT INTO scenario_stations (scenario_id, station_id, station_type, parent_id, config, location_id)
-			VALUES ($1, $2, $3, $4, $5, $6)
-		`, scenario.ID, station.ID, station.Type, station.ParentID, configJSON, station.LocationID)
+			INSERT INTO scenario_stations (scenario_id, station_id, station_type, parent_id, config, location_id, position_x, position_y)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, scenario.ID, station.ID, station.Type, station.ParentID, configJSON, station.LocationID, station.PositionX, station.PositionY)
 		if err != nil {
 			return fmt.Errorf("failed to insert station: %w", err)
 		}
@@ -466,7 +466,7 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 
 	// Get stations
 	rows, err := r.db.GetConnection().Query(`
-		SELECT station_id, station_type, parent_id, config, location_id
+		SELECT station_id, station_type, parent_id, config, location_id, position_x, position_y
 		FROM scenario_stations
 		WHERE scenario_id = $1
 	`, id)
@@ -480,9 +480,10 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 		var stationID, stationType string
 		var parentID *string
 		var locationID *int64
+		var positionX, positionY *float64
 		var configJSON []byte
 
-		if err := rows.Scan(&stationID, &stationType, &parentID, &configJSON, &locationID); err != nil {
+		if err := rows.Scan(&stationID, &stationType, &parentID, &configJSON, &locationID, &positionX, &positionY); err != nil {
 			return nil, fmt.Errorf("failed to scan station: %w", err)
 		}
 
@@ -494,6 +495,8 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 		station := domain.NewStation(stationID, domain.StationType(stationType), config)
 		station.ParentID = parentID
 		station.LocationID = locationID
+		station.PositionX = positionX
+		station.PositionY = positionY
 		stations = append(stations, *station)
 	}
 
