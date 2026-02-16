@@ -6,7 +6,7 @@ const TOOLS = [
         icon: '\u270F\uFE0F',
         title: 'Scenario Editor',
         desc: 'Create and edit factory simulation scenarios with a visual editor.',
-        url: 'http://localhost:8082',
+        url: SERVICE_URLS['sim-editor'],
         status: 'online'
     },
     {
@@ -14,7 +14,7 @@ const TOOLS = [
         icon: '\u25B6\uFE0F',
         title: 'Simulation Executor',
         desc: 'Execute simulations with initial conditions from SimDB.',
-        url: 'http://localhost:8083',
+        url: SERVICE_URLS['sim-executor'],
         status: 'online'
     },
     {
@@ -22,7 +22,7 @@ const TOOLS = [
         icon: '\uD83D\uDCCA',
         title: 'Result Visualizer',
         desc: 'Visualize simulation results with 3D timeline view.',
-        url: 'http://localhost:8081',
+        url: SERVICE_URLS['sim-visualizer'],
         status: 'online'
     },
     {
@@ -139,7 +139,7 @@ async function loadRecentExecutions() {
                 const statusClass = `status-${exec.status}`;
                 const time = formatDateTime(exec.createdAt);
                 const viewLink = exec.status === 'completed' && exec.simulationId
-                    ? `<a href="http://localhost:8081/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">View</a>`
+                    ? `<a href="${SERVICE_URLS['sim-visualizer']}/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">View</a>`
                     : '';
 
                 return `

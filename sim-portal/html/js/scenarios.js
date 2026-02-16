@@ -1,6 +1,10 @@
 // Scenarios page logic
 
 document.addEventListener('DOMContentLoaded', () => {
+    const editorLink = document.getElementById('open-editor-link');
+    if (editorLink) {
+        editorLink.href = SERVICE_URLS['sim-editor'];
+    }
     loadScenarios();
 });
 
@@ -60,9 +64,9 @@ function renderScenarioRow(scenario) {
             <td>${execCount}</td>
             <td>
                 <div class="action-links">
-                    <a href="http://localhost:8082/editor.html?scenarioId=${encodeURIComponent(scenario.scenarioId)}" target="_blank" class="btn btn-outline btn-sm">Edit</a>
-                    <a href="http://localhost:8083/scenario.html?id=${encodeURIComponent(scenario.scenarioId)}" target="_blank" class="btn btn-outline btn-sm">Execute</a>
-                    ${execCount > 0 ? `<a href="http://localhost:8083/scenario.html?id=${encodeURIComponent(scenario.scenarioId)}" target="_blank" class="btn btn-outline btn-sm">History</a>` : ''}
+                    <a href="${SERVICE_URLS['sim-editor']}/editor.html?scenarioId=${encodeURIComponent(scenario.scenarioId)}" target="_blank" class="btn btn-outline btn-sm">Edit</a>
+                    <a href="${SERVICE_URLS['sim-executor']}/scenario.html?id=${encodeURIComponent(scenario.scenarioId)}" target="_blank" class="btn btn-outline btn-sm">Execute</a>
+                    ${execCount > 0 ? `<a href="${SERVICE_URLS['sim-executor']}/scenario.html?id=${encodeURIComponent(scenario.scenarioId)}" target="_blank" class="btn btn-outline btn-sm">History</a>` : ''}
                 </div>
             </td>
         </tr>

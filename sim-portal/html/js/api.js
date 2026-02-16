@@ -1,6 +1,15 @@
 // Portal API Client
-const SIMULATION_CORE_URL = 'http://localhost:8080/api';
-const EXECUTOR_API_URL = 'http://localhost:8084/api/executor';
+// Dynamically resolve base hostname from current page location
+const _BASE_HOST = window.location.hostname;
+
+const SIMULATION_CORE_URL = `http://${_BASE_HOST}:8080/api`;
+const EXECUTOR_API_URL = `http://${_BASE_HOST}:8084/api/executor`;
+
+const SERVICE_URLS = {
+    'sim-editor': `http://${_BASE_HOST}:8082`,
+    'sim-executor': `http://${_BASE_HOST}:8083`,
+    'sim-visualizer': `http://${_BASE_HOST}:8081`,
+};
 
 const HEALTH_CHECK_TIMEOUT = 3000;
 
@@ -49,11 +58,11 @@ const PortalAPI = {
 
     async checkAllServices() {
         const services = [
-            { name: 'simulation-core', url: 'http://localhost:8080/api/scenarios', port: 8080 },
-            { name: 'sim-executor-backend', url: 'http://localhost:8084/api/executor/scenarios', port: 8084 },
-            { name: 'sim-editor', url: 'http://localhost:8082/', port: 8082 },
-            { name: 'sim-executor', url: 'http://localhost:8083/', port: 8083 },
-            { name: 'sim-visualizer', url: 'http://localhost:8081/', port: 8081 },
+            { name: 'simulation-core', url: `http://${_BASE_HOST}:8080/api/scenarios`, port: 8080 },
+            { name: 'sim-executor-backend', url: `http://${_BASE_HOST}:8084/api/executor/scenarios`, port: 8084 },
+            { name: 'sim-editor', url: `http://${_BASE_HOST}:8082/`, port: 8082 },
+            { name: 'sim-executor', url: `http://${_BASE_HOST}:8083/`, port: 8083 },
+            { name: 'sim-visualizer', url: `http://${_BASE_HOST}:8081/`, port: 8081 },
             { name: 'PostgreSQL', url: null, port: 5432 }
         ];
 

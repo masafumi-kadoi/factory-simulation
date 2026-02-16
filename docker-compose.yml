@@ -112,6 +112,7 @@ services:
     container_name: factory-sim-portal
     ports:
       - "8085:80"
+      - "8443:443"
     depends_on:
       - simulation-core
       - sim-executor-backend

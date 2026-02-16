@@ -111,7 +111,7 @@ function renderExecutionRow(exec) {
 
     let actions = '';
     if (exec.status === 'completed' && exec.simulationId) {
-        actions = `<a href="http://localhost:8081/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">Visualize</a>`;
+        actions = `<a href="${SERVICE_URLS['sim-visualizer']}/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">Visualize</a>`;
     }
 
     let errorHtml = '';
