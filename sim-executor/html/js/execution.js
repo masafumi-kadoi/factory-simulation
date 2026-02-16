@@ -46,6 +46,9 @@ function setupRadioButtons() {
     const radioOptions = document.querySelectorAll('.radio-option');
 
     function selectOption(option) {
+        const alreadySelected = option.classList.contains('selected');
+        if (alreadySelected) return;
+
         radioOptions.forEach(o => {
             o.classList.remove('selected');
             o.querySelector('input[type="radio"]').checked = false;
@@ -60,12 +63,24 @@ function setupRadioButtons() {
     }
 
     radioOptions.forEach(option => {
-        option.addEventListener('click', () => selectOption(option));
+        // .radio-inputs 内のクリックは親に伝播させない
+        const radioInputsDiv = option.querySelector('.radio-inputs');
+        if (radioInputsDiv) {
+            radioInputsDiv.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+            // disabledなinputをクリックしたときにオプション切替 + フォーカス
+            radioInputsDiv.addEventListener('mousedown', (e) => {
+                const input = e.target.closest('input');
+                if (input && input.disabled) {
+                    e.preventDefault();
+                    selectOption(option);
+                    input.focus();
+                }
+            });
+        }
 
-        // inputにフォーカスしたら自動的にそのオプションを選択
-        option.querySelectorAll('.radio-inputs input').forEach(input => {
-            input.addEventListener('focus', () => selectOption(option));
-        });
+        option.addEventListener('click', () => selectOption(option));
     });
 }
 
