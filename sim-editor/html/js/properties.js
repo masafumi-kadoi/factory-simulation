@@ -196,6 +196,10 @@ export class PropertiesPanel {
                 <input type="text" class="property-input" value="${station.id}" disabled>
             </div>
             <div class="property-group">
+                <label class="property-label">表示名</label>
+                <input type="text" class="property-input" id="prop-name" value="${this._escapeAttr(station.name || '')}" placeholder="(未設定)">
+            </div>
+            <div class="property-group">
                 <label class="property-label">Type</label>
                 <input type="text" class="property-input" value="${station.type}" disabled>
             </div>
@@ -244,6 +248,12 @@ export class PropertiesPanel {
             const continuousEl = this.container.querySelector('#prop-continuous');
             if (continuousEl) {
                 newConfig.continuous = continuousEl.checked;
+            }
+
+            // Save name
+            const nameInput = this.container.querySelector('#prop-name');
+            if (nameInput) {
+                station.name = nameInput.value.trim();
             }
 
             // Save locationId
@@ -392,5 +402,9 @@ export class PropertiesPanel {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    _escapeAttr(text) {
+        return (text || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 }

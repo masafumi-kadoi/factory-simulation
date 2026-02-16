@@ -32,6 +32,7 @@ type StateTransition struct {
 // Station represents a station in the factory simulation (Processing base class)
 type Station struct {
 	ID         string
+	Name       string
 	Type       StationType
 	ParentID   *string
 	LocationID *int64

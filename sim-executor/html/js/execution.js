@@ -127,6 +127,7 @@ async function loadStationList() {
         const data = await ExecutorAPI.getScenarioDetail(currentScenarioId);
         currentStations = (data.stations || []).map(s => ({
             id: s.id,
+            name: s.name || '',
             type: s.type
         }));
     } catch (err) {
@@ -179,7 +180,8 @@ function renderEditableConditionsTable(conditions) {
         return `
             <tr data-station-id="${escapeHtml(station.id)}">
                 <td>
-                    <span class="station-id-label">${escapeHtml(station.id)}</span>
+                    <span class="station-id-label">${station.name ? escapeHtml(station.name) : escapeHtml(station.id)}</span>
+                    ${station.name ? `<span style="color:#6c757d;font-size:0.75rem;margin-left:0.25rem">(${escapeHtml(station.id)})</span>` : ''}
                     <span class="station-type-tag type-${station.type}">${station.type}</span>
                 </td>
                 <td><input type="text" class="condition-input" data-field="workId" value="${escapeHtml(workId)}" placeholder="(empty)"></td>

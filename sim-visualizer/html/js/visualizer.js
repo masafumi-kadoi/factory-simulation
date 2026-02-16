@@ -321,8 +321,9 @@ export class Visualizer3D {
 
         this.scene.add(group);
 
-        // Add label
-        const label = this._createLabel(station.id, position.x, 65, position.z);
+        // Add label (use friendly name if available)
+        const labelText = station.name || station.id;
+        const label = this._createLabel(labelText, position.x, 65, position.z);
 
         return { mesh: group, label: label };
     }

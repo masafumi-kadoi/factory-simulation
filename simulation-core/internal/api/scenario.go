@@ -20,6 +20,7 @@ func formatTime(t *time.Time) *string {
 // StationRequest represents a station in the request
 type StationRequest struct {
 	ID         string                 `json:"id"`
+	Name       string                 `json:"name,omitempty"`
 	Type       string                 `json:"type"`
 	ParentID   *string                `json:"parentId"`
 	LocationID *int64                 `json:"locationId,omitempty"`
@@ -140,6 +141,7 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	for i, st := range req.Stations {
 		stationType := domain.StationType(st.Type)
 		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
+		stations[i].Name = st.Name
 		stations[i].ParentID = st.ParentID
 		stations[i].LocationID = st.LocationID
 		stations[i].PositionX = st.PositionX
@@ -227,6 +229,7 @@ func (h *Handler) HandleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	for i, st := range req.Stations {
 		stationType := domain.StationType(st.Type)
 		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
+		stations[i].Name = st.Name
 		stations[i].ParentID = st.ParentID
 		stations[i].LocationID = st.LocationID
 		stations[i].PositionX = st.PositionX
@@ -423,6 +426,7 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 	for i, st := range scenario.Stations {
 		stations[i] = StationRequest{
 			ID:         st.ID,
+			Name:       st.Name,
 			Type:       string(st.Type),
 			ParentID:   st.ParentID,
 			LocationID: st.LocationID,

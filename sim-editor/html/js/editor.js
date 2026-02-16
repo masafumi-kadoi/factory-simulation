@@ -95,6 +95,7 @@ class ScenarioEditor {
                 simdbConfig: data.simdbConfig || null,
                 stations: (data.stations || []).map((s, i) => ({
                     id: s.id,
+                    name: s.name || '',
                     type: s.type,
                     locationId: s.locationId || null,
                     config: s.config || {},
@@ -351,6 +352,7 @@ class ScenarioEditor {
         const id = `${type}-${Date.now()}`;
         const station = {
             id: id,
+            name: '',
             type: type,
             config: this._getDefaultConfig(type),
             x: x,
@@ -527,6 +529,7 @@ class ScenarioEditor {
                 simdbConfig: this.scenario.simdbConfig || undefined,
                 stations: this.scenario.stations.map(s => ({
                     id: s.id,
+                    name: s.name || '',
                     type: s.type,
                     locationId: s.locationId || undefined,
                     config: s.config,
