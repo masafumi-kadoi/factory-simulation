@@ -442,6 +442,45 @@ class ScenarioEditor {
         this.dirty = true;
     }
 
+    _showSaveDialog() {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'save-dialog-overlay';
+
+            const dialog = document.createElement('div');
+            dialog.className = 'save-dialog';
+            dialog.innerHTML = `
+                <div class="save-dialog-title">保存方法を選択</div>
+                <div class="save-dialog-buttons">
+                    <button class="btn-primary save-dialog-btn" data-choice="overwrite">上書き保存</button>
+                    <button class="btn-secondary save-dialog-btn" data-choice="new">別名で保存</button>
+                    <button class="btn-cancel save-dialog-btn" data-choice="cancel">キャンセル</button>
+                </div>
+            `;
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            const cleanup = (choice) => {
+                document.body.removeChild(overlay);
+                resolve(choice);
+            };
+
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) cleanup(null);
+            });
+
+            dialog.querySelectorAll('.save-dialog-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const choice = btn.dataset.choice;
+                    if (choice === 'cancel') cleanup(null);
+                    else if (choice === 'new') cleanup('new');
+                    else cleanup('overwrite');
+                });
+            });
+        });
+    }
+
     async _saveScenario() {
         // Validate
         const { errors, warnings } = validateScenario(this.scenario);
@@ -461,19 +500,9 @@ class ScenarioEditor {
 
         // If this scenario was loaded from API, ask whether to overwrite or save as new
         if (this.scenario.apiScenarioId) {
-            const choice = prompt(
-                '保存方法を選択してください:\n' +
-                '1: 上書き保存（既存シナリオを更新）\n' +
-                '2: 新規保存（新しいシナリオとして作成）\n\n' +
-                '番号を入力:',
-                '1'
-            );
+            const choice = await this._showSaveDialog();
             if (choice === null) return; // cancelled
-            if (choice.trim() === '2') {
-                await this._saveToAPI(false);
-            } else {
-                await this._saveToAPI(true);
-            }
+            await this._saveToAPI(choice === 'overwrite');
         } else {
             await this._saveToAPI(false);
         }
