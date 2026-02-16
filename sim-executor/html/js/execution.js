@@ -44,19 +44,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupRadioButtons() {
     const radioOptions = document.querySelectorAll('.radio-option');
-    radioOptions.forEach(option => {
-        option.addEventListener('click', () => {
-            radioOptions.forEach(o => {
-                o.classList.remove('selected');
-                o.querySelector('input[type="radio"]').checked = false;
-                const inputs = o.querySelectorAll('.radio-inputs input');
-                inputs.forEach(i => i.disabled = true);
-            });
 
-            option.classList.add('selected');
-            option.querySelector('input[type="radio"]').checked = true;
-            const inputs = option.querySelectorAll('.radio-inputs input');
-            inputs.forEach(i => i.disabled = false);
+    function selectOption(option) {
+        radioOptions.forEach(o => {
+            o.classList.remove('selected');
+            o.querySelector('input[type="radio"]').checked = false;
+            const inputs = o.querySelectorAll('.radio-inputs input');
+            inputs.forEach(i => i.disabled = true);
+        });
+
+        option.classList.add('selected');
+        option.querySelector('input[type="radio"]').checked = true;
+        const inputs = option.querySelectorAll('.radio-inputs input');
+        inputs.forEach(i => i.disabled = false);
+    }
+
+    radioOptions.forEach(option => {
+        option.addEventListener('click', () => selectOption(option));
+
+        // inputにフォーカスしたら自動的にそのオプションを選択
+        option.querySelectorAll('.radio-inputs input').forEach(input => {
+            input.addEventListener('focus', () => selectOption(option));
         });
     });
 }
