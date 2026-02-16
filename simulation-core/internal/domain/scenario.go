@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // RoutingCondition represents a routing condition for conditional routing
 type RoutingCondition string
 
@@ -32,6 +34,8 @@ type Scenario struct {
 	SimDBConfig *SimDBConfig
 	Stations    []Station
 	Connections []Connection
+	CreatedAt   *time.Time
+	UpdatedAt   *time.Time
 }
 
 // NewScenario creates a new scenario

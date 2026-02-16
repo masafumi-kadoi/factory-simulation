@@ -1,6 +1,8 @@
 // Scenario detail page logic
 
 let currentScenarioId = null;
+let allExecutions = [];
+let execSort = 'newest';
 
 document.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);
@@ -16,9 +18,21 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = `execution.html?scenarioId=${encodeURIComponent(currentScenarioId)}`;
     });
 
+    setupExecSortButtons();
     loadScenarioInfo();
     loadExecutions();
 });
+
+function setupExecSortButtons() {
+    document.querySelectorAll('.exec-sort-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            execSort = btn.dataset.sort;
+            document.querySelectorAll('.exec-sort-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderExecutions();
+        });
+    });
+}
 
 async function loadScenarioInfo() {
     const container = document.getElementById('scenario-info');
@@ -63,25 +77,63 @@ async function loadExecutions() {
     const container = document.getElementById('executions-container');
     try {
         const data = await ExecutorAPI.getExecutions(currentScenarioId);
-        const executions = data.executions || [];
-
-        if (executions.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">&#128203;</div>
-                    <p>No executions yet</p>
-                    <p class="empty-hint">Click "New Execution" to run a simulation</p>
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = '<div class="execution-list">' +
-            executions.map((exec, i) => renderExecutionItem(exec, executions.length - i)).join('') +
-            '</div>';
+        allExecutions = data.executions || [];
+        renderExecutions();
     } catch (err) {
         container.innerHTML = `<div class="error-message">Failed to load executions: ${escapeHtml(err.message)}</div>`;
     }
+}
+
+function getSortedExecutions() {
+    const sorted = [...allExecutions];
+    switch (execSort) {
+        case 'newest':
+            sorted.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            break;
+        case 'oldest':
+            sorted.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+            break;
+        case 'status':
+            const order = { 'running': 0, 'pending': 1, 'completed': 2, 'error': 3 };
+            sorted.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+            break;
+    }
+    return sorted;
+}
+
+function renderExecutions() {
+    const container = document.getElementById('executions-container');
+
+    if (allExecutions.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">&#128203;</div>
+                <p>No executions yet</p>
+                <p class="empty-hint">Click "New Execution" to run a simulation</p>
+            </div>
+        `;
+        return;
+    }
+
+    const sorted = getSortedExecutions();
+    container.innerHTML = '<div class="execution-list">' +
+        sorted.map((exec, i) => renderExecutionItem(exec, allExecutions.length - allExecutions.indexOf(exec))).join('') +
+        '</div>';
+
+    // Attach delete button event listeners
+    container.querySelectorAll('.delete-exec-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const execId = btn.dataset.execId;
+            if (!confirm('この実行履歴を削除しますか？')) return;
+            try {
+                await ExecutorAPI.deleteExecution(execId);
+                allExecutions = allExecutions.filter(e => e.id !== execId);
+                renderExecutions();
+            } catch (err) {
+                alert('削除に失敗しました: ' + err.message);
+            }
+        });
+    });
 }
 
 function renderExecutionItem(exec, number) {
@@ -115,6 +167,8 @@ function renderExecutionItem(exec, number) {
             <a href="execution.html?scenarioId=${encodeURIComponent(currentScenarioId)}&rerun=${encodeURIComponent(exec.id)}" class="btn btn-outline btn-sm">Retry</a>
         `;
     }
+
+    actions += `<button class="btn btn-danger btn-sm delete-exec-btn" data-exec-id="${escapeHtml(exec.id)}">Delete</button>`;
 
     return `
         <div class="execution-item">

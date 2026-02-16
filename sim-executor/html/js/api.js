@@ -53,6 +53,15 @@ const ExecutorAPI = {
         return resp.json();
     },
 
+    // Delete an execution
+    async deleteExecution(executionId) {
+        const resp = await fetch(`${API_BASE}/executions/${encodeURIComponent(executionId)}`, {
+            method: 'DELETE'
+        });
+        if (!resp.ok) throw new Error(`Failed to delete execution: ${resp.statusText}`);
+        return resp.json();
+    },
+
     // Test SimDB connection
     async testSimDBConnection(scenarioId) {
         const resp = await fetch(`${API_BASE}/simdb/test-connection`, {

@@ -1,27 +1,31 @@
 // Dashboard page logic
 
+let allScenarios = [];
+let currentSort = 'name';
+
 document.addEventListener('DOMContentLoaded', () => {
     loadScenarios();
+    setupSortButtons();
 });
+
+function setupSortButtons() {
+    document.querySelectorAll('.sort-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentSort = btn.dataset.sort;
+            document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderScenarios();
+        });
+    });
+}
 
 async function loadScenarios() {
     const container = document.getElementById('scenarios-container');
     try {
         const data = await ExecutorAPI.getScenarios();
-        const scenarios = data.scenarios || [];
+        allScenarios = data.scenarios || [];
 
-        if (scenarios.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">&#128269;</div>
-                    <p>No scenarios found</p>
-                    <p class="empty-hint">Create a scenario in sim-editor first</p>
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = scenarios.map(s => renderScenarioCard(s)).join('');
+        renderScenarios();
     } catch (err) {
         container.innerHTML = `
             <div class="error-message">
@@ -29,6 +33,48 @@ async function loadScenarios() {
             </div>
         `;
     }
+}
+
+function getSortedScenarios() {
+    const sorted = [...allScenarios];
+    switch (currentSort) {
+        case 'name':
+            sorted.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+            break;
+        case 'createdAt':
+            sorted.sort((a, b) => {
+                const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                return tb - ta;
+            });
+            break;
+        case 'updatedAt':
+            sorted.sort((a, b) => {
+                const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+                return tb - ta;
+            });
+            break;
+    }
+    return sorted;
+}
+
+function renderScenarios() {
+    const container = document.getElementById('scenarios-container');
+    const scenarios = getSortedScenarios();
+
+    if (scenarios.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">&#128269;</div>
+                <p>No scenarios found</p>
+                <p class="empty-hint">Create a scenario in sim-editor first</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = scenarios.map(s => renderScenarioCard(s)).join('');
 }
 
 function renderScenarioCard(scenario) {

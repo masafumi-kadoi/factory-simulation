@@ -109,6 +109,8 @@ type ScenarioWithExecutions struct {
 	StationCount    int         `json:"stationCount"`
 	ConnectionCount int         `json:"connectionCount"`
 	ExecutionCount  int         `json:"executionCount"`
+	CreatedAt       interface{} `json:"createdAt,omitempty"`
+	UpdatedAt       interface{} `json:"updatedAt,omitempty"`
 }
 
 // SimDBTestRequest represents POST /api/executor/simdb/test-connection request
@@ -385,6 +387,29 @@ func (h *Handler) HandleGetExecutions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleDeleteExecution handles DELETE /api/executor/executions/:id
+func (h *Handler) HandleDeleteExecution(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		respondError(w, http.StatusMethodNotAllowed, "Method not allowed", "")
+		return
+	}
+
+	// Extract execution ID from path
+	prefix := "/api/executor/executions/"
+	if len(r.URL.Path) <= len(prefix) {
+		respondError(w, http.StatusBadRequest, "Execution ID is required", "INVALID_REQUEST")
+		return
+	}
+	executionID := r.URL.Path[len(prefix):]
+
+	if err := h.repo.DeleteExecution(executionID); err != nil {
+		respondError(w, http.StatusNotFound, fmt.Sprintf("Failed to delete execution: %v", err), "NOT_FOUND")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Execution deleted"})
+}
+
 // HandleGetScenarios handles GET /api/executor/scenarios (proxy with execution count)
 func (h *Handler) HandleGetScenarios(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -406,6 +431,8 @@ func (h *Handler) HandleGetScenarios(w http.ResponseWriter, r *http.Request) {
 			SimDBConfig     interface{} `json:"simdbConfig,omitempty"`
 			StationCount    int         `json:"stationCount"`
 			ConnectionCount int         `json:"connectionCount"`
+			CreatedAt       interface{} `json:"createdAt,omitempty"`
+			UpdatedAt       interface{} `json:"updatedAt,omitempty"`
 		} `json:"scenarios"`
 	}
 
@@ -424,6 +451,8 @@ func (h *Handler) HandleGetScenarios(w http.ResponseWriter, r *http.Request) {
 			StationCount:    s.StationCount,
 			ConnectionCount: s.ConnectionCount,
 			ExecutionCount:  count,
+			CreatedAt:       s.CreatedAt,
+			UpdatedAt:       s.UpdatedAt,
 		})
 	}
 

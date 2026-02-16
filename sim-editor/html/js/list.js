@@ -5,6 +5,7 @@ class ScenarioList {
     constructor() {
         this.localScenarios = [];
         this.apiScenarios = [];
+        this.currentSort = 'name'; // 'name', 'createdAt', 'updatedAt'
         this._init();
     }
 
@@ -37,6 +38,8 @@ class ScenarioList {
                 stationCount: s.stationCount,
                 connectionCount: s.connectionCount,
                 simdbConfig: s.simdbConfig || null,
+                createdAt: s.createdAt || null,
+                updatedAt: s.updatedAt || null,
                 source: 'api'
             }));
         } catch (e) {
@@ -47,6 +50,62 @@ class ScenarioList {
 
     _saveToLocalStorage() {
         localStorage.setItem('sim-editor-scenarios', JSON.stringify(this.localScenarios));
+    }
+
+    _getSortedAPIScenarios() {
+        const sorted = [...this.apiScenarios];
+        switch (this.currentSort) {
+            case 'name':
+                sorted.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+                break;
+            case 'createdAt':
+                sorted.sort((a, b) => {
+                    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return tb - ta; // newest first
+                });
+                break;
+            case 'updatedAt':
+                sorted.sort((a, b) => {
+                    const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                    const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+                    return tb - ta; // newest first
+                });
+                break;
+        }
+        return sorted;
+    }
+
+    _getSortedLocalScenarios() {
+        const sorted = [...this.localScenarios];
+        switch (this.currentSort) {
+            case 'name':
+                sorted.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+                break;
+            case 'createdAt':
+            case 'updatedAt':
+                sorted.sort((a, b) => {
+                    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return tb - ta;
+                });
+                break;
+        }
+        return sorted;
+    }
+
+    _formatDate(dateStr) {
+        if (!dateStr) return '-';
+        try {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return '-';
+            return d.toLocaleString('ja-JP', {
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit'
+            });
+        } catch {
+            return '-';
+        }
     }
 
     _render() {
@@ -67,10 +126,13 @@ class ScenarioList {
 
         let html = '';
 
-        // API scenarios
+        // API scenarios (sorted)
         if (hasAPI) {
+            const sortedAPI = this._getSortedAPIScenarios();
             html += '<div class="scenario-section-label">Saved Scenarios</div>';
-            html += this.apiScenarios.map((scenario, index) => `
+            html += sortedAPI.map(scenario => {
+                const origIndex = this.apiScenarios.indexOf(scenario);
+                return `
                 <div class="scenario-card">
                     <div class="scenario-card-header">
                         <h3 class="scenario-card-title">${this._escapeHtml(scenario.name)}</h3>
@@ -78,22 +140,28 @@ class ScenarioList {
                     <div class="scenario-card-meta">
                         Stations: ${scenario.stationCount} | Connections: ${scenario.connectionCount}
                     </div>
+                    <div class="scenario-card-meta">
+                        作成: ${this._formatDate(scenario.createdAt)} | 更新: ${this._formatDate(scenario.updatedAt)}
+                    </div>
                     <div class="scenario-card-actions">
                         <a href="editor.html?scenarioId=${encodeURIComponent(scenario.apiScenarioId)}" class="btn-primary" style="text-decoration:none;text-align:center;">Edit</a>
-                        <button class="btn-secondary api-duplicate-btn" data-api-index="${index}">Duplicate</button>
-                        <button class="btn-danger api-delete-btn" data-api-index="${index}">Delete</button>
+                        <button class="btn-secondary api-duplicate-btn" data-api-index="${origIndex}">Duplicate</button>
+                        <button class="btn-danger api-delete-btn" data-api-index="${origIndex}">Delete</button>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
-        // Local scenarios
+        // Local scenarios (sorted)
         if (hasLocal) {
+            const sortedLocal = this._getSortedLocalScenarios();
             if (hasAPI) {
                 html += '<div class="scenario-section-label">Local Drafts</div>';
             }
-            html += this.localScenarios.map((scenario, index) => `
-                <div class="scenario-card" data-index="${index}">
+            html += sortedLocal.map(scenario => {
+                const origIndex = this.localScenarios.indexOf(scenario);
+                return `
+                <div class="scenario-card" data-index="${origIndex}">
                     <div class="scenario-card-header">
                         <h3 class="scenario-card-title">${this._escapeHtml(scenario.name)}</h3>
                     </div>
@@ -104,12 +172,12 @@ class ScenarioList {
                         Stations: ${scenario.stations.length} | Connections: ${scenario.connections.length}
                     </div>
                     <div class="scenario-card-actions">
-                        <button class="btn-primary edit-btn" data-index="${index}">Edit</button>
-                        <button class="btn-secondary duplicate-btn" data-index="${index}">Duplicate</button>
-                        <button class="btn-danger delete-btn" data-index="${index}">Delete</button>
+                        <button class="btn-primary edit-btn" data-index="${origIndex}">Edit</button>
+                        <button class="btn-secondary duplicate-btn" data-index="${origIndex}">Duplicate</button>
+                        <button class="btn-danger delete-btn" data-index="${origIndex}">Delete</button>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         listElement.innerHTML = html;
@@ -118,6 +186,16 @@ class ScenarioList {
     _setupEventListeners() {
         document.getElementById('new-scenario-btn').addEventListener('click', () => {
             this._createNewScenario();
+        });
+
+        // Sort buttons
+        document.querySelectorAll('.sort-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.currentSort = btn.dataset.sort;
+                document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this._render();
+            });
         });
 
         document.getElementById('scenario-list').addEventListener('click', (e) => {
@@ -243,6 +321,8 @@ class ScenarioList {
                 stationCount: (fullScenario.stations || []).length,
                 connectionCount: (fullScenario.connections || []).length,
                 simdbConfig: fullScenario.simdbConfig || null,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
                 source: 'api'
             });
             this._render();

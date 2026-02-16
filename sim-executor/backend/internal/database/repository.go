@@ -122,6 +122,21 @@ func (r *Repository) UpdateExecutionStatus(id string, status string, simulationI
 	return nil
 }
 
+// DeleteExecution deletes an execution by ID
+func (r *Repository) DeleteExecution(id string) error {
+	result, err := r.db.GetConnection().Exec(
+		"DELETE FROM execution_configs WHERE id = $1", id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete execution: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("execution not found: %s", id)
+	}
+	return nil
+}
+
 // CountExecutionsByScenarioID counts executions for a scenario
 func (r *Repository) CountExecutionsByScenarioID(scenarioID string) (int, error) {
 	var count int

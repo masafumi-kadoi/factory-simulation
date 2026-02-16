@@ -4,9 +4,18 @@ import (
 	"factory-simulation/simulation-core/internal/domain"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+func formatTime(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.Format(time.RFC3339)
+	return &s
+}
 
 // StationRequest represents a station in the request
 type StationRequest struct {
@@ -325,6 +334,8 @@ type ScenarioDetailResponse struct {
 	SimDBConfig *SimDBConfigRequest `json:"simdbConfig,omitempty"`
 	Stations    []StationRequest    `json:"stations"`
 	Connections []ConnectionRequest `json:"connections"`
+	CreatedAt   *string             `json:"createdAt,omitempty"`
+	UpdatedAt   *string             `json:"updatedAt,omitempty"`
 }
 
 // ScenarioListItem represents a single scenario in the list
@@ -334,6 +345,8 @@ type ScenarioListItem struct {
 	SimDBConfig     *SimDBConfigRequest `json:"simdbConfig,omitempty"`
 	StationCount    int                 `json:"stationCount"`
 	ConnectionCount int                 `json:"connectionCount"`
+	CreatedAt       *string             `json:"createdAt,omitempty"`
+	UpdatedAt       *string             `json:"updatedAt,omitempty"`
 }
 
 // ScenarioListResponse represents a GET /api/scenarios response
@@ -374,6 +387,8 @@ func (h *Handler) HandleListScenarios(w http.ResponseWriter, r *http.Request) {
 			SimDBConfig:     simdbConfig,
 			StationCount:    len(scenario.Stations),
 			ConnectionCount: len(scenario.Connections),
+			CreatedAt:       formatTime(scenario.CreatedAt),
+			UpdatedAt:       formatTime(scenario.UpdatedAt),
 		}
 	}
 
@@ -443,5 +458,7 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 		SimDBConfig: simdbConfig,
 		Stations:    stations,
 		Connections: connections,
+		CreatedAt:   formatTime(scenario.CreatedAt),
+		UpdatedAt:   formatTime(scenario.UpdatedAt),
 	})
 }

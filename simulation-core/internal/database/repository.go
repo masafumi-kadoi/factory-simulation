@@ -394,7 +394,8 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 			simdb_port = EXCLUDED.simdb_port,
 			simdb_database = EXCLUDED.simdb_database,
 			simdb_user = EXCLUDED.simdb_user,
-			simdb_password = EXCLUDED.simdb_password
+			simdb_password = EXCLUDED.simdb_password,
+			updated_at = CURRENT_TIMESTAMP
 	`, scenario.ID, scenario.Name, simdbHost, simdbPort, simdbDatabase, simdbUser, simdbPassword)
 	if err != nil {
 		return fmt.Errorf("failed to insert scenario: %w", err)
@@ -487,10 +488,11 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 	var name string
 	var simdbHost, simdbDatabase, simdbUser, simdbPassword *string
 	var simdbPort *int
+	var createdAt, updatedAt *time.Time
 	err := r.db.GetConnection().QueryRow(`
-		SELECT name, simdb_host, simdb_port, simdb_database, simdb_user, simdb_password
+		SELECT name, simdb_host, simdb_port, simdb_database, simdb_user, simdb_password, created_at, updated_at
 		FROM scenarios WHERE id = $1
-	`, id).Scan(&name, &simdbHost, &simdbPort, &simdbDatabase, &simdbUser, &simdbPassword)
+	`, id).Scan(&name, &simdbHost, &simdbPort, &simdbDatabase, &simdbUser, &simdbPassword, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get scenario: %w", err)
 	}
@@ -556,8 +558,12 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 		})
 	}
 
-	// Build SimDBConfig if available
+	// Build scenario
 	scenario := domain.NewScenario(id, name, stations, connections)
+	scenario.CreatedAt = createdAt
+	scenario.UpdatedAt = updatedAt
+
+	// Build SimDBConfig if available
 	if simdbHost != nil && *simdbHost != "" {
 		cfg := &domain.SimDBConfig{
 			Host:     *simdbHost,
