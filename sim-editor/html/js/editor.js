@@ -105,7 +105,9 @@ class ScenarioEditor {
                 connections: (data.connections || []).map(c => ({
                     from: c.from,
                     to: c.to,
-                    condition: c.condition || 'default'
+                    condition: c.condition || 'default',
+                    fromBufferIndex: c.fromBufferIndex != null ? c.fromBufferIndex : -1,
+                    toBufferIndex: c.toBufferIndex != null ? c.toBufferIndex : -1
                 }))
             };
             this.savedToAPI = true;
@@ -384,8 +386,8 @@ class ScenarioEditor {
             merge: {
                 mergeCount: 2,
                 buffers: [
-                    { workType: '', capacity: 1 },
-                    { workType: '', capacity: 1 }
+                    { capacity: 1 },
+                    { capacity: 1 }
                 ],
                 outputWorkType: '',
                 processingTime: 3.0,
@@ -395,8 +397,8 @@ class ScenarioEditor {
             split: {
                 splitCount: 2,
                 buffers: [
-                    { workType: '' },
-                    { workType: '' }
+                    { capacity: 1 },
+                    { capacity: 1 }
                 ],
                 processingTime: 2.0,
                 arrivalTime: 1.0,
@@ -429,10 +431,12 @@ class ScenarioEditor {
         }
     }
 
-    addConnection(fromId, toId) {
-        // Check if connection already exists
+    addConnection(fromId, toId, fromBufferIndex = -1, toBufferIndex = -1) {
+        // Check if connection already exists (same from/to and buffer indices)
         const exists = this.scenario.connections.some(
-            c => c.from === fromId && c.to === toId
+            c => c.from === fromId && c.to === toId &&
+                 (c.fromBufferIndex || -1) === fromBufferIndex &&
+                 (c.toBufferIndex || -1) === toBufferIndex
         );
 
         if (exists) {
@@ -440,10 +444,32 @@ class ScenarioEditor {
             return;
         }
 
+        // Check 1:1 buffer constraint: each buffer can only have one connection
+        if (toBufferIndex >= 0) {
+            const bufferTaken = this.scenario.connections.some(
+                c => c.to === toId && c.toBufferIndex === toBufferIndex
+            );
+            if (bufferTaken) {
+                alert('このバッファには既に接続があります');
+                return;
+            }
+        }
+        if (fromBufferIndex >= 0) {
+            const bufferTaken = this.scenario.connections.some(
+                c => c.from === fromId && c.fromBufferIndex === fromBufferIndex
+            );
+            if (bufferTaken) {
+                alert('このバッファには既に接続があります');
+                return;
+            }
+        }
+
         const connection = {
             from: fromId,
             to: toId,
-            condition: 'default'
+            condition: 'default',
+            fromBufferIndex: fromBufferIndex,
+            toBufferIndex: toBufferIndex
         };
 
         const command = new AddConnectionCommand(this, connection);
@@ -563,7 +589,9 @@ class ScenarioEditor {
                 connections: this.scenario.connections.map(c => ({
                     from: c.from,
                     to: c.to,
-                    condition: c.condition || 'default'
+                    condition: c.condition || 'default',
+                    fromBufferIndex: c.fromBufferIndex != null ? c.fromBufferIndex : -1,
+                    toBufferIndex: c.toBufferIndex != null ? c.toBufferIndex : -1
                 }))
             };
 

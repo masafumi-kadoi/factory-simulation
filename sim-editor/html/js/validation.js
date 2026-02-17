@@ -177,7 +177,6 @@ export function validateStation(station) {
             errors.buffers = `バッファ数(${config.buffers.length})がmergeCount(${config.mergeCount})と一致しません`;
         } else {
             config.buffers.forEach((buf, i) => {
-                if (!buf.workType) errors[`buffer_${i}_workType`] = `バッファ${i+1}のworkTypeは必須です`;
                 if (!buf.capacity || buf.capacity < 1) errors[`buffer_${i}_capacity`] = `バッファ${i+1}のcapacityは1以上必要です`;
             });
         }
@@ -198,10 +197,6 @@ export function validateStation(station) {
             errors.buffers = 'バッファスロットは1つ以上必要です';
         } else if (config.buffers.length !== (config.splitCount || 0)) {
             errors.buffers = `バッファ数(${config.buffers.length})がsplitCount(${config.splitCount})と一致しません`;
-        } else {
-            config.buffers.forEach((buf, i) => {
-                if (!buf.workType) errors[`buffer_${i}_workType`] = `バッファ${i+1}のworkTypeは必須です`;
-            });
         }
     }
 

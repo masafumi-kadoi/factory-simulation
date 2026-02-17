@@ -188,8 +188,7 @@ class App {
                     // Work is at station
                     activeWorks.set(workId, {
                         state: 'at_station',
-                        stationId: stationId,
-                        workType: event.WorkType || ''
+                        stationId: stationId
                     });
                 } else if (event.EventType === 'WorkBuffered') {
                     // Work is in a merge station's buffer slot
@@ -197,7 +196,7 @@ class App {
                         state: 'at_station',
                         stationId: stationId,
                         isBuffered: true,
-                        workType: event.WorkType || ''
+                        bufferIndex: event.BufferIndex != null ? event.BufferIndex : -1
                     });
                 } else if (event.EventType === 'WorkMerged') {
                     // Merged work appears at station body; remove consumed works
@@ -209,8 +208,7 @@ class App {
                     }
                     activeWorks.set(workId, {
                         state: 'at_station',
-                        stationId: stationId,
-                        workType: event.WorkType || ''
+                        stationId: stationId
                     });
                 } else if (event.EventType === 'WorkSplit') {
                     // Split work placed in output buffer slot
@@ -218,7 +216,7 @@ class App {
                         state: 'at_station',
                         stationId: stationId,
                         isBuffered: true,
-                        workType: event.WorkType || ''
+                        bufferIndex: event.BufferIndex != null ? event.BufferIndex : -1
                     });
                 } else if (event.EventType === 'WorkDeparted') {
                     // Look ahead to find next arrival
@@ -240,7 +238,8 @@ class App {
                             toStation: nextArrival.StationID,
                             departTime: event.Timestamp,
                             arriveTime: nextArrival.Timestamp,
-                            workType: event.WorkType || ''
+                            fromBufferIndex: event.BufferIndex != null ? event.BufferIndex : -1,
+                            toBufferIndex: nextArrival.BufferIndex != null ? nextArrival.BufferIndex : -1
                         });
                     } else {
                         // No next arrival (destroyed or end of log)

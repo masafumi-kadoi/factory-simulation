@@ -31,9 +31,11 @@ type StationRequest struct {
 
 // ConnectionRequest represents a connection in the request
 type ConnectionRequest struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Condition string `json:"condition"` // default, quality_ok, quality_ng
+	From            string `json:"from"`
+	To              string `json:"to"`
+	Condition       string `json:"condition"`       // default, quality_ok, quality_ng
+	FromBufferIndex int    `json:"fromBufferIndex"` // Split output buffer index (-1 = no buffer)
+	ToBufferIndex   int    `json:"toBufferIndex"`   // Merge input buffer index (-1 = no buffer)
 }
 
 // SimDBConfigRequest represents SimDB connection settings in the request
@@ -102,10 +104,6 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffer[%d] is invalid", st.ID, idx))
 					return
 				}
-				if _, ok := bm["workType"].(string); !ok {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffer[%d].workType is required", st.ID, idx))
-					return
-				}
 				if cap, ok := bm["capacity"].(float64); ok && cap < 1 {
 					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffer[%d].capacity must be >= 1", st.ID, idx))
 					return
@@ -142,8 +140,8 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffer[%d] is invalid", st.ID, idx))
 					return
 				}
-				if _, ok := bm["workType"].(string); !ok {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffer[%d].workType is required", st.ID, idx))
+				if cap, ok := bm["capacity"].(float64); ok && cap < 1 {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffer[%d].capacity must be >= 1", st.ID, idx))
 					return
 				}
 			}
@@ -203,9 +201,11 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			condition = "default"
 		}
 		connections[i] = domain.Connection{
-			From:      conn.From,
-			To:        conn.To,
-			Condition: domain.RoutingCondition(condition),
+			From:            conn.From,
+			To:              conn.To,
+			Condition:       domain.RoutingCondition(condition),
+			FromBufferIndex: conn.FromBufferIndex,
+			ToBufferIndex:   conn.ToBufferIndex,
 		}
 	}
 
@@ -290,9 +290,11 @@ func (h *Handler) HandleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 			condition = "default"
 		}
 		connections[i] = domain.Connection{
-			From:      conn.From,
-			To:        conn.To,
-			Condition: domain.RoutingCondition(condition),
+			From:            conn.From,
+			To:              conn.To,
+			Condition:       domain.RoutingCondition(condition),
+			FromBufferIndex: conn.FromBufferIndex,
+			ToBufferIndex:   conn.ToBufferIndex,
 		}
 	}
 
@@ -486,9 +488,11 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 	connections := make([]ConnectionRequest, len(scenario.Connections))
 	for i, conn := range scenario.Connections {
 		connections[i] = ConnectionRequest{
-			From:      conn.From,
-			To:        conn.To,
-			Condition: string(conn.Condition),
+			From:            conn.From,
+			To:              conn.To,
+			Condition:       string(conn.Condition),
+			FromBufferIndex: conn.FromBufferIndex,
+			ToBufferIndex:   conn.ToBufferIndex,
 		}
 	}
 

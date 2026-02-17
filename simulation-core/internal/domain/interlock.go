@@ -294,6 +294,59 @@ func getSplitDefaultConfig() *InterlockConfig {
 	}
 }
 
+// GetDefaultMergeBufferInterlockConfig returns the default interlock config for a merge input buffer
+func GetDefaultMergeBufferInterlockConfig() *InterlockConfig {
+	return &InterlockConfig{
+		Signals: []SignalDef{
+			{Name: "workPresent", Initial: false},
+			{Name: "bufferFull", Initial: false},
+			{Name: "inputReady", Initial: true},
+		},
+		Rules: []InterlockRule{
+			{
+				ID:          "R1",
+				Description: "バッファ満杯 → 搬入可OFF",
+				Target:      "inputReady",
+				Value:       false,
+				Conditions:  []RuleCondition{{Signal: "bufferFull", Value: true}},
+			},
+			{
+				ID:          "R2",
+				Description: "バッファ空き → 搬入可ON",
+				Target:      "inputReady",
+				Value:       true,
+				Conditions:  []RuleCondition{{Signal: "bufferFull", Value: false}},
+			},
+		},
+	}
+}
+
+// GetDefaultSplitBufferInterlockConfig returns the default interlock config for a split output buffer
+func GetDefaultSplitBufferInterlockConfig() *InterlockConfig {
+	return &InterlockConfig{
+		Signals: []SignalDef{
+			{Name: "workPresent", Initial: false},
+			{Name: "outputReady", Initial: false},
+		},
+		Rules: []InterlockRule{
+			{
+				ID:          "R1",
+				Description: "ワーク有り → 搬出可ON",
+				Target:      "outputReady",
+				Value:       true,
+				Conditions:  []RuleCondition{{Signal: "workPresent", Value: true}},
+			},
+			{
+				ID:          "R2",
+				Description: "ワークなし → 搬出可OFF",
+				Target:      "outputReady",
+				Value:       false,
+				Conditions:  []RuleCondition{{Signal: "workPresent", Value: false}},
+			},
+		},
+	}
+}
+
 func getDrainDefaultConfig() *InterlockConfig {
 	return &InterlockConfig{
 		Signals: []SignalDef{

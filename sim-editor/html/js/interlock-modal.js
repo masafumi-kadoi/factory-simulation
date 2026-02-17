@@ -23,40 +23,105 @@ export class InterlockModal {
     }
 
     /**
-     * Open the modal for a station
+     * Open the modal for a station or buffer
      * @param {object} station - the station object from the scenario
      * @param {object} scenario - the full scenario (for connection lookups)
      * @param {function} onSave - callback when save is clicked
+     * @param {object} [bufferOpts] - optional: { bufferIndex, bufferType: 'mergeInput'|'splitOutput' }
      */
-    open(station, scenario, onSave) {
+    open(station, scenario, onSave, bufferOpts) {
         this._station = station;
         this._scenario = scenario;
         this._onSave = onSave;
-        this._activeTab = 'inputReady-on';
+        this._bufferOpts = bufferOpts || null;
 
-        // Determine mode
-        this._isCustom = !!station.config.interlockRules;
-
-        // Load rules into editable state
-        if (this._isCustom) {
-            const config = clonePreset(station.config.interlockRules);
-            this._editRules = config.rules || [];
-            this._editSignals = config.signals || [];
+        // For buffer mode, filter tabs to show only relevant ones
+        if (this._bufferOpts) {
+            if (this._bufferOpts.bufferType === 'mergeInput') {
+                this._activeTab = 'inputReady-on';
+            } else {
+                this._activeTab = 'outputReady-on';
+            }
         } else {
-            const preset = getDefaultPreset(station.type);
-            if (preset) {
-                const config = clonePreset(preset);
+            this._activeTab = 'inputReady-on';
+        }
+
+        // Determine mode and load rules
+        if (this._bufferOpts) {
+            // Buffer mode: load from buffer's interlockRules
+            const bufIdx = this._bufferOpts.bufferIndex;
+            const buffers = station.config.buffers || [];
+            const buf = buffers[bufIdx];
+            this._isCustom = !!(buf && buf.interlockRules);
+
+            if (this._isCustom && buf.interlockRules) {
+                const config = clonePreset(buf.interlockRules);
                 this._editRules = config.rules || [];
                 this._editSignals = config.signals || [];
             } else {
-                this._editRules = [];
-                this._editSignals = [];
+                // Load default buffer preset
+                const preset = this._getDefaultBufferPreset();
+                if (preset) {
+                    const config = clonePreset(preset);
+                    this._editRules = config.rules || [];
+                    this._editSignals = config.signals || [];
+                } else {
+                    this._editRules = [];
+                    this._editSignals = [];
+                }
+            }
+        } else {
+            // Station mode
+            this._isCustom = !!station.config.interlockRules;
+
+            if (this._isCustom) {
+                const config = clonePreset(station.config.interlockRules);
+                this._editRules = config.rules || [];
+                this._editSignals = config.signals || [];
+            } else {
+                const preset = getDefaultPreset(station.type);
+                if (preset) {
+                    const config = clonePreset(preset);
+                    this._editRules = config.rules || [];
+                    this._editSignals = config.signals || [];
+                } else {
+                    this._editRules = [];
+                    this._editSignals = [];
+                }
             }
         }
 
         this._createOverlay();
         this._render();
         document.addEventListener('keydown', this._boundKeyHandler);
+    }
+
+    _getDefaultBufferPreset() {
+        if (!this._bufferOpts) return null;
+        if (this._bufferOpts.bufferType === 'mergeInput') {
+            return {
+                signals: [
+                    { name: 'workPresent', initial: false },
+                    { name: 'bufferFull', initial: false },
+                    { name: 'inputReady', initial: true }
+                ],
+                rules: [
+                    { id: 'R1', target: 'inputReady', value: false, conditions: [{ signal: 'bufferFull', value: true }] },
+                    { id: 'R2', target: 'inputReady', value: true, conditions: [{ signal: 'bufferFull', value: false }] }
+                ]
+            };
+        } else {
+            return {
+                signals: [
+                    { name: 'workPresent', initial: false },
+                    { name: 'outputReady', initial: false }
+                ],
+                rules: [
+                    { id: 'R1', target: 'outputReady', value: true, conditions: [{ signal: 'workPresent', value: true }] },
+                    { id: 'R2', target: 'outputReady', value: false, conditions: [{ signal: 'workPresent', value: false }] }
+                ]
+            };
+        }
     }
 
     close() {
@@ -89,18 +154,37 @@ export class InterlockModal {
         const station = this._station;
         const isCustom = this._isCustom;
 
-        // Get available presets for this station type
-        const presets = getPresetsForType(station.type);
+        // Get available presets
+        const presets = this._bufferOpts ? {} : getPresetsForType(station.type);
         const presetKeys = Object.keys(presets);
 
-        // Build preset selector (visible only in Custom mode)
+        // Build preset selector (visible only in Custom mode, not for buffers)
         const presetOptions = presetKeys.map(key =>
             `<option value="${key}">${this._escape(presets[key].name)}</option>`
         ).join('');
 
+        // Title
+        let title;
+        if (this._bufferOpts) {
+            const bufType = this._bufferOpts.bufferType === 'mergeInput' ? '入力' : '出力';
+            title = `バッファ条件設定: ${this._escape(station.id)} [${bufType}バッファ ${this._bufferOpts.bufferIndex}]`;
+        } else {
+            title = `条件設定: ${this._escape(station.id)}`;
+        }
+
+        // Filter tabs for buffer mode
+        let visibleTabs = TAB_DEFS;
+        if (this._bufferOpts) {
+            if (this._bufferOpts.bufferType === 'mergeInput') {
+                visibleTabs = TAB_DEFS.filter(t => t.target === 'inputReady' || t.id === 'other');
+            } else {
+                visibleTabs = TAB_DEFS.filter(t => t.target === 'outputReady' || t.id === 'other');
+            }
+        }
+
         modal.innerHTML = `
             <div class="interlock-modal-header">
-                <span class="interlock-modal-title">条件設定: ${this._escape(station.id)}</span>
+                <span class="interlock-modal-title">${title}</span>
                 <button class="interlock-modal-close" id="il-close-btn">&times;</button>
             </div>
             <div class="interlock-modal-body">
@@ -124,7 +208,7 @@ export class InterlockModal {
                     ` : ''}
                 </div>
                 <div class="interlock-tabs">
-                    ${TAB_DEFS.map(tab => `
+                    ${visibleTabs.map(tab => `
                         <button class="interlock-tab ${this._activeTab === tab.id ? 'active' : ''}" data-tab="${tab.id}">
                             ${tab.label}
                         </button>
@@ -567,7 +651,12 @@ export class InterlockModal {
             }
             this._isCustom = false;
             // Reload default preset
-            const preset = getDefaultPreset(this._station.type);
+            let preset;
+            if (this._bufferOpts) {
+                preset = this._getDefaultBufferPreset();
+            } else {
+                preset = getDefaultPreset(this._station.type);
+            }
             if (preset) {
                 const config = clonePreset(preset);
                 this._editRules = config.rules || [];
@@ -612,15 +701,32 @@ export class InterlockModal {
             if (!confirm(msg)) return;
         }
 
-        // Apply changes to station
-        if (this._isCustom) {
-            this._station.config.interlockRules = {
-                signals: clonePreset(this._editSignals),
-                rules: clonePreset(this._editRules)
-            };
+        // Apply changes
+        if (this._bufferOpts) {
+            // Buffer mode: save to buffer's interlockRules
+            const bufIdx = this._bufferOpts.bufferIndex;
+            if (!this._station.config.buffers) this._station.config.buffers = [];
+            while (this._station.config.buffers.length <= bufIdx) {
+                this._station.config.buffers.push({ capacity: 1 });
+            }
+            if (this._isCustom) {
+                this._station.config.buffers[bufIdx].interlockRules = {
+                    signals: clonePreset(this._editSignals),
+                    rules: clonePreset(this._editRules)
+                };
+            } else {
+                delete this._station.config.buffers[bufIdx].interlockRules;
+            }
         } else {
-            // Default mode: remove custom rules
-            delete this._station.config.interlockRules;
+            // Station mode
+            if (this._isCustom) {
+                this._station.config.interlockRules = {
+                    signals: clonePreset(this._editSignals),
+                    rules: clonePreset(this._editRules)
+                };
+            } else {
+                delete this._station.config.interlockRules;
+            }
         }
 
         // Notify callback

@@ -319,10 +319,14 @@ export class PropertiesPanel {
                         div.className = 'merge-buffer-row';
                         div.dataset.index = i;
                         div.innerHTML = `
-                            <div style="font-size: 0.8rem; color: #333;">Slot ${i + 1}</div>
-                            <div style="display: flex; gap: 0.25rem;">
-                                <input type="text" class="property-input merge-buffer-type" value="" placeholder="workType" style="flex:1">
+                            <div style="font-size: 0.8rem; color: #333; display: flex; justify-content: space-between; align-items: center;">
+                                <span>Slot ${i + 1}</span>
+                                <span style="font-size: 0.7rem; color: #999;">Default</span>
+                            </div>
+                            <div style="display: flex; gap: 0.25rem; align-items: center;">
                                 <input type="number" class="property-input merge-buffer-capacity" value="1" min="1" step="1" style="width:3rem" title="容量">
+                                <span style="font-size: 0.75rem; color: #666;">容量</span>
+                                <button class="btn-secondary merge-buffer-interlock-btn" data-buffer-index="${i}" style="margin-left: auto; font-size: 0.7rem; padding: 0.2rem 0.5rem;">搬入可条件...</button>
                             </div>
                         `;
                         list.appendChild(div);
@@ -334,6 +338,19 @@ export class PropertiesPanel {
                 }
             });
         }
+
+        // Merge buffer interlock buttons
+        this.container.querySelectorAll('.merge-buffer-interlock-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const bufferIndex = parseInt(btn.dataset.bufferIndex);
+                if (this._interlockModal) {
+                    this._interlockModal.open(station, this.editor.scenario, () => {
+                        this.editor._markDirty();
+                        this.render();
+                    }, { bufferIndex, bufferType: 'mergeInput' });
+                }
+            });
+        });
 
         // Split buffer count change handler
         const splitCountInput = this.container.querySelector('#prop-splitCount');
@@ -348,8 +365,15 @@ export class PropertiesPanel {
                         div.className = 'split-buffer-row';
                         div.dataset.index = i;
                         div.innerHTML = `
-                            <div style="font-size: 0.8rem; color: #333;">Slot ${i + 1}</div>
-                            <input type="text" class="property-input split-buffer-type" value="" placeholder="workType" style="flex:1">
+                            <div style="font-size: 0.8rem; color: #333; display: flex; justify-content: space-between; align-items: center;">
+                                <span>Slot ${i + 1}</span>
+                                <span style="font-size: 0.7rem; color: #999;">Default</span>
+                            </div>
+                            <div style="display: flex; gap: 0.25rem; align-items: center;">
+                                <input type="number" class="property-input split-buffer-capacity" value="1" min="1" step="1" style="width:3rem" title="容量">
+                                <span style="font-size: 0.75rem; color: #666;">容量</span>
+                                <button class="btn-secondary split-buffer-interlock-btn" data-buffer-index="${i}" style="margin-left: auto; font-size: 0.7rem; padding: 0.2rem 0.5rem;">搬出可条件...</button>
+                            </div>
                         `;
                         list.appendChild(div);
                     }
@@ -360,6 +384,19 @@ export class PropertiesPanel {
                 }
             });
         }
+
+        // Split buffer interlock buttons
+        this.container.querySelectorAll('.split-buffer-interlock-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const bufferIndex = parseInt(btn.dataset.bufferIndex);
+                if (this._interlockModal) {
+                    this._interlockModal.open(station, this.editor.scenario, () => {
+                        this.editor._markDirty();
+                        this.render();
+                    }, { bufferIndex, bufferType: 'splitOutput' });
+                }
+            });
+        });
 
         // Interlock config button
         const interlockBtn = this.container.querySelector('#interlock-config-btn');
@@ -536,24 +573,31 @@ export class PropertiesPanel {
         const buffers = station.config.buffers || [];
         const outputWorkType = station.config.outputWorkType || '';
 
-        const buffersHtml = buffers.map((buf, i) => `
-            <div class="merge-buffer-row" data-index="${i}">
-                <div style="font-size: 0.8rem; color: #333;">Slot ${i + 1}</div>
-                <div style="display: flex; gap: 0.25rem;">
-                    <input type="text" class="property-input merge-buffer-type" value="${this._escapeAttr(buf.workType || '')}" placeholder="workType" style="flex:1">
-                    <input type="number" class="property-input merge-buffer-capacity" value="${buf.capacity || 1}" min="1" step="1" style="width:3rem" title="容量">
+        const buffersHtml = buffers.map((buf, i) => {
+            const hasCustomRules = !!buf.interlockRules;
+            return `
+                <div class="merge-buffer-row" data-index="${i}">
+                    <div style="font-size: 0.8rem; color: #333; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Slot ${i + 1}</span>
+                        <span style="font-size: 0.7rem; color: ${hasCustomRules ? '#6f42c1' : '#999'};">${hasCustomRules ? 'Custom' : 'Default'}</span>
+                    </div>
+                    <div style="display: flex; gap: 0.25rem; align-items: center;">
+                        <input type="number" class="property-input merge-buffer-capacity" value="${buf.capacity || 1}" min="1" step="1" style="width:3rem" title="容量">
+                        <span style="font-size: 0.75rem; color: #666;">容量</span>
+                        <button class="btn-secondary merge-buffer-interlock-btn" data-buffer-index="${i}" style="margin-left: auto; font-size: 0.7rem; padding: 0.2rem 0.5rem;">搬入可条件...</button>
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         return `
             <div class="property-group merge-config-section">
-                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">結合バッファ (Merge Buffers)</label>
+                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">入力バッファ (Merge Buffers)</label>
                 <div class="property-group">
                     <label class="property-label">バッファ数 (mergeCount)</label>
                     <input type="number" class="property-input" id="prop-mergeCount" value="${mergeCount}" min="1" step="1">
                 </div>
-                <div class="property-hint">各スロットのワークType・容量</div>
+                <div class="property-hint">各バッファの容量・搬入可条件（1:1接続）</div>
                 <div id="merge-buffers-list">${buffersHtml}</div>
             </div>
             <div class="property-group">
@@ -567,21 +611,31 @@ export class PropertiesPanel {
         const splitCount = station.config.splitCount || 2;
         const buffers = station.config.buffers || [];
 
-        const buffersHtml = buffers.map((buf, i) => `
-            <div class="split-buffer-row" data-index="${i}">
-                <div style="font-size: 0.8rem; color: #333;">Slot ${i + 1}</div>
-                <input type="text" class="property-input split-buffer-type" value="${this._escapeAttr(buf.workType || '')}" placeholder="workType" style="flex:1">
-            </div>
-        `).join('');
+        const buffersHtml = buffers.map((buf, i) => {
+            const hasCustomRules = !!buf.interlockRules;
+            return `
+                <div class="split-buffer-row" data-index="${i}">
+                    <div style="font-size: 0.8rem; color: #333; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Slot ${i + 1}</span>
+                        <span style="font-size: 0.7rem; color: ${hasCustomRules ? '#fd7e14' : '#999'};">${hasCustomRules ? 'Custom' : 'Default'}</span>
+                    </div>
+                    <div style="display: flex; gap: 0.25rem; align-items: center;">
+                        <input type="number" class="property-input split-buffer-capacity" value="${buf.capacity || 1}" min="1" step="1" style="width:3rem" title="容量">
+                        <span style="font-size: 0.75rem; color: #666;">容量</span>
+                        <button class="btn-secondary split-buffer-interlock-btn" data-buffer-index="${i}" style="margin-left: auto; font-size: 0.7rem; padding: 0.2rem 0.5rem;">搬出可条件...</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
 
         return `
             <div class="property-group split-config-section">
-                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">分割バッファ (Split Buffers)</label>
+                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">出力バッファ (Split Buffers)</label>
                 <div class="property-group">
                     <label class="property-label">バッファ数 (splitCount)</label>
                     <input type="number" class="property-input" id="prop-splitCount" value="${splitCount}" min="1" step="1">
                 </div>
-                <div class="property-hint">各スロットのワークType</div>
+                <div class="property-hint">各バッファの容量・搬出可条件（1:1接続）</div>
                 <div id="split-buffers-list">${buffersHtml}</div>
             </div>
         `;
@@ -589,17 +643,34 @@ export class PropertiesPanel {
 
     _collectMergeBuffers() {
         const rows = this.container.querySelectorAll('.merge-buffer-row');
-        return Array.from(rows).map(row => ({
-            workType: row.querySelector('.merge-buffer-type').value.trim(),
-            capacity: parseInt(row.querySelector('.merge-buffer-capacity').value) || 1
-        }));
+        const station = this.editor.getStation(this.editor.selectedItem?.id);
+        const existingBuffers = station?.config?.buffers || [];
+        return Array.from(rows).map((row, i) => {
+            const buf = {
+                capacity: parseInt(row.querySelector('.merge-buffer-capacity').value) || 1
+            };
+            // Preserve existing interlockRules
+            if (existingBuffers[i] && existingBuffers[i].interlockRules) {
+                buf.interlockRules = existingBuffers[i].interlockRules;
+            }
+            return buf;
+        });
     }
 
     _collectSplitBuffers() {
         const rows = this.container.querySelectorAll('.split-buffer-row');
-        return Array.from(rows).map(row => ({
-            workType: row.querySelector('.split-buffer-type').value.trim()
-        }));
+        const station = this.editor.getStation(this.editor.selectedItem?.id);
+        const existingBuffers = station?.config?.buffers || [];
+        return Array.from(rows).map((row, i) => {
+            const buf = {
+                capacity: parseInt(row.querySelector('.split-buffer-capacity')?.value) || 1
+            };
+            // Preserve existing interlockRules
+            if (existingBuffers[i] && existingBuffers[i].interlockRules) {
+                buf.interlockRules = existingBuffers[i].interlockRules;
+            }
+            return buf;
+        });
     }
 
     _escape(text) {

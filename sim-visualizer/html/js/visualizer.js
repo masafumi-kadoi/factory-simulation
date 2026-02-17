@@ -190,17 +190,15 @@ export class Visualizer3D {
             let fromPos = from.position;
             let toPos = to.position;
 
-            // Split station: connect from buffer slot if workType matches
-            if (from.stationType === 'split' && from.bufferSlots.length > 0) {
-                const workType = this._extractWorkType(conn.condition);
-                const slot = from.bufferSlots.find(s => s.workType === workType);
+            // Split station: connect from buffer slot by index
+            if (from.stationType === 'split' && from.bufferSlots.length > 0 && conn.fromBufferIndex >= 0) {
+                const slot = from.bufferSlots[conn.fromBufferIndex];
                 if (slot) fromPos = slot.position;
             }
 
-            // Merge station: connect to buffer slot if workType matches
-            if (to.stationType === 'merge' && to.bufferSlots.length > 0) {
-                const workType = this._extractWorkType(conn.condition);
-                const slot = to.bufferSlots.find(s => s.workType === workType);
+            // Merge station: connect to buffer slot by index
+            if (to.stationType === 'merge' && to.bufferSlots.length > 0 && conn.toBufferIndex >= 0) {
+                const slot = to.bufferSlots[conn.toBufferIndex];
                 if (slot) toPos = slot.position;
             }
 
@@ -209,13 +207,6 @@ export class Visualizer3D {
         });
 
         console.log(`[Visualizer3D] Created ${this.stations.size} stations and ${this.connections.length} connections`);
-    }
-
-    _extractWorkType(condition) {
-        if (typeof condition === 'string' && condition.startsWith('workType:')) {
-            return condition.substring('workType:'.length);
-        }
-        return '';
     }
 
     _createBufferSlots(station, stationPos) {
@@ -252,8 +243,8 @@ export class Visualizer3D {
             group.position.set(x, slotSize / 2, z);
             this.scene.add(group);
 
-            // Create label for workType
-            const labelText = buf.workType || `slot-${i}`;
+            // Create label for buffer index
+            const labelText = `B${i}`;
             const label = this._createLabel(labelText, x, slotSize + 10, z);
 
             // Create connector line from slot to station body
@@ -263,7 +254,7 @@ export class Visualizer3D {
                 color
             );
 
-            return { mesh: group, label, position, workType: buf.workType || '', connLine };
+            return { mesh: group, label, position, connLine };
         });
     }
 
@@ -461,11 +452,11 @@ export class Visualizer3D {
         return line;
     }
 
-    // Find the buffer slot position for a work based on workType
-    _getBufferSlotPosition(stationData, workType) {
+    // Find the buffer slot position by index
+    _getBufferSlotPosition(stationData, bufferIndex) {
         if (!stationData.bufferSlots || stationData.bufferSlots.length === 0) return null;
-        const slot = stationData.bufferSlots.find(s => s.workType === workType);
-        return slot ? slot.position : null;
+        if (bufferIndex < 0 || bufferIndex >= stationData.bufferSlots.length) return null;
+        return stationData.bufferSlots[bufferIndex].position;
     }
 
     updateWorks(activeWorks, currentTime) {
@@ -516,8 +507,8 @@ export class Visualizer3D {
                     const y = 40;
 
                     // For buffered works (merge input / split output), position at buffer slot
-                    if (workInfo.isBuffered && workInfo.workType) {
-                        const slotPos = this._getBufferSlotPosition(station, workInfo.workType);
+                    if (workInfo.isBuffered && workInfo.bufferIndex >= 0) {
+                        const slotPos = this._getBufferSlotPosition(station, workInfo.bufferIndex);
                         if (slotPos) {
                             x = slotPos.x;
                             z = slotPos.z;
@@ -541,14 +532,14 @@ export class Visualizer3D {
                     let endX = toStation.position.x, endZ = toStation.position.z;
 
                     // If departing from split station, use buffer slot position
-                    if (fromStation.stationType === 'split' && workInfo.workType) {
-                        const slotPos = this._getBufferSlotPosition(fromStation, workInfo.workType);
+                    if (fromStation.stationType === 'split' && workInfo.fromBufferIndex >= 0) {
+                        const slotPos = this._getBufferSlotPosition(fromStation, workInfo.fromBufferIndex);
                         if (slotPos) { startX = slotPos.x; startZ = slotPos.z; }
                     }
 
                     // If arriving at merge station, use buffer slot position
-                    if (toStation.stationType === 'merge' && workInfo.workType) {
-                        const slotPos = this._getBufferSlotPosition(toStation, workInfo.workType);
+                    if (toStation.stationType === 'merge' && workInfo.toBufferIndex >= 0) {
+                        const slotPos = this._getBufferSlotPosition(toStation, workInfo.toBufferIndex);
                         if (slotPos) { endX = slotPos.x; endZ = slotPos.z; }
                     }
 

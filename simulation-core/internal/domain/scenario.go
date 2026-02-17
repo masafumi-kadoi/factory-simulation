@@ -13,9 +13,11 @@ const (
 
 // Connection represents a connection between two stations
 type Connection struct {
-	From      string
-	To        string
-	Condition RoutingCondition
+	From            string
+	To              string
+	Condition       RoutingCondition
+	FromBufferIndex int // Split output buffer index (-1 = no buffer)
+	ToBufferIndex   int // Merge input buffer index (-1 = no buffer)
 }
 
 // SimDBConfig represents connection info for a SimDB (per manufacturing line)

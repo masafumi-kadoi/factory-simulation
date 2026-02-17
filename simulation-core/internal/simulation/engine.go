@@ -29,7 +29,8 @@ type WorkEventLog struct {
 	StationID        string
 	Timestamp        float64
 	EventType        string
-	WorkType         string // Work type (e.g. "partA", "partB") for buffer slot routing
+	WorkType         string // Work type (e.g. "partA", "partB")
+	BufferIndex      int    // Buffer slot index (-1 = no buffer)
 }
 
 // WorkLineageLog represents a log entry for work lineage (traceability)
@@ -226,7 +227,7 @@ func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error 
 	station.SetSignal("workPresent", true)
 
 	// Log work event
-	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated), work.Type)
+	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated), work.Type, -1)
 
 	// Evaluate interlock rules after signal change
 	// checkHandshakes (called within) will schedule WorkDeparted if handshake is satisfied
@@ -245,12 +246,17 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return fmt.Errorf("work not found in transit: %s", *event.WorkID)
 	}
 	delete(e.worksInTransit, *event.WorkID)
-	delete(e.reservedStations, station.ID)
 
 	// Merge station: add to InputBuffer instead of CurrentWork
 	if station.Type == domain.StationTypeMerge {
-		return e.handleMergeWorkArrived(work, station)
+		bufferIndex := e.findToBufferIndex(*event.WorkID, station.ID)
+		// Clear buffer-level reservation
+		delete(e.reservedStations, e.bufferReservationKey(station.ID, bufferIndex))
+		return e.handleMergeWorkArrived(work, station, bufferIndex)
 	}
+
+	// Clear station-level reservation
+	delete(e.reservedStations, station.ID)
 
 	// Check interlock: InputReady must be ON
 	if !station.IsInputReady() {
@@ -266,7 +272,7 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	station.SetSignal("workPresent", true)
 
 	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type)
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type, -1)
 	e.logStationStatus(station, "ワーク到着")
 
 	// Evaluate interlock rules after signal change
@@ -289,27 +295,26 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	return nil
 }
 
-// handleMergeWorkArrived handles work arrival at a Merge station
-func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Station) error {
-	// Add work to InputBuffer
-	if err := station.AddWorkToBuffer(work); err != nil {
+// handleMergeWorkArrived handles work arrival at a Merge station's input buffer
+func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Station, bufferIndex int) error {
+	// Add work to the specified InputBuffer slot
+	if err := station.AddWorkToBuffer(work, bufferIndex); err != nil {
 		return err
 	}
 
-	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkBuffered), work.Type)
+	// Log work event with buffer index
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkBuffered), work.Type, bufferIndex)
 	e.logStationStatus(station, "ワークバッファ追加")
 
-	// Evaluate inputReady based on buffer capacity
-	e.updateMergeInputReady(station)
+	// Update derived signals for this buffer (workPresent, bufferFull)
+	e.updateBufferDerivedSignals(station, bufferIndex, true)
 
-	// Check merge condition
+	// Check merge condition (all buffers have required works)
 	if station.CheckMergeCondition() && !e.mergeInProgress[station.ID] {
 		e.mergeInProgress[station.ID] = true
 
-		// Set mergeReady signal
+		// Set mergeReady signal on the station
 		station.SetSignal("mergeReady", true)
-		station.SetSignal("inputReady", false)
 
 		// Schedule merge completion after processing time
 		processingTime := station.GetFloatConfig("processingTime")
@@ -318,7 +323,7 @@ func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Stati
 		e.logStationStatus(station, "結合処理開始")
 	}
 
-	// Evaluate interlock rules
+	// Evaluate station-level interlock rules
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
 	}
@@ -345,12 +350,17 @@ func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) err
 	// Record work lineage
 	e.recordWorkLineage(mergedWork.ID, mergedWork.FriendlyName, consumedWorks, "merge", station.ID)
 
-	// Update signals
+	// Update buffer derived signals (buffers are now empty)
+	for i := range station.InputBufferSlots {
+		e.updateBufferDerivedSignals(station, i, true)
+	}
+
+	// Update station signals
 	station.SetSignal("workPresent", true)
 	station.SetSignal("processingComplete", true)
 
 	// Log events
-	e.logWorkEvent(mergedWork.ID, mergedWork.FriendlyName, station.ID, e.currentTime, string(EventWorkMerged), mergedWork.Type)
+	e.logWorkEvent(mergedWork.ID, mergedWork.FriendlyName, station.ID, e.currentTime, string(EventWorkMerged), mergedWork.Type, -1)
 	e.logStationStatus(station, "結合処理完了")
 
 	// Evaluate interlock rules after signal change
@@ -378,7 +388,7 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 	if station.CurrentWork != nil {
 		workType = station.CurrentWork.Type
 	}
-	e.logWorkEvent(workID, workFriendlyName, station.ID, e.currentTime, string(EventProcessingStarted), workType)
+	e.logWorkEvent(workID, workFriendlyName, station.ID, e.currentTime, string(EventProcessingStarted), workType, -1)
 	e.logStationStatus(station, "処理開始")
 
 	// Schedule ProcessingCompleted event
@@ -405,7 +415,7 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 
 	// Log work event (Processing: normal completion)
 	if station.CurrentWork != nil {
-		e.logWorkEvent(station.CurrentWork.ID, station.CurrentWork.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted), station.CurrentWork.Type)
+		e.logWorkEvent(station.CurrentWork.ID, station.CurrentWork.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted), station.CurrentWork.Type, -1)
 	}
 
 	e.logStationStatus(station, "処理完了")
@@ -424,26 +434,29 @@ func (e *Engine) handleSplitProcessingCompleted(station *domain.Station) error {
 	// Mark as processing complete first
 	station.State = domain.StateCompleted
 
-	// Execute split
+	// Execute split (places works into OutputBufferSlots by index, clears CurrentWork)
 	splitWorks, err := station.ExecuteSplit(e.generateWorkID)
 	if err != nil {
 		return err
 	}
 
-	// Record work lineage for each split work
-	for _, splitWork := range splitWorks {
-		e.logWorkEvent(splitWork.ID, splitWork.FriendlyName, station.ID, e.currentTime, string(EventWorkSplit), splitWork.Type)
+	// Record work lineage and log events for each split work with buffer index
+	for i, splitWork := range splitWorks {
+		e.logWorkEvent(splitWork.ID, splitWork.FriendlyName, station.ID, e.currentTime, string(EventWorkSplit), splitWork.Type, i)
 	}
 
-	// Update signals
-	station.SetSignal("processingComplete", true)
-	if station.CurrentWork != nil {
-		station.SetSignal("workPresent", true)
+	// Update derived signals for each output buffer (workPresent, then evaluate outputReady)
+	for i := range station.OutputBufferSlots {
+		e.updateBufferDerivedSignals(station, i, false)
 	}
+
+	// Update station-level signals: processingComplete=ON, workPresent=OFF (body is empty after split)
+	station.SetSignal("processingComplete", true)
+	station.SetSignal("workPresent", false)
 
 	e.logStationStatus(station, "分割処理完了")
 
-	// Evaluate interlock rules
+	// Evaluate station-level interlock rules
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
 	}
@@ -468,12 +481,19 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	}
 
 	// Verify downstream inputReady and not already reserved
-	nextStation, err := e.getNextStation(station, station.CurrentWork)
+	nextStation, conn, err := e.getNextStationWithConn(station, station.CurrentWork)
 	if err != nil {
 		return err
 	}
-	if nextStation != nil && (!nextStation.IsInputReady() || e.reservedStations[nextStation.ID]) {
-		return nil // Downstream not ready or already reserved, skip departure
+	if nextStation != nil {
+		// For merge downstream: check buffer-level inputReady
+		if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToBufferIndex >= 0 {
+			if !nextStation.IsBufferInputReady(conn.ToBufferIndex) || e.reservedStations[e.bufferReservationKey(nextStation.ID, conn.ToBufferIndex)] {
+				return nil
+			}
+		} else if !nextStation.IsInputReady() || e.reservedStations[nextStation.ID] {
+			return nil
+		}
 	}
 
 	// Delegate to station logic
@@ -486,54 +506,35 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	station.SetSignal("workPresent", false)
 
 	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type)
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, -1)
 	e.logStationStatus(station, "ワーク出発")
 
 	// Evaluate interlock rules after signal change (cascading: OR=OFF → PC=OFF → IR=ON)
-	// checkHandshakes (called within) may schedule further departures for upstream stations
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
-	}
-
-	// For Split stations: check if there are more works in OutputBufferSlots
-	if station.Type == domain.StationTypeSplit && station.HasOutputBufferWorks() {
-		nextOutputWork := station.GetNextOutputBufferWork()
-		if nextOutputWork != nil {
-			station.CurrentWork = nextOutputWork
-			station.State = domain.StateCompleted
-			station.SetSignal("workPresent", true)
-			station.SetSignal("processingComplete", true)
-
-			// Re-evaluate to trigger next handshake
-			if err := e.evaluateAndLogSignals(station); err != nil {
-				return err
-			}
-		}
-	} else if station.Type == domain.StationTypeSplit && !station.HasOutputBufferWorks() {
-		// All split works dispatched, re-enable input
-		// Signals should cascade via rules: workPresent=OFF → processingComplete=OFF → inputReady=ON
-	}
-
-	// Update merge inputReady if downstream is a merge station
-	if nextStation != nil && nextStation.Type == domain.StationTypeMerge {
-		e.updateMergeInputReady(nextStation)
 	}
 
 	if nextStation == nil {
 		return nil
 	}
 
-	// Put work in transit and reserve the destination station
-	e.worksInTransit[work.ID] = work
-	e.reservedStations[nextStation.ID] = true
+	// Reserve destination (buffer-level for merge, station-level otherwise)
+	if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToBufferIndex >= 0 {
+		e.reservedStations[e.bufferReservationKey(nextStation.ID, conn.ToBufferIndex)] = true
+	} else {
+		e.reservedStations[nextStation.ID] = true
+	}
 
-	// Schedule WorkArrived event at next station (departureTime + arrivalTime)
+	// Put work in transit
+	e.worksInTransit[work.ID] = work
+
+	// Schedule WorkArrived event at next station
 	departureTime := station.GetFloatConfig("departureTime")
 	arrivalTime := nextStation.GetFloatConfig("arrivalTime")
 	transitTime := departureTime + arrivalTime
 	e.eventQueue.Push(NewEvent(EventWorkArrived, e.currentTime+transitTime, nextStation.ID, &work.ID))
 
-	// For Source stations: Schedule next work creation (interlock: one at a time)
+	// For Source stations: Schedule next work creation
 	if station.Type == domain.StationTypeSource {
 		continuous := station.GetBoolConfig("continuous")
 		shouldCreate := continuous
@@ -551,8 +552,81 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 }
 
 // handleBufferedWorkDeparted handles the BufferedWorkDeparted event (for Split OutputBuffer)
+// event.WorkID contains a key like "bufferIndex:N" encoded in the work ID field
 func (e *Engine) handleBufferedWorkDeparted(event *Event, station *domain.Station) error {
-	// This is handled inline in handleWorkDeparted for Split stations
+	// Clear pending departure flag
+	bufferIndex := e.findBufferedDepartureIndex(event)
+	if bufferIndex < 0 {
+		return nil
+	}
+	depKey := e.bufferDepartureKey(station.ID, bufferIndex)
+	delete(e.pendingDepartures, depKey)
+
+	// Re-verify: buffer outputReady must still be ON
+	if !station.IsBufferOutputReady(bufferIndex) {
+		return nil
+	}
+
+	// Find the connection from this buffer
+	conn := e.findConnectionFromBuffer(station.ID, bufferIndex)
+	if conn == nil {
+		return nil
+	}
+
+	toStation := e.scenario.GetStation(conn.To)
+	if toStation == nil {
+		return nil
+	}
+
+	// Check downstream readiness
+	if toStation.Type == domain.StationTypeMerge && conn.ToBufferIndex >= 0 {
+		if !toStation.IsBufferInputReady(conn.ToBufferIndex) || e.reservedStations[e.bufferReservationKey(toStation.ID, conn.ToBufferIndex)] {
+			return nil
+		}
+	} else {
+		if !toStation.IsInputReady() || e.reservedStations[toStation.ID] {
+			return nil
+		}
+	}
+
+	// Get work from the buffer
+	work := station.GetOutputBufferWorkByIndex(bufferIndex)
+	if work == nil {
+		return nil
+	}
+
+	// Update buffer derived signals
+	e.updateBufferDerivedSignals(station, bufferIndex, false)
+
+	// Check if all output buffers are empty → reset station for next input
+	if !station.HasOutputBufferWorks() {
+		station.SetSignal("processingComplete", false)
+		// Evaluate station-level rules to re-enable inputReady
+		if err := e.evaluateAndLogSignals(station); err != nil {
+			return err
+		}
+	}
+
+	// Log work event
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, bufferIndex)
+	e.logStationStatus(station, "ワーク出発(バッファ)")
+
+	// Reserve destination
+	if toStation.Type == domain.StationTypeMerge && conn.ToBufferIndex >= 0 {
+		e.reservedStations[e.bufferReservationKey(toStation.ID, conn.ToBufferIndex)] = true
+	} else {
+		e.reservedStations[toStation.ID] = true
+	}
+
+	// Put work in transit
+	e.worksInTransit[work.ID] = work
+
+	// Schedule WorkArrived
+	departureTime := station.GetFloatConfig("departureTime")
+	arrivalTime := toStation.GetFloatConfig("arrivalTime")
+	transitTime := departureTime + arrivalTime
+	e.eventQueue.Push(NewEvent(EventWorkArrived, e.currentTime+transitTime, toStation.ID, &work.ID))
+
 	return nil
 }
 
@@ -564,7 +638,7 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	}
 
 	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDestroyed), work.Type)
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDestroyed), work.Type, -1)
 
 	// Clear station
 	station.CurrentWork = nil
@@ -583,11 +657,18 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	return nil
 }
 
-// getNextStation determines the next station based on routing conditions
+// getNextStation determines the next station based on routing conditions (legacy, non-buffer)
 func (e *Engine) getNextStation(fromStation *domain.Station, work *domain.Work) (*domain.Station, error) {
-	var defaultStation *domain.Station
+	station, _, err := e.getNextStationWithConn(fromStation, work)
+	return station, err
+}
 
-	for _, conn := range e.scenario.Connections {
+// getNextStationWithConn determines the next station and returns the matching connection
+func (e *Engine) getNextStationWithConn(fromStation *domain.Station, work *domain.Work) (*domain.Station, *domain.Connection, error) {
+	var defaultStation *domain.Station
+	var defaultConn *domain.Connection
+
+	for i, conn := range e.scenario.Connections {
 		if conn.From != fromStation.ID {
 			continue
 		}
@@ -598,7 +679,7 @@ func (e *Engine) getNextStation(fromStation *domain.Station, work *domain.Work) 
 		if strings.HasPrefix(condition, "workType:") {
 			expectedType := condition[len("workType:"):]
 			if work != nil && work.Type == expectedType {
-				return e.scenario.GetStation(conn.To), nil
+				return e.scenario.GetStation(conn.To), &e.scenario.Connections[i], nil
 			}
 			continue
 		}
@@ -606,26 +687,161 @@ func (e *Engine) getNextStation(fromStation *domain.Station, work *domain.Work) 
 		// Default routing
 		if conn.Condition == domain.RoutingDefault || conn.Condition == "" {
 			defaultStation = e.scenario.GetStation(conn.To)
+			defaultConn = &e.scenario.Connections[i]
 		}
 	}
 
-	// Return default if no workType match found
-	return defaultStation, nil
+	return defaultStation, defaultConn, nil
 }
 
-// updateMergeInputReady updates the inputReady signal for a Merge station based on buffer slot capacity
-func (e *Engine) updateMergeInputReady(station *domain.Station) {
-	if station.Type != domain.StationTypeMerge {
+// findToBufferIndex finds the ToBufferIndex for a work arriving at a merge station.
+// It looks up the buffer reservation to determine which buffer the work was destined for.
+func (e *Engine) findToBufferIndex(workID string, toStationID string) int {
+	// Check which buffer reservation exists for this station
+	for _, conn := range e.scenario.Connections {
+		if conn.To == toStationID && conn.ToBufferIndex >= 0 {
+			resKey := e.bufferReservationKey(toStationID, conn.ToBufferIndex)
+			if e.reservedStations[resKey] {
+				return conn.ToBufferIndex
+			}
+		}
+	}
+	// Fallback: find first connection to this station with a buffer index
+	for _, conn := range e.scenario.Connections {
+		if conn.To == toStationID && conn.ToBufferIndex >= 0 {
+			return conn.ToBufferIndex
+		}
+	}
+	return 0
+}
+
+// findConnectionFromBuffer finds the connection from a specific output buffer of a station
+func (e *Engine) findConnectionFromBuffer(stationID string, bufferIndex int) *domain.Connection {
+	for i, conn := range e.scenario.Connections {
+		if conn.From == stationID && conn.FromBufferIndex == bufferIndex {
+			return &e.scenario.Connections[i]
+		}
+	}
+	return nil
+}
+
+// findConnectionToBuffer finds the connection to a specific input buffer of a station
+func (e *Engine) findConnectionToBuffer(stationID string, bufferIndex int) *domain.Connection {
+	for i, conn := range e.scenario.Connections {
+		if conn.To == stationID && conn.ToBufferIndex == bufferIndex {
+			return &e.scenario.Connections[i]
+		}
+	}
+	return nil
+}
+
+// bufferReservationKey creates a unique key for buffer-level reservation
+func (e *Engine) bufferReservationKey(stationID string, bufferIndex int) string {
+	return fmt.Sprintf("%s:buf:%d", stationID, bufferIndex)
+}
+
+// bufferDepartureKey creates a unique key for buffer-level pending departures
+func (e *Engine) bufferDepartureKey(stationID string, bufferIndex int) string {
+	return fmt.Sprintf("%s:bufdep:%d", stationID, bufferIndex)
+}
+
+// findBufferedDepartureIndex extracts the buffer index from a BufferedWorkDeparted event
+func (e *Engine) findBufferedDepartureIndex(event *Event) int {
+	if event.WorkID == nil {
+		return -1
+	}
+	// WorkID is encoded as "buffer:N" for buffered departures
+	var idx int
+	if _, err := fmt.Sscanf(*event.WorkID, "buffer:%d", &idx); err == nil {
+		return idx
+	}
+	return -1
+}
+
+// updateBufferDerivedSignals updates workPresent and bufferFull signals for a buffer, then evaluates buffer rules
+func (e *Engine) updateBufferDerivedSignals(station *domain.Station, bufferIndex int, isInput bool) {
+	var slots []domain.BufferSlot
+	if isInput {
+		slots = station.InputBufferSlots
+	} else {
+		slots = station.OutputBufferSlots
+	}
+	if bufferIndex < 0 || bufferIndex >= len(slots) {
+		return
+	}
+	slot := &slots[bufferIndex]
+
+	// Update derived signals
+	hasWorks := len(slot.Works) > 0
+	isFull := len(slot.Works) >= slot.Capacity
+
+	if slot.Signals == nil {
+		slot.Signals = make(map[string]bool)
+	}
+	slot.Signals["workPresent"] = hasWorks
+	if _, exists := slot.Signals["bufferFull"]; exists || isInput {
+		slot.Signals["bufferFull"] = isFull
+	}
+
+	// Evaluate per-buffer interlock rules
+	e.evaluateBufferRules(station, bufferIndex, isInput)
+
+	// Write back (slices are reference types but we took a pointer)
+	if isInput {
+		station.InputBufferSlots[bufferIndex] = *slot
+	} else {
+		station.OutputBufferSlots[bufferIndex] = *slot
+	}
+}
+
+// evaluateBufferRules evaluates interlock rules for a specific buffer slot
+func (e *Engine) evaluateBufferRules(station *domain.Station, bufferIndex int, isInput bool) {
+	var slot *domain.BufferSlot
+	if isInput {
+		if bufferIndex < 0 || bufferIndex >= len(station.InputBufferSlots) {
+			return
+		}
+		slot = &station.InputBufferSlots[bufferIndex]
+	} else {
+		if bufferIndex < 0 || bufferIndex >= len(station.OutputBufferSlots) {
+			return
+		}
+		slot = &station.OutputBufferSlots[bufferIndex]
+	}
+
+	if slot.InterlockRules == nil || slot.Signals == nil {
 		return
 	}
 
-	// If merge is in progress, keep inputReady OFF
-	if e.mergeInProgress[station.ID] {
-		station.SetSignal("inputReady", false)
-		return
+	// Iterate rules until stable
+	changed := true
+	iterations := 0
+	for changed && iterations < maxRuleIterations {
+		changed = false
+		iterations++
+		for _, rule := range slot.InterlockRules.Rules {
+			if allBufferConditionsMet(rule.Conditions, slot.Signals) {
+				if slot.Signals[rule.Target] != rule.Value {
+					slot.Signals[rule.Target] = rule.Value
+					changed = true
+				}
+			}
+		}
 	}
+}
 
-	station.SetSignal("inputReady", station.HasBufferCapacity())
+// allBufferConditionsMet checks if all conditions are met using buffer-local signals
+func allBufferConditionsMet(conditions []domain.RuleCondition, signals map[string]bool) bool {
+	if len(conditions) == 0 {
+		return false
+	}
+	for _, cond := range conditions {
+		// Buffer rules only reference local signals (stationID is ignored)
+		if signals[cond.Signal] != cond.Value {
+			return false
+		}
+	}
+	return true
 }
 
 // recordWorkLineage records work lineage for traceability
@@ -679,7 +895,7 @@ func (e *Engine) findWorkByID(workID string) *domain.Work {
 }
 
 // logWorkEvent logs a work event
-func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timestamp float64, eventType string, workType string) {
+func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timestamp float64, eventType string, workType string, bufferIndex int) {
 	e.workEventLogs = append(e.workEventLogs, WorkEventLog{
 		WorkID:           workID,
 		WorkFriendlyName: workFriendlyName,
@@ -687,6 +903,7 @@ func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timest
 		Timestamp:        timestamp,
 		EventType:        eventType,
 		WorkType:         workType,
+		BufferIndex:      bufferIndex,
 	})
 }
 
@@ -736,20 +953,31 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 
 // checkHandshakes checks if transfer handshakes are satisfied after signal changes.
 // A transfer begins when upstream.outputReady=ON AND downstream.inputReady=ON.
-// This is called after every signal evaluation to detect newly satisfied conditions.
+// For Merge: uses per-buffer inputReady. For Split: uses per-buffer outputReady.
 func (e *Engine) checkHandshakes(station *domain.Station) error {
-	// Case 1: This station is upstream — its outputReady may have just turned ON
-	if station.IsOutputReady() && station.CurrentWork != nil && !e.pendingDepartures[station.ID] {
+	// Case 1: This station is upstream (non-Split) — its outputReady may have just turned ON
+	if station.Type != domain.StationTypeSplit && station.IsOutputReady() && station.CurrentWork != nil && !e.pendingDepartures[station.ID] {
 		for _, conn := range e.scenario.Connections {
-			if conn.From == station.ID {
-				toStation := e.scenario.GetStation(conn.To)
-				if toStation != nil && toStation.IsInputReady() && !e.reservedStations[toStation.ID] {
-					// For Merge downstream: check buffer slot capacity by workType
-					if toStation.Type == domain.StationTypeMerge && station.CurrentWork != nil {
-						if toStation.IsBufferSlotFullForWorkType(station.CurrentWork.Type) {
-							continue
-						}
-					}
+			if conn.From != station.ID {
+				continue
+			}
+			toStation := e.scenario.GetStation(conn.To)
+			if toStation == nil {
+				continue
+			}
+
+			// Check downstream readiness
+			if toStation.Type == domain.StationTypeMerge && conn.ToBufferIndex >= 0 {
+				// Merge downstream: check per-buffer inputReady
+				resKey := e.bufferReservationKey(toStation.ID, conn.ToBufferIndex)
+				if toStation.IsBufferInputReady(conn.ToBufferIndex) && !e.reservedStations[resKey] {
+					e.pendingDepartures[station.ID] = true
+					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
+					break
+				}
+			} else {
+				// Normal downstream: check station-level inputReady
+				if toStation.IsInputReady() && !e.reservedStations[toStation.ID] {
 					e.pendingDepartures[station.ID] = true
 					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
 					break
@@ -758,18 +986,97 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 		}
 	}
 
-	// Case 2: This station is downstream — its inputReady may have just turned ON
-	if station.IsInputReady() && !e.reservedStations[station.ID] {
+	// Case 1b: This station is Split — check each output buffer's outputReady
+	if station.Type == domain.StationTypeSplit {
+		for bufIdx := range station.OutputBufferSlots {
+			if !station.IsBufferOutputReady(bufIdx) {
+				continue
+			}
+			depKey := e.bufferDepartureKey(station.ID, bufIdx)
+			if e.pendingDepartures[depKey] {
+				continue
+			}
+			conn := e.findConnectionFromBuffer(station.ID, bufIdx)
+			if conn == nil {
+				continue
+			}
+			toStation := e.scenario.GetStation(conn.To)
+			if toStation == nil {
+				continue
+			}
+
+			// Check downstream readiness
+			ready := false
+			if toStation.Type == domain.StationTypeMerge && conn.ToBufferIndex >= 0 {
+				resKey := e.bufferReservationKey(toStation.ID, conn.ToBufferIndex)
+				ready = toStation.IsBufferInputReady(conn.ToBufferIndex) && !e.reservedStations[resKey]
+			} else {
+				ready = toStation.IsInputReady() && !e.reservedStations[toStation.ID]
+			}
+
+			if ready {
+				e.pendingDepartures[depKey] = true
+				bufIdxStr := fmt.Sprintf("buffer:%d", bufIdx)
+				e.eventQueue.Push(NewEvent(EventBufferedWorkDeparted, e.currentTime, station.ID, &bufIdxStr))
+			}
+		}
+	}
+
+	// Case 2: This station is downstream (non-Merge) — its inputReady may have just turned ON
+	if station.Type != domain.StationTypeMerge && station.IsInputReady() && !e.reservedStations[station.ID] {
 		for _, conn := range e.scenario.Connections {
-			if conn.To == station.ID {
-				fromStation := e.scenario.GetStation(conn.From)
-				if fromStation != nil && fromStation.IsOutputReady() && fromStation.CurrentWork != nil && !e.pendingDepartures[fromStation.ID] {
-					// For Merge station: check buffer slot capacity by workType
-					if station.Type == domain.StationTypeMerge {
-						if station.IsBufferSlotFullForWorkType(fromStation.CurrentWork.Type) {
-							continue
-						}
-					}
+			if conn.To != station.ID {
+				continue
+			}
+			fromStation := e.scenario.GetStation(conn.From)
+			if fromStation == nil {
+				continue
+			}
+
+			// Check upstream readiness
+			if fromStation.Type == domain.StationTypeSplit && conn.FromBufferIndex >= 0 {
+				// Split upstream: check per-buffer outputReady
+				depKey := e.bufferDepartureKey(fromStation.ID, conn.FromBufferIndex)
+				if fromStation.IsBufferOutputReady(conn.FromBufferIndex) && !e.pendingDepartures[depKey] {
+					e.pendingDepartures[depKey] = true
+					bufIdxStr := fmt.Sprintf("buffer:%d", conn.FromBufferIndex)
+					e.eventQueue.Push(NewEvent(EventBufferedWorkDeparted, e.currentTime, fromStation.ID, &bufIdxStr))
+				}
+			} else {
+				// Normal upstream: check station-level outputReady
+				if fromStation.IsOutputReady() && fromStation.CurrentWork != nil && !e.pendingDepartures[fromStation.ID] {
+					e.pendingDepartures[fromStation.ID] = true
+					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil))
+				}
+			}
+		}
+	}
+
+	// Case 2b: This station is Merge — check each input buffer's inputReady
+	if station.Type == domain.StationTypeMerge {
+		for bufIdx := range station.InputBufferSlots {
+			resKey := e.bufferReservationKey(station.ID, bufIdx)
+			if !station.IsBufferInputReady(bufIdx) || e.reservedStations[resKey] {
+				continue
+			}
+			conn := e.findConnectionToBuffer(station.ID, bufIdx)
+			if conn == nil {
+				continue
+			}
+			fromStation := e.scenario.GetStation(conn.From)
+			if fromStation == nil {
+				continue
+			}
+
+			if fromStation.Type == domain.StationTypeSplit && conn.FromBufferIndex >= 0 {
+				depKey := e.bufferDepartureKey(fromStation.ID, conn.FromBufferIndex)
+				if fromStation.IsBufferOutputReady(conn.FromBufferIndex) && !e.pendingDepartures[depKey] {
+					e.pendingDepartures[depKey] = true
+					bufIdxStr := fmt.Sprintf("buffer:%d", conn.FromBufferIndex)
+					e.eventQueue.Push(NewEvent(EventBufferedWorkDeparted, e.currentTime, fromStation.ID, &bufIdxStr))
+				}
+			} else {
+				if fromStation.IsOutputReady() && fromStation.CurrentWork != nil && !e.pendingDepartures[fromStation.ID] {
 					e.pendingDepartures[fromStation.ID] = true
 					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil))
 				}
