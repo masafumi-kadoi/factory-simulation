@@ -188,7 +188,37 @@ class App {
                     // Work is at station
                     activeWorks.set(workId, {
                         state: 'at_station',
-                        stationId: stationId
+                        stationId: stationId,
+                        workType: event.WorkType || ''
+                    });
+                } else if (event.EventType === 'WorkBuffered') {
+                    // Work is in a merge station's buffer slot
+                    activeWorks.set(workId, {
+                        state: 'at_station',
+                        stationId: stationId,
+                        isBuffered: true,
+                        workType: event.WorkType || ''
+                    });
+                } else if (event.EventType === 'WorkMerged') {
+                    // Merged work appears at station body; remove consumed works
+                    // Remove all buffered works at this station (they were consumed)
+                    for (const [wId, wInfo] of activeWorks) {
+                        if (wInfo.stationId === stationId && wInfo.isBuffered) {
+                            activeWorks.delete(wId);
+                        }
+                    }
+                    activeWorks.set(workId, {
+                        state: 'at_station',
+                        stationId: stationId,
+                        workType: event.WorkType || ''
+                    });
+                } else if (event.EventType === 'WorkSplit') {
+                    // Split work placed in output buffer slot
+                    activeWorks.set(workId, {
+                        state: 'at_station',
+                        stationId: stationId,
+                        isBuffered: true,
+                        workType: event.WorkType || ''
                     });
                 } else if (event.EventType === 'WorkDeparted') {
                     // Look ahead to find next arrival
@@ -196,7 +226,7 @@ class App {
                     for (let j = i + 1; j < this.logs.workEvents.length; j++) {
                         const nextEvent = this.logs.workEvents[j];
                         if (nextEvent.WorkID === workId &&
-                            (nextEvent.EventType === 'WorkArrived' || nextEvent.EventType === 'WorkDestroyed')) {
+                            (nextEvent.EventType === 'WorkArrived' || nextEvent.EventType === 'WorkBuffered' || nextEvent.EventType === 'WorkDestroyed')) {
                             nextArrival = nextEvent;
                             break;
                         }
@@ -209,7 +239,8 @@ class App {
                             fromStation: stationId,
                             toStation: nextArrival.StationID,
                             departTime: event.Timestamp,
-                            arriveTime: nextArrival.Timestamp
+                            arriveTime: nextArrival.Timestamp,
+                            workType: event.WorkType || ''
                         });
                     } else {
                         // No next arrival (destroyed or end of log)

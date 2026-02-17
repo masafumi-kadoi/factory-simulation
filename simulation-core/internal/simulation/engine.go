@@ -29,6 +29,7 @@ type WorkEventLog struct {
 	StationID        string
 	Timestamp        float64
 	EventType        string
+	WorkType         string // Work type (e.g. "partA", "partB") for buffer slot routing
 }
 
 // WorkLineageLog represents a log entry for work lineage (traceability)
@@ -90,13 +91,14 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, []WorkLineageLog, error) {
 	simulation := domain.NewSimulation(simulationID, friendlyName, e.scenario.ID)
 
-	// Step 1: Initialize interlock rules and signals for all stations
+	// Step 1: Initialize interlock rules, signals, and buffer slots for all stations
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
 		if station.InterlockRules == nil {
 			station.InterlockRules = domain.GetDefaultInterlockConfig(station.Type)
 		}
 		station.InitializeSignals()
+		station.InitializeBufferSlots()
 	}
 
 	// Step 2: Evaluate rules to set initial control signals
@@ -224,7 +226,7 @@ func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error 
 	station.SetSignal("workPresent", true)
 
 	// Log work event
-	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated))
+	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated), work.Type)
 
 	// Evaluate interlock rules after signal change
 	// checkHandshakes (called within) will schedule WorkDeparted if handshake is satisfied
@@ -264,7 +266,7 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	station.SetSignal("workPresent", true)
 
 	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived))
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type)
 	e.logStationStatus(station, "ワーク到着")
 
 	// Evaluate interlock rules after signal change
@@ -295,7 +297,7 @@ func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Stati
 	}
 
 	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkBuffered))
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkBuffered), work.Type)
 	e.logStationStatus(station, "ワークバッファ追加")
 
 	// Evaluate inputReady based on buffer capacity
@@ -348,7 +350,7 @@ func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) err
 	station.SetSignal("processingComplete", true)
 
 	// Log events
-	e.logWorkEvent(mergedWork.ID, mergedWork.FriendlyName, station.ID, e.currentTime, string(EventWorkMerged))
+	e.logWorkEvent(mergedWork.ID, mergedWork.FriendlyName, station.ID, e.currentTime, string(EventWorkMerged), mergedWork.Type)
 	e.logStationStatus(station, "結合処理完了")
 
 	// Evaluate interlock rules after signal change
@@ -372,7 +374,11 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 		workID = station.CurrentWork.ID
 		workFriendlyName = station.CurrentWork.FriendlyName
 	}
-	e.logWorkEvent(workID, workFriendlyName, station.ID, e.currentTime, string(EventProcessingStarted))
+	workType := ""
+	if station.CurrentWork != nil {
+		workType = station.CurrentWork.Type
+	}
+	e.logWorkEvent(workID, workFriendlyName, station.ID, e.currentTime, string(EventProcessingStarted), workType)
 	e.logStationStatus(station, "処理開始")
 
 	// Schedule ProcessingCompleted event
@@ -399,7 +405,7 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 
 	// Log work event (Processing: normal completion)
 	if station.CurrentWork != nil {
-		e.logWorkEvent(station.CurrentWork.ID, station.CurrentWork.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted))
+		e.logWorkEvent(station.CurrentWork.ID, station.CurrentWork.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted), station.CurrentWork.Type)
 	}
 
 	e.logStationStatus(station, "処理完了")
@@ -426,7 +432,7 @@ func (e *Engine) handleSplitProcessingCompleted(station *domain.Station) error {
 
 	// Record work lineage for each split work
 	for _, splitWork := range splitWorks {
-		e.logWorkEvent(splitWork.ID, splitWork.FriendlyName, station.ID, e.currentTime, string(EventWorkSplit))
+		e.logWorkEvent(splitWork.ID, splitWork.FriendlyName, station.ID, e.currentTime, string(EventWorkSplit), splitWork.Type)
 	}
 
 	// Update signals
@@ -480,7 +486,7 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	station.SetSignal("workPresent", false)
 
 	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted))
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type)
 	e.logStationStatus(station, "ワーク出発")
 
 	// Evaluate interlock rules after signal change (cascading: OR=OFF → PC=OFF → IR=ON)
@@ -489,9 +495,9 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return err
 	}
 
-	// For Split stations: check if there are more works in OutputBuffer
+	// For Split stations: check if there are more works in OutputBufferSlots
 	if station.Type == domain.StationTypeSplit && station.HasOutputBufferWorks() {
-		nextOutputWork := station.GetNextOutputWork()
+		nextOutputWork := station.GetNextOutputBufferWork()
 		if nextOutputWork != nil {
 			station.CurrentWork = nextOutputWork
 			station.State = domain.StateCompleted
@@ -558,7 +564,7 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	}
 
 	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDestroyed))
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDestroyed), work.Type)
 
 	// Clear station
 	station.CurrentWork = nil
@@ -607,7 +613,7 @@ func (e *Engine) getNextStation(fromStation *domain.Station, work *domain.Work) 
 	return defaultStation, nil
 }
 
-// updateMergeInputReady updates the inputReady signal for a Merge station based on buffer capacity
+// updateMergeInputReady updates the inputReady signal for a Merge station based on buffer slot capacity
 func (e *Engine) updateMergeInputReady(station *domain.Station) {
 	if station.Type != domain.StationTypeMerge {
 		return
@@ -619,37 +625,7 @@ func (e *Engine) updateMergeInputReady(station *domain.Station) {
 		return
 	}
 
-	// Check if any buffer slot has capacity
-	mergeInputs := station.Config["mergeInputs"]
-	if mergeInputs == nil {
-		// No mergeInputs configured, keep inputReady as-is
-		return
-	}
-
-	inputs, ok := mergeInputs.([]interface{})
-	if !ok {
-		return
-	}
-
-	hasCapacity := false
-	for _, item := range inputs {
-		m, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		workType, _ := m["workType"].(string)
-		capacity := 1
-		if cap, ok := m["bufferCapacity"].(float64); ok {
-			capacity = int(cap)
-		}
-		currentCount := station.CountBufferWorksByType(workType)
-		if currentCount < capacity {
-			hasCapacity = true
-			break
-		}
-	}
-
-	station.SetSignal("inputReady", hasCapacity)
+	station.SetSignal("inputReady", station.HasBufferCapacity())
 }
 
 // recordWorkLineage records work lineage for traceability
@@ -682,16 +658,20 @@ func (e *Engine) findWorkByID(workID string) *domain.Work {
 		if station.CurrentWork != nil && station.CurrentWork.ID == workID {
 			return station.CurrentWork
 		}
-		// Check InputBuffer
-		for _, work := range station.InputBuffer {
-			if work.ID == workID {
-				return work
+		// Check InputBufferSlots
+		for _, slot := range station.InputBufferSlots {
+			for _, work := range slot.Works {
+				if work.ID == workID {
+					return work
+				}
 			}
 		}
-		// Check OutputBuffer
-		for _, work := range station.OutputBuffer {
-			if work.ID == workID {
-				return work
+		// Check OutputBufferSlots
+		for _, slot := range station.OutputBufferSlots {
+			for _, work := range slot.Works {
+				if work.ID == workID {
+					return work
+				}
 			}
 		}
 	}
@@ -699,13 +679,14 @@ func (e *Engine) findWorkByID(workID string) *domain.Work {
 }
 
 // logWorkEvent logs a work event
-func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timestamp float64, eventType string) {
+func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timestamp float64, eventType string, workType string) {
 	e.workEventLogs = append(e.workEventLogs, WorkEventLog{
 		WorkID:           workID,
 		WorkFriendlyName: workFriendlyName,
 		StationID:        stationID,
 		Timestamp:        timestamp,
 		EventType:        eventType,
+		WorkType:         workType,
 	})
 }
 
@@ -763,9 +744,9 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 			if conn.From == station.ID {
 				toStation := e.scenario.GetStation(conn.To)
 				if toStation != nil && toStation.IsInputReady() && !e.reservedStations[toStation.ID] {
-					// For Merge downstream: check per-connection buffer capacity
-					if toStation.Type == domain.StationTypeMerge {
-						if toStation.IsBufferFullForStation(station.ID) {
+					// For Merge downstream: check buffer slot capacity by workType
+					if toStation.Type == domain.StationTypeMerge && station.CurrentWork != nil {
+						if toStation.IsBufferSlotFullForWorkType(station.CurrentWork.Type) {
 							continue
 						}
 					}
@@ -783,9 +764,9 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 			if conn.To == station.ID {
 				fromStation := e.scenario.GetStation(conn.From)
 				if fromStation != nil && fromStation.IsOutputReady() && fromStation.CurrentWork != nil && !e.pendingDepartures[fromStation.ID] {
-					// For Merge station: check per-connection buffer capacity
+					// For Merge station: check buffer slot capacity by workType
 					if station.Type == domain.StationTypeMerge {
-						if station.IsBufferFullForStation(fromStation.ID) {
+						if station.IsBufferSlotFullForWorkType(fromStation.CurrentWork.Type) {
 							continue
 						}
 					}

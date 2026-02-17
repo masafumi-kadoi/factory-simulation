@@ -272,15 +272,16 @@ export class PropertiesPanel {
 
             // Save merge config
             if (station.type === 'merge') {
-                newConfig.mergeInputs = this._collectMergeInputs();
-                newConfig.mergeRules = this._collectMergeRules();
+                newConfig.mergeCount = parseInt(this.container.querySelector('#prop-mergeCount')?.value) || 2;
+                newConfig.buffers = this._collectMergeBuffers();
                 const outputWorkTypeEl = this.container.querySelector('#prop-outputWorkType');
                 newConfig.outputWorkType = outputWorkTypeEl ? outputWorkTypeEl.value.trim() : '';
             }
 
             // Save split config
             if (station.type === 'split') {
-                newConfig.splitRouting = this._collectSplitRouting();
+                newConfig.splitCount = parseInt(this.container.querySelector('#prop-splitCount')?.value) || 2;
+                newConfig.buffers = this._collectSplitBuffers();
             }
 
             // Save name
@@ -305,34 +306,60 @@ export class PropertiesPanel {
             }
         });
 
-        // Merge rule add/remove buttons
-        const addMergeRuleBtn = this.container.querySelector('#add-merge-rule-btn');
-        if (addMergeRuleBtn) {
-            addMergeRuleBtn.addEventListener('click', () => {
-                const list = this.container.querySelector('#merge-rules-list');
-                const index = list.querySelectorAll('.merge-rule-row').length;
-                const div = document.createElement('div');
-                div.className = 'merge-rule-row';
-                div.dataset.index = index;
-                div.innerHTML = `
-                    <div style="display: flex; gap: 0.25rem; align-items: center;">
-                        <input type="text" class="property-input merge-rule-type" value="" placeholder="workType" style="flex:1">
-                        <span style="font-size: 0.8rem;">×</span>
-                        <input type="number" class="property-input merge-rule-count" value="1" min="1" step="1" style="width:3rem">
-                        <button class="btn-secondary merge-rule-remove" style="padding:0.1rem 0.3rem; font-size:0.7rem;" data-index="${index}">✕</button>
-                    </div>
-                `;
-                list.appendChild(div);
-                div.querySelector('.merge-rule-remove').addEventListener('click', () => div.remove());
+        // Merge buffer count change handler
+        const mergeCountInput = this.container.querySelector('#prop-mergeCount');
+        if (mergeCountInput) {
+            mergeCountInput.addEventListener('change', () => {
+                const count = parseInt(mergeCountInput.value) || 2;
+                const list = this.container.querySelector('#merge-buffers-list');
+                const rows = list.querySelectorAll('.merge-buffer-row');
+                if (count > rows.length) {
+                    for (let i = rows.length; i < count; i++) {
+                        const div = document.createElement('div');
+                        div.className = 'merge-buffer-row';
+                        div.dataset.index = i;
+                        div.innerHTML = `
+                            <div style="font-size: 0.8rem; color: #333;">Slot ${i + 1}</div>
+                            <div style="display: flex; gap: 0.25rem;">
+                                <input type="text" class="property-input merge-buffer-type" value="" placeholder="workType" style="flex:1">
+                                <input type="number" class="property-input merge-buffer-capacity" value="1" min="1" step="1" style="width:3rem" title="容量">
+                            </div>
+                        `;
+                        list.appendChild(div);
+                    }
+                } else {
+                    for (let i = rows.length - 1; i >= count; i--) {
+                        rows[i].remove();
+                    }
+                }
             });
         }
 
-        // Existing merge rule remove buttons
-        this.container.querySelectorAll('.merge-rule-remove').forEach(btn => {
-            btn.addEventListener('click', () => {
-                btn.closest('.merge-rule-row').remove();
+        // Split buffer count change handler
+        const splitCountInput = this.container.querySelector('#prop-splitCount');
+        if (splitCountInput) {
+            splitCountInput.addEventListener('change', () => {
+                const count = parseInt(splitCountInput.value) || 2;
+                const list = this.container.querySelector('#split-buffers-list');
+                const rows = list.querySelectorAll('.split-buffer-row');
+                if (count > rows.length) {
+                    for (let i = rows.length; i < count; i++) {
+                        const div = document.createElement('div');
+                        div.className = 'split-buffer-row';
+                        div.dataset.index = i;
+                        div.innerHTML = `
+                            <div style="font-size: 0.8rem; color: #333;">Slot ${i + 1}</div>
+                            <input type="text" class="property-input split-buffer-type" value="" placeholder="workType" style="flex:1">
+                        `;
+                        list.appendChild(div);
+                    }
+                } else {
+                    for (let i = rows.length - 1; i >= count; i--) {
+                        rows[i].remove();
+                    }
+                }
             });
-        });
+        }
 
         // Interlock config button
         const interlockBtn = this.container.querySelector('#interlock-config-btn');
@@ -505,55 +532,29 @@ export class PropertiesPanel {
     }
 
     _renderMergeConfig(station) {
-        const mergeInputs = station.config.mergeInputs || [];
-        const mergeRules = station.config.mergeRules || [];
+        const mergeCount = station.config.mergeCount || 2;
+        const buffers = station.config.buffers || [];
         const outputWorkType = station.config.outputWorkType || '';
 
-        // Get incoming connections to this station
-        const incomingConnections = this.editor.scenario.connections
-            .filter(c => c.to === station.id)
-            .map(c => {
-                const fromStation = this.editor.getStation(c.from);
-                return { id: c.from, name: fromStation ? (fromStation.name || c.from) : c.from };
-            });
-
-        // Render merge inputs (one per incoming connection)
-        const mergeInputsHtml = incomingConnections.map(conn => {
-            const existing = mergeInputs.find(mi => mi.fromStationId === conn.id) || {};
-            return `
-                <div class="merge-input-row" data-from="${this._escapeAttr(conn.id)}">
-                    <div style="font-size: 0.8rem; color: #333; margin-bottom: 0.25rem;">${this._escape(conn.name)}</div>
-                    <div style="display: flex; gap: 0.25rem;">
-                        <input type="text" class="property-input merge-input-type" value="${this._escapeAttr(existing.workType || '')}" placeholder="workType" style="flex:1">
-                        <input type="number" class="property-input merge-input-capacity" value="${existing.bufferCapacity || 1}" min="1" step="1" style="width:3rem" title="バッファ容量">
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        // Render merge rules
-        const mergeRulesHtml = mergeRules.map((rule, i) => `
-            <div class="merge-rule-row" data-index="${i}">
-                <div style="display: flex; gap: 0.25rem; align-items: center;">
-                    <input type="text" class="property-input merge-rule-type" value="${this._escapeAttr(rule.workType || '')}" placeholder="workType" style="flex:1">
-                    <span style="font-size: 0.8rem;">×</span>
-                    <input type="number" class="property-input merge-rule-count" value="${rule.count || 1}" min="1" step="1" style="width:3rem">
-                    <button class="btn-secondary merge-rule-remove" style="padding:0.1rem 0.3rem; font-size:0.7rem;" data-index="${i}">✕</button>
+        const buffersHtml = buffers.map((buf, i) => `
+            <div class="merge-buffer-row" data-index="${i}">
+                <div style="font-size: 0.8rem; color: #333;">Slot ${i + 1}</div>
+                <div style="display: flex; gap: 0.25rem;">
+                    <input type="text" class="property-input merge-buffer-type" value="${this._escapeAttr(buf.workType || '')}" placeholder="workType" style="flex:1">
+                    <input type="number" class="property-input merge-buffer-capacity" value="${buf.capacity || 1}" min="1" step="1" style="width:3rem" title="容量">
                 </div>
             </div>
         `).join('');
 
         return `
             <div class="property-group merge-config-section">
-                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">結合入力 (Merge Inputs)</label>
-                <div class="property-hint">各接続元のワークType・バッファ容量</div>
-                ${mergeInputsHtml || '<div class="property-hint">接続元がありません</div>'}
-            </div>
-            <div class="property-group">
-                <label class="property-label">結合ルール (Merge Rules)</label>
-                <div class="property-hint">結合に必要なワークType × 個数</div>
-                <div id="merge-rules-list">${mergeRulesHtml}</div>
-                <button class="btn-secondary" id="add-merge-rule-btn" style="width: 100%; margin-top: 0.25rem; font-size: 0.8rem;">+ ルール追加</button>
+                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">結合バッファ (Merge Buffers)</label>
+                <div class="property-group">
+                    <label class="property-label">バッファ数 (mergeCount)</label>
+                    <input type="number" class="property-input" id="prop-mergeCount" value="${mergeCount}" min="1" step="1">
+                </div>
+                <div class="property-hint">各スロットのワークType・容量</div>
+                <div id="merge-buffers-list">${buffersHtml}</div>
             </div>
             <div class="property-group">
                 <label class="property-label">出力ワークType</label>
@@ -563,73 +564,42 @@ export class PropertiesPanel {
     }
 
     _renderSplitConfig(station) {
-        const splitRouting = station.config.splitRouting || [];
+        const splitCount = station.config.splitCount || 2;
+        const buffers = station.config.buffers || [];
 
-        // Get outgoing connections from this station
-        const outgoingConnections = this.editor.scenario.connections
-            .filter(c => c.from === station.id)
-            .map(c => {
-                const toStation = this.editor.getStation(c.to);
-                return { id: c.to, name: toStation ? (toStation.name || c.to) : c.to };
-            });
-
-        const splitRoutingHtml = outgoingConnections.map(conn => {
-            const existing = splitRouting.find(sr => sr.toStationId === conn.id) || {};
-            return `
-                <div class="split-routing-row" data-to="${this._escapeAttr(conn.id)}">
-                    <div style="font-size: 0.8rem; color: #333; margin-bottom: 0.25rem;">→ ${this._escape(conn.name)}</div>
-                    <input type="text" class="property-input split-routing-type" value="${this._escapeAttr(existing.workType || '')}" placeholder="workType">
-                </div>
-            `;
-        }).join('');
+        const buffersHtml = buffers.map((buf, i) => `
+            <div class="split-buffer-row" data-index="${i}">
+                <div style="font-size: 0.8rem; color: #333;">Slot ${i + 1}</div>
+                <input type="text" class="property-input split-buffer-type" value="${this._escapeAttr(buf.workType || '')}" placeholder="workType" style="flex:1">
+            </div>
+        `).join('');
 
         return `
             <div class="property-group split-config-section">
-                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">搬出ルーティング (Split Routing)</label>
-                <div class="property-hint">各接続先に送るワークType</div>
-                ${splitRoutingHtml || '<div class="property-hint">接続先がありません</div>'}
+                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">分割バッファ (Split Buffers)</label>
+                <div class="property-group">
+                    <label class="property-label">バッファ数 (splitCount)</label>
+                    <input type="number" class="property-input" id="prop-splitCount" value="${splitCount}" min="1" step="1">
+                </div>
+                <div class="property-hint">各スロットのワークType</div>
+                <div id="split-buffers-list">${buffersHtml}</div>
             </div>
         `;
     }
 
-    _collectMergeInputs() {
-        const rows = this.container.querySelectorAll('.merge-input-row');
-        const inputs = [];
-        rows.forEach(row => {
-            const fromStationId = row.dataset.from;
-            const workType = row.querySelector('.merge-input-type').value.trim();
-            const bufferCapacity = parseInt(row.querySelector('.merge-input-capacity').value) || 1;
-            if (fromStationId) {
-                inputs.push({ fromStationId, workType, bufferCapacity });
-            }
-        });
-        return inputs;
+    _collectMergeBuffers() {
+        const rows = this.container.querySelectorAll('.merge-buffer-row');
+        return Array.from(rows).map(row => ({
+            workType: row.querySelector('.merge-buffer-type').value.trim(),
+            capacity: parseInt(row.querySelector('.merge-buffer-capacity').value) || 1
+        }));
     }
 
-    _collectMergeRules() {
-        const rows = this.container.querySelectorAll('.merge-rule-row');
-        const rules = [];
-        rows.forEach(row => {
-            const workType = row.querySelector('.merge-rule-type').value.trim();
-            const count = parseInt(row.querySelector('.merge-rule-count').value) || 1;
-            if (workType) {
-                rules.push({ workType, count });
-            }
-        });
-        return rules;
-    }
-
-    _collectSplitRouting() {
-        const rows = this.container.querySelectorAll('.split-routing-row');
-        const routing = [];
-        rows.forEach(row => {
-            const toStationId = row.dataset.to;
-            const workType = row.querySelector('.split-routing-type').value.trim();
-            if (toStationId) {
-                routing.push({ toStationId, workType });
-            }
-        });
-        return routing;
+    _collectSplitBuffers() {
+        const rows = this.container.querySelectorAll('.split-buffer-row');
+        return Array.from(rows).map(row => ({
+            workType: row.querySelector('.split-buffer-type').value.trim()
+        }));
     }
 
     _escape(text) {

@@ -382,15 +382,22 @@ class ScenarioEditor {
                 arrivalTime: 1.0
             },
             merge: {
-                mergeInputs: [],
-                mergeRules: [],
+                mergeCount: 2,
+                buffers: [
+                    { workType: '', capacity: 1 },
+                    { workType: '', capacity: 1 }
+                ],
                 outputWorkType: '',
                 processingTime: 3.0,
                 arrivalTime: 1.0,
                 departureTime: 1.0
             },
             split: {
-                splitRouting: [],
+                splitCount: 2,
+                buffers: [
+                    { workType: '' },
+                    { workType: '' }
+                ],
                 processingTime: 2.0,
                 arrivalTime: 1.0,
                 departureTime: 1.0

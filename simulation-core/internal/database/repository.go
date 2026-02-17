@@ -111,8 +111,8 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 	}
 
 	query := `
-		INSERT INTO work_events (simulation_run_id, work_id, work_friendly_name, station_id, timestamp, event_type)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO work_events (simulation_run_id, work_id, work_friendly_name, station_id, timestamp, event_type, work_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
 	tx, err := r.db.GetConnection().Begin()
@@ -135,6 +135,7 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 			log.StationID,
 			log.Timestamp,
 			log.EventType,
+			log.WorkType,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert work event: %w", err)
@@ -219,7 +220,7 @@ func (r *Repository) GetStationStatusLogs(simulationID string) ([]simulation.Sta
 // GetWorkEvents retrieves work events from the database
 func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventLog, error) {
 	query := `
-		SELECT work_id, work_friendly_name, station_id, timestamp, event_type
+		SELECT work_id, work_friendly_name, station_id, timestamp, event_type, COALESCE(work_type, '')
 		FROM work_events
 		WHERE simulation_run_id = $1
 		ORDER BY timestamp ASC
@@ -234,7 +235,7 @@ func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventL
 	var logs []simulation.WorkEventLog
 	for rows.Next() {
 		var log simulation.WorkEventLog
-		if err := rows.Scan(&log.WorkID, &log.WorkFriendlyName, &log.StationID, &log.Timestamp, &log.EventType); err != nil {
+		if err := rows.Scan(&log.WorkID, &log.WorkFriendlyName, &log.StationID, &log.Timestamp, &log.EventType, &log.WorkType); err != nil {
 			return nil, fmt.Errorf("failed to scan work event: %w", err)
 		}
 		logs = append(logs, log)

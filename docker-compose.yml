@@ -20,6 +20,7 @@ services:
       - ./database/migrations/006_add_station_position.sql:/docker-entrypoint-initdb.d/006_add_station_position.sql
       - ./database/migrations/007_add_scenario_updated_at.sql:/docker-entrypoint-initdb.d/007_add_scenario_updated_at.sql
       - ./database/migrations/008_add_station_name.sql:/docker-entrypoint-initdb.d/008_add_station_name.sql
+      - ./database/migrations/009_add_work_type_to_events.sql:/docker-entrypoint-initdb.d/009_add_work_type_to_events.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s

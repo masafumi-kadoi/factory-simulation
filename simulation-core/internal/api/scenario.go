@@ -84,17 +84,32 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	// Validate station configurations
 	for _, st := range req.Stations {
 		if st.Type == "merge" {
-			// Validate mergeInputs
-			mergeInputs, ok := st.Config["mergeInputs"].([]interface{})
-			if !ok || len(mergeInputs) == 0 {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: mergeInputs is required and must be non-empty", st.ID))
+			// Validate mergeCount
+			mergeCount, ok := st.Config["mergeCount"].(float64)
+			if !ok || mergeCount < 1 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: mergeCount must be >= 1", st.ID))
 				return
 			}
-			// Validate mergeRules
-			mergeRules, ok := st.Config["mergeRules"].([]interface{})
-			if !ok || len(mergeRules) == 0 {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: mergeRules is required and must be non-empty", st.ID))
+			// Validate buffers array
+			buffers, ok := st.Config["buffers"].([]interface{})
+			if !ok || len(buffers) != int(mergeCount) {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffers must have exactly mergeCount (%d) entries", st.ID, int(mergeCount)))
 				return
+			}
+			for idx, b := range buffers {
+				bm, ok := b.(map[string]interface{})
+				if !ok {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffer[%d] is invalid", st.ID, idx))
+					return
+				}
+				if _, ok := bm["workType"].(string); !ok {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffer[%d].workType is required", st.ID, idx))
+					return
+				}
+				if cap, ok := bm["capacity"].(float64); ok && cap < 1 {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffer[%d].capacity must be >= 1", st.ID, idx))
+					return
+				}
 			}
 			// Validate outputWorkType
 			if _, ok := st.Config["outputWorkType"].(string); !ok {
@@ -106,23 +121,37 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: processingTime must be >= 0", st.ID))
 				return
 			}
-			_ = mergeInputs
-			_ = mergeRules
 		}
 
 		if st.Type == "split" {
-			// Validate splitRouting
-			splitRouting, ok := st.Config["splitRouting"].([]interface{})
-			if !ok || len(splitRouting) == 0 {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: splitRouting is required and must be non-empty", st.ID))
+			// Validate splitCount
+			splitCount, ok := st.Config["splitCount"].(float64)
+			if !ok || splitCount < 1 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: splitCount must be >= 1", st.ID))
 				return
+			}
+			// Validate buffers array
+			buffers, ok := st.Config["buffers"].([]interface{})
+			if !ok || len(buffers) != int(splitCount) {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffers must have exactly splitCount (%d) entries", st.ID, int(splitCount)))
+				return
+			}
+			for idx, b := range buffers {
+				bm, ok := b.(map[string]interface{})
+				if !ok {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffer[%d] is invalid", st.ID, idx))
+					return
+				}
+				if _, ok := bm["workType"].(string); !ok {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffer[%d].workType is required", st.ID, idx))
+					return
+				}
 			}
 			// Validate processingTime >= 0
 			if pt, ok := st.Config["processingTime"].(float64); ok && pt < 0 {
 				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: processingTime must be >= 0", st.ID))
 				return
 			}
-			_ = splitRouting
 		}
 
 		if st.Type == "inspection" {

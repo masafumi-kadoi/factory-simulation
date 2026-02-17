@@ -20,11 +20,11 @@ export class Visualizer3D {
         this.renderer = null;
         this.controls = null;
 
-        this.stations = new Map(); // Map<stationId, {mesh, position, label}>
+        this.stations = new Map(); // Map<stationId, {mesh, position, label, stationType, bufferSlots}>
         this.works = new Map(); // Map<workId, {mesh, label}>
         this.connections = [];
-        this.showWorkIDs = true; // Default: show work IDs
-        this.showStationNames = true; // Default: show station names
+        this.showWorkIDs = true;
+        this.showStationNames = true;
         this.ground = null;
         this.gridHelper = null;
 
@@ -36,17 +36,14 @@ export class Visualizer3D {
         const width = this.container.clientWidth;
         const height = this.container.clientHeight;
 
-        // Scene
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x0a0a0a);
         this.scene.fog = new THREE.Fog(0x0a0a0a, 500, 2000);
 
-        // Camera
         this.camera = new THREE.PerspectiveCamera(50, width / height, 1, 5000);
         this.camera.position.set(0, 600, 1000);
         this.camera.lookAt(0, 0, 0);
 
-        // Renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(width, height);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -54,7 +51,6 @@ export class Visualizer3D {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.container.appendChild(this.renderer.domElement);
 
-        // Lights
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
         this.scene.add(ambientLight);
 
@@ -67,10 +63,8 @@ export class Visualizer3D {
         directionalLight.shadow.camera.far = 1000;
         this.scene.add(directionalLight);
 
-        // Ground and Grid (initial size, will be resized when scenario loads)
         this._createGroundAndGrid(2000);
 
-        // Controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
@@ -78,21 +72,18 @@ export class Visualizer3D {
         this.controls.maxDistance = 2000;
         this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
 
-        // Handle resize
         window.addEventListener('resize', () => this._onResize());
     }
 
     _onResize() {
         const width = this.container.clientWidth;
         const height = this.container.clientHeight;
-
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
     }
 
     _createGroundAndGrid(size) {
-        // Remove old ground and grid if they exist
         if (this.ground) {
             this.scene.remove(this.ground);
             this.ground.geometry.dispose();
@@ -104,19 +95,15 @@ export class Visualizer3D {
             this.gridHelper.material.dispose();
         }
 
-        // Ground
         const groundGeometry = new THREE.PlaneGeometry(size, size);
         const groundMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1a1a2e,
-            roughness: 0.8,
-            metalness: 0.2
+            color: 0x1a1a2e, roughness: 0.8, metalness: 0.2
         });
         this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
         this.ground.rotation.x = -Math.PI / 2;
         this.ground.receiveShadow = true;
         this.scene.add(this.ground);
 
-        // Grid - keep grid cells roughly 50 units
         const divisions = Math.max(10, Math.round(size / 50));
         this.gridHelper = new THREE.GridHelper(size, divisions, 0x2a3f5f, 0x1a2332);
         this.gridHelper.position.y = 0.1;
@@ -126,7 +113,6 @@ export class Visualizer3D {
     _adjustSceneToPositions(positions) {
         if (positions.size === 0) return;
 
-        // Calculate bounding box of all station positions
         let minX = Infinity, maxX = -Infinity;
         let minZ = Infinity, maxZ = -Infinity;
         positions.forEach(pos => {
@@ -138,31 +124,26 @@ export class Visualizer3D {
 
         const rangeX = maxX - minX;
         const rangeZ = maxZ - minZ;
-        const maxRange = Math.max(rangeX, rangeZ, 200); // minimum 200
-        const padding = maxRange * 0.5 + 200; // 50% padding + 200 base margin
+        const maxRange = Math.max(rangeX, rangeZ, 200);
+        const padding = maxRange * 0.5 + 200;
         const floorSize = maxRange + padding * 2;
 
-        // Center of stations
         const centerX = (minX + maxX) / 2;
         const centerZ = (minZ + maxZ) / 2;
 
-        // Recreate ground and grid at appropriate size, centered at station center
         this._createGroundAndGrid(floorSize);
         this.ground.position.set(centerX, 0, centerZ);
         this.gridHelper.position.set(centerX, 0.1, centerZ);
 
-        // Adjust fog to match scene size
         this.scene.fog.near = floorSize * 0.3;
         this.scene.fog.far = floorSize * 1.5;
 
-        // Adjust camera to frame the stations
         const viewDistance = maxRange * 1.2 + 400;
         this.camera.position.set(centerX, viewDistance * 0.6, centerZ + viewDistance);
         this.camera.lookAt(centerX, 0, centerZ);
         this.camera.far = floorSize * 3;
         this.camera.updateProjectionMatrix();
 
-        // Adjust controls target and limits
         this.controls.target.set(centerX, 0, centerZ);
         this.controls.maxDistance = floorSize * 1.5;
         this.controls.update();
@@ -177,45 +158,134 @@ export class Visualizer3D {
     loadScenario(scenario) {
         console.log('[Visualizer3D] Loading scenario:', scenario.name);
 
-        // Use saved positions if available, otherwise calculate layout
         const hasSavedPositions = scenario.stations.some(s => s.positionX != null && s.positionY != null);
         const positions = hasSavedPositions
             ? this._positionsFromSaved(scenario.stations)
             : this._calculateLayout(scenario.stations, scenario.connections);
 
-        // Adjust floor, grid, camera, fog to fit station positions
         this._adjustSceneToPositions(positions);
 
-        // Create stations
+        // Create stations with buffer slots
         scenario.stations.forEach(station => {
             const pos = positions.get(station.id);
             if (!pos) return;
 
             const { mesh, label } = this._createStation(station, pos);
-            this.stations.set(station.id, { mesh: mesh, position: pos, label: label });
+            const bufferSlots = this._createBufferSlots(station, pos);
+
+            this.stations.set(station.id, {
+                mesh, position: pos, label,
+                stationType: station.type,
+                bufferSlots,
+                bufferConfig: station.config?.buffers || []
+            });
         });
 
-        // Create connections
+        // Create connections (route to buffer slots when applicable)
         scenario.connections.forEach(conn => {
             const from = this.stations.get(conn.from);
             const to = this.stations.get(conn.to);
             if (!from || !to) return;
 
-            const line = this._createConnection(from.position, to.position, conn.condition);
+            let fromPos = from.position;
+            let toPos = to.position;
+
+            // Split station: connect from buffer slot if workType matches
+            if (from.stationType === 'split' && from.bufferSlots.length > 0) {
+                const workType = this._extractWorkType(conn.condition);
+                const slot = from.bufferSlots.find(s => s.workType === workType);
+                if (slot) fromPos = slot.position;
+            }
+
+            // Merge station: connect to buffer slot if workType matches
+            if (to.stationType === 'merge' && to.bufferSlots.length > 0) {
+                const workType = this._extractWorkType(conn.condition);
+                const slot = to.bufferSlots.find(s => s.workType === workType);
+                if (slot) toPos = slot.position;
+            }
+
+            const line = this._createConnection(fromPos, toPos, conn.condition);
             this.connections.push(line);
         });
 
         console.log(`[Visualizer3D] Created ${this.stations.size} stations and ${this.connections.length} connections`);
     }
 
+    _extractWorkType(condition) {
+        if (typeof condition === 'string' && condition.startsWith('workType:')) {
+            return condition.substring('workType:'.length);
+        }
+        return '';
+    }
+
+    _createBufferSlots(station, stationPos) {
+        const buffers = station.config?.buffers || [];
+        if (buffers.length === 0) return [];
+
+        const color = STATION_COLORS[station.type] || 0x6c757d;
+        const slotSize = 25;
+        const spacing = 35;
+        const count = buffers.length;
+
+        // Merge: slots on upstream side (Z-), Split: slots on downstream side (Z+)
+        const zOffset = station.type === 'merge' ? -60 : (station.type === 'split' ? 60 : 0);
+        if (zOffset === 0) return [];
+
+        return buffers.map((buf, i) => {
+            const x = stationPos.x + (i - (count - 1) / 2) * spacing;
+            const z = stationPos.z + zOffset;
+            const position = { x, y: 0, z };
+
+            // Create small box mesh
+            const geometry = new THREE.BoxGeometry(slotSize, slotSize, slotSize);
+            const fillMaterial = new THREE.MeshStandardMaterial({
+                color, transparent: true, opacity: 0.15,
+                emissive: color, emissiveIntensity: 0.1
+            });
+            const fillMesh = new THREE.Mesh(geometry, fillMaterial);
+            const wireGeom = new THREE.EdgesGeometry(geometry);
+            const wireMat = new THREE.LineBasicMaterial({ color, linewidth: 1, transparent: true, opacity: 0.5 });
+            const wireMesh = new THREE.LineSegments(wireGeom, wireMat);
+            const group = new THREE.Group();
+            group.add(fillMesh);
+            group.add(wireMesh);
+            group.position.set(x, slotSize / 2, z);
+            this.scene.add(group);
+
+            // Create label for workType
+            const labelText = buf.workType || `slot-${i}`;
+            const label = this._createLabel(labelText, x, slotSize + 10, z);
+
+            // Create connector line from slot to station body
+            const connLine = this._createSlotConnectorLine(
+                { x, z },
+                stationPos,
+                color
+            );
+
+            return { mesh: group, label, position, workType: buf.workType || '', connLine };
+        });
+    }
+
+    _createSlotConnectorLine(slotPos, stationPos, color) {
+        const points = [
+            new THREE.Vector3(slotPos.x, 12, slotPos.z),
+            new THREE.Vector3(stationPos.x, 12, stationPos.z)
+        ];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+            color, opacity: 0.3, transparent: true, linewidth: 1
+        });
+        const line = new THREE.Line(geometry, material);
+        this.scene.add(line);
+        return line;
+    }
+
     _positionsFromSaved(stations) {
         const positions = new Map();
         stations.forEach(station => {
-            // Map editor 2D coordinates (x, y) to 3D space (x, 0, z)
             positions.set(station.id, {
-                x: station.positionX || 0,
-                y: 0,
-                z: station.positionY || 0
+                x: station.positionX || 0, y: 0, z: station.positionY || 0
             });
         });
         return positions;
@@ -223,33 +293,25 @@ export class Visualizer3D {
 
     _calculateLayout(stations, connections) {
         const positions = new Map();
-
-        // Simple force-directed layout
         stations.forEach(station => {
             positions.set(station.id, {
-                x: (Math.random() - 0.5) * 600,
-                y: 0,
-                z: (Math.random() - 0.5) * 600
+                x: (Math.random() - 0.5) * 600, y: 0, z: (Math.random() - 0.5) * 600
             });
         });
 
-        // Run layout algorithm
         for (let iter = 0; iter < 150; iter++) {
             const forces = new Map();
             stations.forEach(s => forces.set(s.id, { x: 0, y: 0, z: 0 }));
 
-            // Repulsion between all stations
             stations.forEach(s1 => {
                 stations.forEach(s2 => {
                     if (s1.id === s2.id) return;
-
                     const p1 = positions.get(s1.id);
                     const p2 = positions.get(s2.id);
                     const dx = p1.x - p2.x;
                     const dz = p1.z - p2.z;
                     const distSq = dx * dx + dz * dz + 1;
                     const force = 8000 / distSq;
-
                     const f = forces.get(s1.id);
                     const dist = Math.sqrt(distSq);
                     f.x += force * dx / dist;
@@ -257,17 +319,14 @@ export class Visualizer3D {
                 });
             });
 
-            // Attraction for connected stations
             connections.forEach(conn => {
                 const p1 = positions.get(conn.from);
                 const p2 = positions.get(conn.to);
                 if (!p1 || !p2) return;
-
                 const dx = p2.x - p1.x;
                 const dz = p2.z - p1.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
                 const force = dist * 0.015;
-
                 const f1 = forces.get(conn.from);
                 const f2 = forces.get(conn.to);
                 f1.x += force * dx / dist;
@@ -276,7 +335,6 @@ export class Visualizer3D {
                 f2.z -= force * dz / dist;
             });
 
-            // Apply forces
             stations.forEach(station => {
                 const pos = positions.get(station.id);
                 const force = forces.get(station.id);
@@ -291,28 +349,17 @@ export class Visualizer3D {
     _createStation(station, position) {
         const color = STATION_COLORS[station.type] || 0x6c757d;
 
-        // Create station mesh (box with wireframe + transparent cube)
         const geometry = new THREE.BoxGeometry(50, 50, 50);
-
-        // Transparent filled cube
         const fillMaterial = new THREE.MeshStandardMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.3,
-            emissive: color,
-            emissiveIntensity: 0.2
+            color, transparent: true, opacity: 0.3,
+            emissive: color, emissiveIntensity: 0.2
         });
         const fillMesh = new THREE.Mesh(geometry, fillMaterial);
 
-        // Wireframe
         const wireframeGeometry = new THREE.EdgesGeometry(geometry);
-        const wireframeMaterial = new THREE.LineBasicMaterial({
-            color: color,
-            linewidth: 2
-        });
+        const wireframeMaterial = new THREE.LineBasicMaterial({ color, linewidth: 2 });
         const wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
 
-        // Group both together
         const group = new THREE.Group();
         group.add(fillMesh);
         group.add(wireframeMesh);
@@ -321,11 +368,10 @@ export class Visualizer3D {
 
         this.scene.add(group);
 
-        // Add label (use friendly name if available)
         const labelText = station.name || station.id;
         const label = this._createLabel(labelText, position.x, 65, position.z);
 
-        return { mesh: group, label: label };
+        return { mesh: group, label };
     }
 
     _createLabel(text, x, y, z) {
@@ -334,7 +380,6 @@ export class Visualizer3D {
         canvas.width = 512;
         canvas.height = 128;
 
-        // Background with 50% transparency
         context.fillStyle = 'rgba(255, 255, 255, 0.5)';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.font = 'Bold 48px Arial';
@@ -348,7 +393,7 @@ export class Visualizer3D {
         const sprite = new THREE.Sprite(material);
         sprite.position.set(x, y, z);
         sprite.scale.set(100, 25, 1);
-        sprite.visible = this.showStationNames; // Control visibility based on setting
+        sprite.visible = this.showStationNames;
 
         this.scene.add(sprite);
         return sprite;
@@ -360,7 +405,6 @@ export class Visualizer3D {
         canvas.width = 512;
         canvas.height = 128;
 
-        // Background with 70% transparency (more prominent than station labels)
         context.fillStyle = 'rgba(255, 200, 0, 0.7)';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.font = 'Bold 40px Arial';
@@ -368,7 +412,6 @@ export class Visualizer3D {
         context.textAlign = 'center';
         context.textBaseline = 'middle';
 
-        // Truncate long IDs
         const displayText = text.length > 20 ? text.substring(0, 17) + '...' : text;
         context.fillText(displayText, canvas.width / 2, canvas.height / 2);
 
@@ -377,7 +420,7 @@ export class Visualizer3D {
         const sprite = new THREE.Sprite(material);
         sprite.position.set(x, y, z);
         sprite.scale.set(80, 20, 1);
-        sprite.visible = this.showWorkIDs; // Control visibility based on setting
+        sprite.visible = this.showWorkIDs;
 
         this.scene.add(sprite);
         return sprite;
@@ -385,21 +428,15 @@ export class Visualizer3D {
 
     setShowWorkIDs(show) {
         this.showWorkIDs = show;
-        // Update visibility of all work labels
         this.works.forEach(work => {
-            if (work.label) {
-                work.label.visible = show;
-            }
+            if (work.label) work.label.visible = show;
         });
     }
 
     setShowStationNames(show) {
         this.showStationNames = show;
-        // Update visibility of all station labels
         this.stations.forEach(station => {
-            if (station.label) {
-                station.label.visible = show;
-            }
+            if (station.label) station.label.visible = show;
         });
     }
 
@@ -407,6 +444,7 @@ export class Visualizer3D {
         let color = 0x3a4f6f;
         if (condition === 'quality_ok') color = 0x28a745;
         else if (condition === 'quality_ng') color = 0xdc3545;
+        else if (typeof condition === 'string' && condition.startsWith('workType:')) color = 0x9966cc;
 
         const points = [
             new THREE.Vector3(from.x, 1, from.z),
@@ -415,15 +453,19 @@ export class Visualizer3D {
 
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const material = new THREE.LineBasicMaterial({
-            color: color,
-            opacity: 0.5,
-            transparent: true,
-            linewidth: 2
+            color, opacity: 0.5, transparent: true, linewidth: 2
         });
 
         const line = new THREE.Line(geometry, material);
         this.scene.add(line);
         return line;
+    }
+
+    // Find the buffer slot position for a work based on workType
+    _getBufferSlotPosition(stationData, workType) {
+        if (!stationData.bufferSlots || stationData.bufferSlots.length === 0) return null;
+        const slot = stationData.bufferSlots.find(s => s.workType === workType);
+        return slot ? slot.position : null;
     }
 
     updateWorks(activeWorks, currentTime) {
@@ -432,210 +474,94 @@ export class Visualizer3D {
         this.works.forEach((work, workId) => {
             if (!activeWorks.has(workId)) {
                 this.scene.remove(work.mesh);
-                if (work.label) {
-                    this.scene.remove(work.label);
-                }
+                if (work.label) this.scene.remove(work.label);
                 toRemove.push(workId);
             }
         });
         toRemove.forEach(id => this.works.delete(id));
 
-        // Count works per station to offset them when multiple are present
-        const worksPerStation = new Map();
-        activeWorks.forEach((workInfo, workId) => {
-            if (workInfo.state === 'at_station') {
-                if (!worksPerStation.has(workInfo.stationId)) {
-                    worksPerStation.set(workInfo.stationId, []);
-                }
-                worksPerStation.get(workInfo.stationId).push(workId);
-            }
-        });
-
-        // Update buffer count labels on stations
-        this._updateBufferCounts(worksPerStation);
-
         // Add or update works
         activeWorks.forEach((workInfo, workId) => {
             if (!this.works.has(workId)) {
-                // Create new work (sphere with wireframe, opaque)
                 const geometry = new THREE.SphereGeometry(12, 32, 32);
-
-                // Opaque filled sphere
                 const fillMaterial = new THREE.MeshStandardMaterial({
-                    color: 0xff4444,
-                    transparent: false,
-                    opacity: 1.0,
-                    emissive: 0xff0000,
-                    emissiveIntensity: 0.3,
-                    roughness: 0.3,
-                    metalness: 0.7
+                    color: 0xff4444, transparent: false, opacity: 1.0,
+                    emissive: 0xff0000, emissiveIntensity: 0.3,
+                    roughness: 0.3, metalness: 0.7
                 });
                 const fillMesh = new THREE.Mesh(geometry, fillMaterial);
 
-                // Wireframe
                 const wireframeGeometry = new THREE.WireframeGeometry(geometry);
-                const wireframeMaterial = new THREE.LineBasicMaterial({
-                    color: 0xff8888,
-                    linewidth: 1
-                });
+                const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0xff8888, linewidth: 1 });
                 const wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
 
-                // Group both together
                 const group = new THREE.Group();
                 group.add(fillMesh);
                 group.add(wireframeMesh);
-                group.userData = { workId: workId };
+                group.userData = { workId };
 
-                // Create work label
                 const label = this._createWorkLabel(workId, 0, 60, 0);
 
                 this.scene.add(group);
-                this.works.set(workId, { mesh: group, label: label });
+                this.works.set(workId, { mesh: group, label });
             }
 
             const work = this.works.get(workId);
 
             if (workInfo.state === 'at_station') {
-                // Work is at station — offset if multiple works are present
                 const station = this.stations.get(workInfo.stationId);
                 if (station) {
-                    const stationWorks = worksPerStation.get(workInfo.stationId) || [];
-                    const index = stationWorks.indexOf(workId);
-                    const count = stationWorks.length;
-
-                    // Offset works in a circular arrangement when multiple at same station
-                    let offsetX = 0, offsetZ = 0;
-                    if (count > 1) {
-                        const angle = (index / count) * Math.PI * 2;
-                        const radius = 15;
-                        offsetX = Math.cos(angle) * radius;
-                        offsetZ = Math.sin(angle) * radius;
-                    }
-
-                    const x = station.position.x + offsetX;
+                    let x = station.position.x;
+                    let z = station.position.z;
                     const y = 40;
-                    const z = station.position.z + offsetZ;
-                    work.mesh.position.set(x, y, z);
 
-                    // Update label position
-                    if (work.label) {
-                        work.label.position.set(x, y + 20, z);
+                    // For buffered works (merge input / split output), position at buffer slot
+                    if (workInfo.isBuffered && workInfo.workType) {
+                        const slotPos = this._getBufferSlotPosition(station, workInfo.workType);
+                        if (slotPos) {
+                            x = slotPos.x;
+                            z = slotPos.z;
+                        }
                     }
+
+                    work.mesh.position.set(x, y, z);
+                    if (work.label) work.label.position.set(x, y + 20, z);
                 }
             } else if (workInfo.state === 'moving') {
-                // Work is moving between stations
                 const fromStation = this.stations.get(workInfo.fromStation);
                 const toStation = this.stations.get(workInfo.toStation);
 
                 if (fromStation && toStation) {
-                    // Calculate progress based on time
                     const duration = workInfo.arriveTime - workInfo.departTime;
                     const elapsed = currentTime - workInfo.departTime;
                     const progress = Math.max(0, Math.min(1, elapsed / duration));
 
-                    // Interpolate position with easing
+                    // Determine start/end positions (may be buffer slots)
+                    let startX = fromStation.position.x, startZ = fromStation.position.z;
+                    let endX = toStation.position.x, endZ = toStation.position.z;
+
+                    // If departing from split station, use buffer slot position
+                    if (fromStation.stationType === 'split' && workInfo.workType) {
+                        const slotPos = this._getBufferSlotPosition(fromStation, workInfo.workType);
+                        if (slotPos) { startX = slotPos.x; startZ = slotPos.z; }
+                    }
+
+                    // If arriving at merge station, use buffer slot position
+                    if (toStation.stationType === 'merge' && workInfo.workType) {
+                        const slotPos = this._getBufferSlotPosition(toStation, workInfo.workType);
+                        if (slotPos) { endX = slotPos.x; endZ = slotPos.z; }
+                    }
+
                     const t = this._easeInOutCubic(progress);
-                    const x = fromStation.position.x + (toStation.position.x - fromStation.position.x) * t;
-                    const z = fromStation.position.z + (toStation.position.z - fromStation.position.z) * t;
-                    const y = 40 + Math.sin(t * Math.PI) * 30; // Arc movement
+                    const x = startX + (endX - startX) * t;
+                    const z = startZ + (endZ - startZ) * t;
+                    const y = 40 + Math.sin(t * Math.PI) * 30;
 
                     work.mesh.position.set(x, y, z);
-
-                    // Update label position
-                    if (work.label) {
-                        work.label.position.set(x, y + 20, z);
-                    }
+                    if (work.label) work.label.position.set(x, y + 20, z);
                 }
             }
         });
-    }
-
-    _updateBufferCounts(worksPerStation) {
-        // Show buffer count badges on merge/split stations with multiple works
-        this.stations.forEach((stationData, stationId) => {
-            const count = (worksPerStation.get(stationId) || []).length;
-            const stationType = stationData.mesh.userData.type;
-
-            // Only show buffer counts for merge/split stations (or any station with 2+ works)
-            const showCount = (stationType === 'merge' || stationType === 'split') ? count > 0 : count > 1;
-
-            if (showCount) {
-                if (!stationData.bufferLabel) {
-                    // Create buffer count label
-                    stationData.bufferLabel = this._createBufferLabel(
-                        count,
-                        stationData.position.x + 30,
-                        55,
-                        stationData.position.z
-                    );
-                } else {
-                    // Update existing label text
-                    this._updateBufferLabelText(stationData.bufferLabel, count);
-                }
-                stationData.bufferLabel.visible = true;
-            } else if (stationData.bufferLabel) {
-                stationData.bufferLabel.visible = false;
-            }
-        });
-    }
-
-    _createBufferLabel(count, x, y, z) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 128;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-
-        this._drawBufferBadge(ctx, count, canvas.width, canvas.height);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-        const sprite = new THREE.Sprite(material);
-        sprite.position.set(x, y, z);
-        sprite.scale.set(30, 15, 1);
-        sprite.userData = { isBufferLabel: true };
-
-        this.scene.add(sprite);
-        return sprite;
-    }
-
-    _updateBufferLabelText(sprite, count) {
-        const material = sprite.material;
-        const canvas = document.createElement('canvas');
-        canvas.width = 128;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-
-        this._drawBufferBadge(ctx, count, canvas.width, canvas.height);
-
-        if (material.map) material.map.dispose();
-        material.map = new THREE.CanvasTexture(canvas);
-        material.needsUpdate = true;
-    }
-
-    _drawBufferBadge(ctx, count, w, h) {
-        // Round rectangle background
-        ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = 'rgba(255, 165, 0, 0.85)';
-        const r = 12;
-        ctx.beginPath();
-        ctx.moveTo(r, 0);
-        ctx.lineTo(w - r, 0);
-        ctx.quadraticCurveTo(w, 0, w, r);
-        ctx.lineTo(w, h - r);
-        ctx.quadraticCurveTo(w, h, w - r, h);
-        ctx.lineTo(r, h);
-        ctx.quadraticCurveTo(0, h, 0, h - r);
-        ctx.lineTo(0, r);
-        ctx.quadraticCurveTo(0, 0, r, 0);
-        ctx.closePath();
-        ctx.fill();
-
-        // Text
-        ctx.font = 'Bold 36px Arial';
-        ctx.fillStyle = '#000';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`×${count}`, w / 2, h / 2);
     }
 
     _easeInOutCubic(t) {
@@ -643,14 +569,16 @@ export class Visualizer3D {
     }
 
     clear() {
-        // Clear stations (including buffer labels)
+        // Clear stations (including buffer slots)
         this.stations.forEach(station => {
             this.scene.remove(station.mesh);
-            if (station.label) {
-                this.scene.remove(station.label);
-            }
-            if (station.bufferLabel) {
-                this.scene.remove(station.bufferLabel);
+            if (station.label) this.scene.remove(station.label);
+            if (station.bufferSlots) {
+                station.bufferSlots.forEach(slot => {
+                    this.scene.remove(slot.mesh);
+                    if (slot.label) this.scene.remove(slot.label);
+                    if (slot.connLine) this.scene.remove(slot.connLine);
+                });
             }
         });
         this.stations.clear();
@@ -658,16 +586,12 @@ export class Visualizer3D {
         // Clear works
         this.works.forEach(work => {
             this.scene.remove(work.mesh);
-            if (work.label) {
-                this.scene.remove(work.label);
-            }
+            if (work.label) this.scene.remove(work.label);
         });
         this.works.clear();
 
         // Clear connections
-        this.connections.forEach(line => {
-            this.scene.remove(line);
-        });
+        this.connections.forEach(line => this.scene.remove(line));
         this.connections = [];
     }
 }

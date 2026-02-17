@@ -168,8 +168,18 @@ export function validateStation(station) {
         if (!config.outputWorkType) {
             errors.outputWorkType = 'outputWorkTypeは必須です';
         }
-        if (!config.mergeRules || config.mergeRules.length === 0) {
-            errors.mergeRules = 'mergeRulesは1つ以上必要です';
+        if (!config.mergeCount || config.mergeCount < 1) {
+            errors.mergeCount = 'mergeCountは1以上である必要があります';
+        }
+        if (!config.buffers || config.buffers.length === 0) {
+            errors.buffers = 'バッファスロットは1つ以上必要です';
+        } else if (config.buffers.length !== (config.mergeCount || 0)) {
+            errors.buffers = `バッファ数(${config.buffers.length})がmergeCount(${config.mergeCount})と一致しません`;
+        } else {
+            config.buffers.forEach((buf, i) => {
+                if (!buf.workType) errors[`buffer_${i}_workType`] = `バッファ${i+1}のworkTypeは必須です`;
+                if (!buf.capacity || buf.capacity < 1) errors[`buffer_${i}_capacity`] = `バッファ${i+1}のcapacityは1以上必要です`;
+            });
         }
     } else if (station.type === 'split') {
         if (config.processingTime != null && config.processingTime < 0) {
@@ -180,6 +190,18 @@ export function validateStation(station) {
         }
         if (!config.departureTime || config.departureTime <= 0) {
             errors.departureTime = 'departureTimeは0より大きい必要があります';
+        }
+        if (!config.splitCount || config.splitCount < 1) {
+            errors.splitCount = 'splitCountは1以上である必要があります';
+        }
+        if (!config.buffers || config.buffers.length === 0) {
+            errors.buffers = 'バッファスロットは1つ以上必要です';
+        } else if (config.buffers.length !== (config.splitCount || 0)) {
+            errors.buffers = `バッファ数(${config.buffers.length})がsplitCount(${config.splitCount})と一致しません`;
+        } else {
+            config.buffers.forEach((buf, i) => {
+                if (!buf.workType) errors[`buffer_${i}_workType`] = `バッファ${i+1}のworkTypeは必須です`;
+            });
         }
     }
 
