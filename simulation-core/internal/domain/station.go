@@ -9,6 +9,8 @@ const (
 	StationTypeSource     StationType = "source"     // Simplified: Source only generates works
 	StationTypeProcessing StationType = "processing" // Base class: handles one work at a time
 	StationTypeDrain      StationType = "drain"      // Simplified: Drain only destroys works
+	StationTypeMerge      StationType = "merge"      // Merge: combines multiple works into one
+	StationTypeSplit      StationType = "split"       // Split: separates combined work into components
 )
 
 // StationState represents the state of a station in the state machine
@@ -41,6 +43,10 @@ type Station struct {
 
 	// Work management: Only ONE work at a time (interlock mechanism)
 	CurrentWork *Work // The work currently at this station (nil if idle)
+
+	// Merge/Split buffers
+	InputBuffer  []*Work // Merge: works waiting to be combined
+	OutputBuffer []*Work // Split: works waiting to be dispatched
 
 	// State machine
 	State StationState
@@ -106,6 +112,16 @@ func (s *Station) GetBoolConfig(key string) bool {
 	return false
 }
 
+// GetStringConfig retrieves a string configuration value
+func (s *Station) GetStringConfig(key string) string {
+	if val, ok := s.Config[key]; ok {
+		if sval, ok := val.(string); ok {
+			return sval
+		}
+	}
+	return ""
+}
+
 // IsInputReady returns true if station can accept a new work (搬入可 signal)
 func (s *Station) IsInputReady() bool {
 	if s.Signals != nil {
@@ -156,6 +172,10 @@ func (s *Station) CanAcceptWork() bool {
 	if s.Type == StationTypeSource {
 		return false // Source does not accept external works
 	}
+	if s.Type == StationTypeMerge {
+		// Merge accepts works into InputBuffer; inputReady is managed per-connection
+		return s.IsInputReady()
+	}
 	return s.IsInputReady()
 }
 
@@ -172,12 +192,297 @@ func (s *Station) AddWork(work *Work) error {
 	return nil
 }
 
+// AddWorkToBuffer adds a work to the InputBuffer (for Merge stations)
+func (s *Station) AddWorkToBuffer(work *Work) error {
+	if s.Type != StationTypeMerge {
+		return fmt.Errorf("station %s is not a merge station", s.ID)
+	}
+	s.InputBuffer = append(s.InputBuffer, work)
+	return nil
+}
+
+// CheckMergeCondition checks if merge rules are satisfied by the current InputBuffer
+func (s *Station) CheckMergeCondition() bool {
+	if s.Type != StationTypeMerge {
+		return false
+	}
+
+	mergeRules := s.getMergeRules()
+	if len(mergeRules) == 0 {
+		return false
+	}
+
+	// Count works by type in InputBuffer
+	typeCounts := make(map[string]int)
+	for _, work := range s.InputBuffer {
+		typeCounts[work.Type]++
+	}
+
+	// Check all rules are satisfied
+	for _, rule := range mergeRules {
+		workType, _ := rule["workType"].(string)
+		count := 1
+		if c, ok := rule["count"].(float64); ok {
+			count = int(c)
+		}
+		if typeCounts[workType] < count {
+			return false
+		}
+	}
+
+	return true
+}
+
+// ExecuteMerge executes the merge operation, creating a new combined work
+// Returns: (mergedWork, consumedWorks, error)
+func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []*Work, error) {
+	if s.Type != StationTypeMerge {
+		return nil, nil, fmt.Errorf("station %s is not a merge station", s.ID)
+	}
+
+	mergeRules := s.getMergeRules()
+	outputWorkType := s.GetStringConfig("outputWorkType")
+
+	// Collect works to consume based on merge rules
+	var consumedWorks []*Work
+	remainingBuffer := make([]*Work, len(s.InputBuffer))
+	copy(remainingBuffer, s.InputBuffer)
+
+	for _, rule := range mergeRules {
+		workType, _ := rule["workType"].(string)
+		count := 1
+		if c, ok := rule["count"].(float64); ok {
+			count = int(c)
+		}
+
+		for i := 0; i < count; i++ {
+			found := false
+			for j, work := range remainingBuffer {
+				if work != nil && work.Type == workType {
+					consumedWorks = append(consumedWorks, work)
+					remainingBuffer[j] = nil
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, nil, fmt.Errorf("merge condition not met: missing workType=%s", workType)
+			}
+		}
+	}
+
+	// Update InputBuffer (remove consumed works)
+	var newBuffer []*Work
+	for _, work := range remainingBuffer {
+		if work != nil {
+			newBuffer = append(newBuffer, work)
+		}
+	}
+	s.InputBuffer = newBuffer
+
+	// Generate new merged work
+	workID, friendlyName := newWorkIDFunc()
+	mergedWork := NewWorkWithType(workID, friendlyName, outputWorkType)
+
+	// Set mergedFrom metadata
+	mergedFromList := make([]interface{}, len(consumedWorks))
+	for i, w := range consumedWorks {
+		mergedFromList[i] = map[string]interface{}{
+			"workId": w.ID,
+			"type":   w.Type,
+		}
+	}
+	mergedWork.Metadata = map[string]interface{}{
+		"mergedFrom": mergedFromList,
+	}
+
+	// Set as current work
+	s.CurrentWork = mergedWork
+	s.State = StateCompleted
+
+	return mergedWork, consumedWorks, nil
+}
+
+// ExecuteSplit splits a merged work into component works based on mergedFrom metadata
+// Returns: (splitWorks, error)
+func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, error) {
+	if s.Type != StationTypeSplit {
+		return nil, fmt.Errorf("station %s is not a split station", s.ID)
+	}
+
+	if s.CurrentWork == nil {
+		return nil, fmt.Errorf("station %s has no work to split", s.ID)
+	}
+
+	// Get mergedFrom metadata
+	mergedFrom, ok := s.CurrentWork.Metadata["mergedFrom"]
+	if !ok {
+		return nil, fmt.Errorf("station %s: work %s has no mergedFrom metadata (not a merged work)", s.ID, s.CurrentWork.ID)
+	}
+
+	mergedFromList, ok := mergedFrom.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("station %s: invalid mergedFrom format", s.ID)
+	}
+
+	// Create split works
+	var splitWorks []*Work
+	sourceWorkID := s.CurrentWork.ID
+	sourceWorkType := s.CurrentWork.Type
+
+	for _, item := range mergedFromList {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		origType, _ := itemMap["type"].(string)
+
+		workID, friendlyName := newWorkIDFunc()
+		splitWork := NewWorkWithType(workID, friendlyName, origType)
+		splitWork.Metadata = map[string]interface{}{
+			"splitFrom": map[string]interface{}{
+				"workId": sourceWorkID,
+				"type":   sourceWorkType,
+			},
+		}
+		splitWorks = append(splitWorks, splitWork)
+	}
+
+	// Store in OutputBuffer
+	s.OutputBuffer = splitWorks
+
+	// Set first work as CurrentWork for departure
+	if len(s.OutputBuffer) > 0 {
+		s.CurrentWork = s.OutputBuffer[0]
+		s.OutputBuffer = s.OutputBuffer[1:]
+		s.State = StateCompleted
+	} else {
+		s.CurrentWork = nil
+		s.State = StateIdle
+	}
+
+	return splitWorks, nil
+}
+
+// GetNextOutputWork gets the next work from OutputBuffer (for Split stations)
+func (s *Station) GetNextOutputWork() *Work {
+	if len(s.OutputBuffer) == 0 {
+		return nil
+	}
+	work := s.OutputBuffer[0]
+	s.OutputBuffer = s.OutputBuffer[1:]
+	return work
+}
+
+// HasOutputBufferWorks returns true if OutputBuffer has remaining works
+func (s *Station) HasOutputBufferWorks() bool {
+	return len(s.OutputBuffer) > 0
+}
+
+// GetMergeBufferCapacityForStation returns the buffer capacity for a specific source station
+func (s *Station) GetMergeBufferCapacityForStation(fromStationID string) int {
+	mergeInputs := s.getMergeInputs()
+	for _, input := range mergeInputs {
+		fid, _ := input["fromStationId"].(string)
+		if fid == fromStationID {
+			if cap, ok := input["bufferCapacity"].(float64); ok {
+				return int(cap)
+			}
+			return 1 // default
+		}
+	}
+	return 1 // default
+}
+
+// GetMergeWorkTypeForStation returns the expected work type for a specific source station
+func (s *Station) GetMergeWorkTypeForStation(fromStationID string) string {
+	mergeInputs := s.getMergeInputs()
+	for _, input := range mergeInputs {
+		fid, _ := input["fromStationId"].(string)
+		if fid == fromStationID {
+			wt, _ := input["workType"].(string)
+			return wt
+		}
+	}
+	return ""
+}
+
+// CountBufferWorksByType counts works of a specific type in InputBuffer
+func (s *Station) CountBufferWorksByType(workType string) int {
+	count := 0
+	for _, work := range s.InputBuffer {
+		if work.Type == workType {
+			count++
+		}
+	}
+	return count
+}
+
+// IsBufferFullForStation checks if the InputBuffer is full for a specific source station
+func (s *Station) IsBufferFullForStation(fromStationID string) bool {
+	workType := s.GetMergeWorkTypeForStation(fromStationID)
+	capacity := s.GetMergeBufferCapacityForStation(fromStationID)
+	currentCount := s.CountBufferWorksByType(workType)
+	return currentCount >= capacity
+}
+
+// getMergeInputs returns the mergeInputs config as a slice of maps
+func (s *Station) getMergeInputs() []map[string]interface{} {
+	if val, ok := s.Config["mergeInputs"]; ok {
+		if inputs, ok := val.([]interface{}); ok {
+			result := make([]map[string]interface{}, 0, len(inputs))
+			for _, item := range inputs {
+				if m, ok := item.(map[string]interface{}); ok {
+					result = append(result, m)
+				}
+			}
+			return result
+		}
+	}
+	return nil
+}
+
+// getMergeRules returns the mergeRules config as a slice of maps
+func (s *Station) getMergeRules() []map[string]interface{} {
+	if val, ok := s.Config["mergeRules"]; ok {
+		if rules, ok := val.([]interface{}); ok {
+			result := make([]map[string]interface{}, 0, len(rules))
+			for _, item := range rules {
+				if m, ok := item.(map[string]interface{}); ok {
+					result = append(result, m)
+				}
+			}
+			return result
+		}
+	}
+	return nil
+}
+
+// getSplitRouting returns the splitRouting config as a slice of maps
+func (s *Station) getSplitRouting() []map[string]interface{} {
+	if val, ok := s.Config["splitRouting"]; ok {
+		if routing, ok := val.([]interface{}); ok {
+			result := make([]map[string]interface{}, 0, len(routing))
+			for _, item := range routing {
+				if m, ok := item.(map[string]interface{}); ok {
+					result = append(result, m)
+				}
+			}
+			return result
+		}
+	}
+	return nil
+}
+
 // CanStartProcessing checks if the station can start processing
 func (s *Station) CanStartProcessing() bool {
 	if s.Type == StationTypeSource || s.Type == StationTypeDrain {
 		return false // Source and Drain have no processing
 	}
-	// Processing station can start when work has arrived
+	if s.Type == StationTypeMerge {
+		return false // Merge has its own processing flow via EventMergeCompleted
+	}
+	// Processing and Split station can start when work has arrived
 	return s.CurrentWork != nil && s.State == StateReceiving
 }
 

@@ -60,6 +60,10 @@ func GetDefaultInterlockConfig(stationType StationType) *InterlockConfig {
 		return getProcessingDefaultConfig()
 	case StationTypeDrain:
 		return getDrainDefaultConfig()
+	case StationTypeMerge:
+		return getMergeDefaultConfig()
+	case StationTypeSplit:
+		return getSplitDefaultConfig()
 	default:
 		return getProcessingDefaultConfig()
 	}
@@ -116,6 +120,142 @@ func getProcessingDefaultConfig() *InterlockConfig {
 				Value:       false,
 				Conditions: []RuleCondition{
 					{Signal: "processingComplete", Value: false},
+					{Signal: "workPresent", Value: true},
+				},
+			},
+			{
+				ID:          "R3",
+				Description: "処理完了 → 搬出可ON",
+				Target:      "outputReady",
+				Value:       true,
+				Conditions: []RuleCondition{
+					{Signal: "processingComplete", Value: true},
+					{Signal: "workPresent", Value: true},
+				},
+			},
+			{
+				ID:          "R4",
+				Description: "ワーク搬出済 → 搬出可OFF",
+				Target:      "outputReady",
+				Value:       false,
+				Conditions: []RuleCondition{
+					{Signal: "processingComplete", Value: true},
+					{Signal: "workPresent", Value: false},
+				},
+			},
+			{
+				ID:          "R5",
+				Description: "搬出完了リセット → 処理完了OFF",
+				Target:      "processingComplete",
+				Value:       false,
+				Conditions: []RuleCondition{
+					{Signal: "processingComplete", Value: true},
+					{Signal: "workPresent", Value: false},
+					{Signal: "outputReady", Value: false},
+				},
+			},
+		},
+	}
+}
+
+func getMergeDefaultConfig() *InterlockConfig {
+	return &InterlockConfig{
+		Signals: []SignalDef{
+			{Name: "workPresent", Initial: false},
+			{Name: "processingComplete", Initial: false},
+			{Name: "mergeReady", Initial: false},
+			{Name: "inputReady", Initial: true},
+			{Name: "outputReady", Initial: false},
+		},
+		Rules: []InterlockRule{
+			{
+				ID:          "R1",
+				Description: "結合条件充足 → 搬入可OFF",
+				Target:      "inputReady",
+				Value:       false,
+				Conditions:  []RuleCondition{{Signal: "mergeReady", Value: true}},
+			},
+			{
+				ID:          "R2",
+				Description: "結合処理完了 → 搬出可ON",
+				Target:      "outputReady",
+				Value:       true,
+				Conditions: []RuleCondition{
+					{Signal: "processingComplete", Value: true},
+					{Signal: "workPresent", Value: true},
+				},
+			},
+			{
+				ID:          "R3",
+				Description: "ワーク搬出済 → 搬出可OFF",
+				Target:      "outputReady",
+				Value:       false,
+				Conditions: []RuleCondition{
+					{Signal: "workPresent", Value: false},
+				},
+			},
+			{
+				ID:          "R4",
+				Description: "搬出完了 → 搬入可ON",
+				Target:      "inputReady",
+				Value:       true,
+				Conditions: []RuleCondition{
+					{Signal: "workPresent", Value: false},
+					{Signal: "processingComplete", Value: false},
+					{Signal: "mergeReady", Value: false},
+				},
+			},
+			{
+				ID:          "R5",
+				Description: "搬出完了リセット → 処理完了OFF",
+				Target:      "processingComplete",
+				Value:       false,
+				Conditions: []RuleCondition{
+					{Signal: "processingComplete", Value: true},
+					{Signal: "workPresent", Value: false},
+					{Signal: "outputReady", Value: false},
+				},
+			},
+			{
+				ID:          "R6",
+				Description: "搬出完了リセット → mergeReady OFF",
+				Target:      "mergeReady",
+				Value:       false,
+				Conditions: []RuleCondition{
+					{Signal: "mergeReady", Value: true},
+					{Signal: "workPresent", Value: false},
+					{Signal: "processingComplete", Value: false},
+				},
+			},
+		},
+	}
+}
+
+func getSplitDefaultConfig() *InterlockConfig {
+	return &InterlockConfig{
+		Signals: []SignalDef{
+			{Name: "workPresent", Initial: false},
+			{Name: "processingComplete", Initial: false},
+			{Name: "inputReady", Initial: true},
+			{Name: "outputReady", Initial: false},
+		},
+		Rules: []InterlockRule{
+			{
+				ID:          "R1",
+				Description: "空きステーション → 搬入可ON",
+				Target:      "inputReady",
+				Value:       true,
+				Conditions: []RuleCondition{
+					{Signal: "processingComplete", Value: false},
+					{Signal: "workPresent", Value: false},
+				},
+			},
+			{
+				ID:          "R2",
+				Description: "ワーク受入済 → 搬入可OFF",
+				Target:      "inputReady",
+				Value:       false,
+				Conditions: []RuleCondition{
 					{Signal: "workPresent", Value: true},
 				},
 			},

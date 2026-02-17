@@ -190,6 +190,17 @@ export class PropertiesPanel {
             </div>
         ` : '';
 
+        const workTypeHtml = station.type === 'source' ? `
+            <div class="property-group">
+                <label class="property-label">Work Type</label>
+                <input type="text" class="property-input" id="prop-workType" value="${this._escapeAttr(station.config.workType || '')}" placeholder="(例: partA)">
+                <div class="property-hint">生成するワークの種別（Merge/Split で使用）</div>
+            </div>
+        ` : '';
+
+        const mergeConfigHtml = station.type === 'merge' ? this._renderMergeConfig(station) : '';
+        const splitConfigHtml = station.type === 'split' ? this._renderSplitConfig(station) : '';
+
         this.container.innerHTML = `
             <div class="property-group">
                 <label class="property-label">ID</label>
@@ -205,6 +216,7 @@ export class PropertiesPanel {
             </div>
             ${locationSelectHtml}
             ${continuousHtml}
+            ${workTypeHtml}
             ${configFields.map(field => `
                 <div class="property-group">
                     <label class="property-label">${field.label}</label>
@@ -219,6 +231,8 @@ export class PropertiesPanel {
                     ${errors[field.key] ? `<div class="property-error">${errors[field.key]}</div>` : ''}
                 </div>
             `).join('')}
+            ${mergeConfigHtml}
+            ${splitConfigHtml}
             ${this._renderInterlockSection(station)}
             <div class="property-actions">
                 <button class="btn-primary" id="update-btn">更新</button>
@@ -250,6 +264,25 @@ export class PropertiesPanel {
                 newConfig.continuous = continuousEl.checked;
             }
 
+            // Save workType for source stations
+            const workTypeEl = this.container.querySelector('#prop-workType');
+            if (workTypeEl) {
+                newConfig.workType = workTypeEl.value.trim();
+            }
+
+            // Save merge config
+            if (station.type === 'merge') {
+                newConfig.mergeInputs = this._collectMergeInputs();
+                newConfig.mergeRules = this._collectMergeRules();
+                const outputWorkTypeEl = this.container.querySelector('#prop-outputWorkType');
+                newConfig.outputWorkType = outputWorkTypeEl ? outputWorkTypeEl.value.trim() : '';
+            }
+
+            // Save split config
+            if (station.type === 'split') {
+                newConfig.splitRouting = this._collectSplitRouting();
+            }
+
             // Save name
             const nameInput = this.container.querySelector('#prop-name');
             if (nameInput) {
@@ -270,6 +303,35 @@ export class PropertiesPanel {
             if (confirm('このステーションを削除しますか？')) {
                 this.editor.deleteStation(stationId);
             }
+        });
+
+        // Merge rule add/remove buttons
+        const addMergeRuleBtn = this.container.querySelector('#add-merge-rule-btn');
+        if (addMergeRuleBtn) {
+            addMergeRuleBtn.addEventListener('click', () => {
+                const list = this.container.querySelector('#merge-rules-list');
+                const index = list.querySelectorAll('.merge-rule-row').length;
+                const div = document.createElement('div');
+                div.className = 'merge-rule-row';
+                div.dataset.index = index;
+                div.innerHTML = `
+                    <div style="display: flex; gap: 0.25rem; align-items: center;">
+                        <input type="text" class="property-input merge-rule-type" value="" placeholder="workType" style="flex:1">
+                        <span style="font-size: 0.8rem;">×</span>
+                        <input type="number" class="property-input merge-rule-count" value="1" min="1" step="1" style="width:3rem">
+                        <button class="btn-secondary merge-rule-remove" style="padding:0.1rem 0.3rem; font-size:0.7rem;" data-index="${index}">✕</button>
+                    </div>
+                `;
+                list.appendChild(div);
+                div.querySelector('.merge-rule-remove').addEventListener('click', () => div.remove());
+            });
+        }
+
+        // Existing merge rule remove buttons
+        this.container.querySelectorAll('.merge-rule-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                btn.closest('.merge-rule-row').remove();
+            });
         });
 
         // Interlock config button
@@ -353,6 +415,14 @@ export class PropertiesPanel {
         const connection = this.editor.getConnection(connectionIndex);
         if (!connection) return;
 
+        // Check if from station is a split station to show workType options
+        const fromStation = this.editor.getStation(connection.from);
+        const isSplitSource = fromStation && fromStation.type === 'split';
+
+        // Get workType from condition if it's a workType condition
+        const isWorkTypeCondition = (connection.condition || '').startsWith('workType:');
+        const currentWorkType = isWorkTypeCondition ? connection.condition.substring('workType:'.length) : '';
+
         this.container.innerHTML = `
             <div class="property-group">
                 <label class="property-label">From</label>
@@ -365,13 +435,39 @@ export class PropertiesPanel {
             <div class="property-group">
                 <label class="property-label">Condition</label>
                 <select class="property-input" id="prop-condition">
-                    <option value="default" ${connection.condition === 'default' ? 'selected' : ''}>Default</option>
+                    <option value="default" ${connection.condition === 'default' || !connection.condition ? 'selected' : ''}>Default</option>
+                    <option value="quality_ok" ${connection.condition === 'quality_ok' ? 'selected' : ''}>Quality OK</option>
+                    <option value="quality_ng" ${connection.condition === 'quality_ng' ? 'selected' : ''}>Quality NG</option>
+                    <option value="workType" ${isWorkTypeCondition ? 'selected' : ''}>Work Type</option>
                 </select>
             </div>
+            <div class="property-group" id="worktype-condition-group" style="display: ${isWorkTypeCondition ? '' : 'none'}">
+                <label class="property-label">Work Type 値</label>
+                <input type="text" class="property-input" id="prop-condition-worktype" value="${this._escapeAttr(currentWorkType)}" placeholder="例: partA">
+            </div>
             <div class="property-actions">
+                <button class="btn-primary" id="update-connection-btn">更新</button>
                 <button class="btn-danger" id="delete-connection-btn">削除</button>
             </div>
         `;
+
+        // Toggle workType input visibility
+        this.container.querySelector('#prop-condition').addEventListener('change', (e) => {
+            const group = this.container.querySelector('#worktype-condition-group');
+            group.style.display = e.target.value === 'workType' ? '' : 'none';
+        });
+
+        this.container.querySelector('#update-connection-btn').addEventListener('click', () => {
+            const condSelect = this.container.querySelector('#prop-condition').value;
+            let condition = condSelect;
+            if (condSelect === 'workType') {
+                const wt = this.container.querySelector('#prop-condition-worktype').value.trim();
+                condition = wt ? `workType:${wt}` : 'default';
+            }
+            connection.condition = condition;
+            this.editor._markDirty();
+            this.render();
+        });
 
         this.container.querySelector('#delete-connection-btn').addEventListener('click', () => {
             if (confirm('この接続を削除しますか？')) {
@@ -393,9 +489,147 @@ export class PropertiesPanel {
             ],
             drain: [
                 { key: 'arrivalTime', label: 'Arrival Time (s)', step: '0.1', min: '0.1' }
+            ],
+            merge: [
+                { key: 'processingTime', label: 'Processing Time (s)', step: '0.1', min: '0' },
+                { key: 'arrivalTime', label: 'Arrival Time (s)', step: '0.1', min: '0.1' },
+                { key: 'departureTime', label: 'Departure Time (s)', step: '0.1', min: '0.1' }
+            ],
+            split: [
+                { key: 'processingTime', label: 'Processing Time (s)', step: '0.1', min: '0' },
+                { key: 'arrivalTime', label: 'Arrival Time (s)', step: '0.1', min: '0.1' },
+                { key: 'departureTime', label: 'Departure Time (s)', step: '0.1', min: '0.1' }
             ]
         };
         return fields[type] || [];
+    }
+
+    _renderMergeConfig(station) {
+        const mergeInputs = station.config.mergeInputs || [];
+        const mergeRules = station.config.mergeRules || [];
+        const outputWorkType = station.config.outputWorkType || '';
+
+        // Get incoming connections to this station
+        const incomingConnections = this.editor.scenario.connections
+            .filter(c => c.to === station.id)
+            .map(c => {
+                const fromStation = this.editor.getStation(c.from);
+                return { id: c.from, name: fromStation ? (fromStation.name || c.from) : c.from };
+            });
+
+        // Render merge inputs (one per incoming connection)
+        const mergeInputsHtml = incomingConnections.map(conn => {
+            const existing = mergeInputs.find(mi => mi.fromStationId === conn.id) || {};
+            return `
+                <div class="merge-input-row" data-from="${this._escapeAttr(conn.id)}">
+                    <div style="font-size: 0.8rem; color: #333; margin-bottom: 0.25rem;">${this._escape(conn.name)}</div>
+                    <div style="display: flex; gap: 0.25rem;">
+                        <input type="text" class="property-input merge-input-type" value="${this._escapeAttr(existing.workType || '')}" placeholder="workType" style="flex:1">
+                        <input type="number" class="property-input merge-input-capacity" value="${existing.bufferCapacity || 1}" min="1" step="1" style="width:3rem" title="バッファ容量">
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Render merge rules
+        const mergeRulesHtml = mergeRules.map((rule, i) => `
+            <div class="merge-rule-row" data-index="${i}">
+                <div style="display: flex; gap: 0.25rem; align-items: center;">
+                    <input type="text" class="property-input merge-rule-type" value="${this._escapeAttr(rule.workType || '')}" placeholder="workType" style="flex:1">
+                    <span style="font-size: 0.8rem;">×</span>
+                    <input type="number" class="property-input merge-rule-count" value="${rule.count || 1}" min="1" step="1" style="width:3rem">
+                    <button class="btn-secondary merge-rule-remove" style="padding:0.1rem 0.3rem; font-size:0.7rem;" data-index="${i}">✕</button>
+                </div>
+            </div>
+        `).join('');
+
+        return `
+            <div class="property-group merge-config-section">
+                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">結合入力 (Merge Inputs)</label>
+                <div class="property-hint">各接続元のワークType・バッファ容量</div>
+                ${mergeInputsHtml || '<div class="property-hint">接続元がありません</div>'}
+            </div>
+            <div class="property-group">
+                <label class="property-label">結合ルール (Merge Rules)</label>
+                <div class="property-hint">結合に必要なワークType × 個数</div>
+                <div id="merge-rules-list">${mergeRulesHtml}</div>
+                <button class="btn-secondary" id="add-merge-rule-btn" style="width: 100%; margin-top: 0.25rem; font-size: 0.8rem;">+ ルール追加</button>
+            </div>
+            <div class="property-group">
+                <label class="property-label">出力ワークType</label>
+                <input type="text" class="property-input" id="prop-outputWorkType" value="${this._escapeAttr(outputWorkType)}" placeholder="例: assembly-AB">
+            </div>
+        `;
+    }
+
+    _renderSplitConfig(station) {
+        const splitRouting = station.config.splitRouting || [];
+
+        // Get outgoing connections from this station
+        const outgoingConnections = this.editor.scenario.connections
+            .filter(c => c.from === station.id)
+            .map(c => {
+                const toStation = this.editor.getStation(c.to);
+                return { id: c.to, name: toStation ? (toStation.name || c.to) : c.to };
+            });
+
+        const splitRoutingHtml = outgoingConnections.map(conn => {
+            const existing = splitRouting.find(sr => sr.toStationId === conn.id) || {};
+            return `
+                <div class="split-routing-row" data-to="${this._escapeAttr(conn.id)}">
+                    <div style="font-size: 0.8rem; color: #333; margin-bottom: 0.25rem;">→ ${this._escape(conn.name)}</div>
+                    <input type="text" class="property-input split-routing-type" value="${this._escapeAttr(existing.workType || '')}" placeholder="workType">
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="property-group split-config-section">
+                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">搬出ルーティング (Split Routing)</label>
+                <div class="property-hint">各接続先に送るワークType</div>
+                ${splitRoutingHtml || '<div class="property-hint">接続先がありません</div>'}
+            </div>
+        `;
+    }
+
+    _collectMergeInputs() {
+        const rows = this.container.querySelectorAll('.merge-input-row');
+        const inputs = [];
+        rows.forEach(row => {
+            const fromStationId = row.dataset.from;
+            const workType = row.querySelector('.merge-input-type').value.trim();
+            const bufferCapacity = parseInt(row.querySelector('.merge-input-capacity').value) || 1;
+            if (fromStationId) {
+                inputs.push({ fromStationId, workType, bufferCapacity });
+            }
+        });
+        return inputs;
+    }
+
+    _collectMergeRules() {
+        const rows = this.container.querySelectorAll('.merge-rule-row');
+        const rules = [];
+        rows.forEach(row => {
+            const workType = row.querySelector('.merge-rule-type').value.trim();
+            const count = parseInt(row.querySelector('.merge-rule-count').value) || 1;
+            if (workType) {
+                rules.push({ workType, count });
+            }
+        });
+        return rules;
+    }
+
+    _collectSplitRouting() {
+        const rows = this.container.querySelectorAll('.split-routing-row');
+        const routing = [];
+        rows.forEach(row => {
+            const toStationId = row.dataset.to;
+            const workType = row.querySelector('.split-routing-type').value.trim();
+            if (toStationId) {
+                routing.push({ toStationId, workType });
+            }
+        });
+        return routing;
     }
 
     _escape(text) {

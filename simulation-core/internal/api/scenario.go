@@ -84,27 +84,45 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	// Validate station configurations
 	for _, st := range req.Stations {
 		if st.Type == "merge" {
-			if requiredWorkCount, ok := st.Config["requiredWorkCount"].(float64); ok {
-				if requiredWorkCount <= 0 {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: requiredWorkCount must be positive", st.ID))
-					return
-				}
-			} else {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: requiredWorkCount is required", st.ID))
+			// Validate mergeInputs
+			mergeInputs, ok := st.Config["mergeInputs"].([]interface{})
+			if !ok || len(mergeInputs) == 0 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: mergeInputs is required and must be non-empty", st.ID))
 				return
 			}
+			// Validate mergeRules
+			mergeRules, ok := st.Config["mergeRules"].([]interface{})
+			if !ok || len(mergeRules) == 0 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: mergeRules is required and must be non-empty", st.ID))
+				return
+			}
+			// Validate outputWorkType
+			if _, ok := st.Config["outputWorkType"].(string); !ok {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: outputWorkType is required", st.ID))
+				return
+			}
+			// Validate processingTime >= 0
+			if pt, ok := st.Config["processingTime"].(float64); ok && pt < 0 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: processingTime must be >= 0", st.ID))
+				return
+			}
+			_ = mergeInputs
+			_ = mergeRules
 		}
 
 		if st.Type == "split" {
-			if outputWorkCount, ok := st.Config["outputWorkCount"].(float64); ok {
-				if outputWorkCount <= 0 {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: outputWorkCount must be positive", st.ID))
-					return
-				}
-			} else {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: outputWorkCount is required", st.ID))
+			// Validate splitRouting
+			splitRouting, ok := st.Config["splitRouting"].([]interface{})
+			if !ok || len(splitRouting) == 0 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: splitRouting is required and must be non-empty", st.ID))
 				return
 			}
+			// Validate processingTime >= 0
+			if pt, ok := st.Config["processingTime"].(float64); ok && pt < 0 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: processingTime must be >= 0", st.ID))
+				return
+			}
+			_ = splitRouting
 		}
 
 		if st.Type == "inspection" {

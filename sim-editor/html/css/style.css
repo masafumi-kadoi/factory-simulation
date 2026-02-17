@@ -597,6 +597,16 @@ body {
     stroke: #6c757d;
 }
 
+.station-merge rect {
+    fill: rgba(111, 66, 193, 0.2);
+    stroke: #6f42c1;
+}
+
+.station-split rect {
+    fill: rgba(253, 126, 20, 0.2);
+    stroke: #fd7e14;
+}
+
 /* Validation */
 .validation-summary {
     background: #fff3cd;

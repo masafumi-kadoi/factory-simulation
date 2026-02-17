@@ -85,7 +85,7 @@ export class Canvas {
             }
         } else {
             // Clicked on empty space
-            if (tool === 'source' || tool === 'processing' || tool === 'drain') {
+            if (tool === 'source' || tool === 'processing' || tool === 'drain' || tool === 'merge' || tool === 'split') {
                 this.editor.addStation(tool, pt.x, pt.y);
             } else if (tool === 'select') {
                 this.editor.selectItem(null);

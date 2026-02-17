@@ -291,6 +291,8 @@ class ScenarioEditor {
             'source': 'Sourceステーション配置 (S)',
             'processing': 'Processingステーション配置 (P)',
             'drain': 'Drainステーション配置 (R)',
+            'merge': 'Mergeステーション配置（複数ワークを結合）',
+            'split': 'Splitステーション配置（結合ワークを分割）',
             'select': '選択/移動モード (V)',
             'connect': '接続作成モード (C) | Shiftキー押しながらドラッグでも接続作成可能',
             'delete': '削除モード (D) | Deleteキーでも削除可能'
@@ -368,7 +370,8 @@ class ScenarioEditor {
         const defaults = {
             source: {
                 workCount: 3,
-                departureTime: 5.0
+                departureTime: 5.0,
+                workType: ''
             },
             processing: {
                 processingTime: 2.0,
@@ -377,6 +380,20 @@ class ScenarioEditor {
             },
             drain: {
                 arrivalTime: 1.0
+            },
+            merge: {
+                mergeInputs: [],
+                mergeRules: [],
+                outputWorkType: '',
+                processingTime: 3.0,
+                arrivalTime: 1.0,
+                departureTime: 1.0
+            },
+            split: {
+                splitRouting: [],
+                processingTime: 2.0,
+                arrivalTime: 1.0,
+                departureTime: 1.0
             }
         };
         return defaults[type] || {};

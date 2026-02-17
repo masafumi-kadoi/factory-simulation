@@ -97,21 +97,21 @@ export function validateScenario(scenario) {
     scenario.stations.forEach(station => {
         const stationType = station.type;
 
-        // Only validate for basic station types (not future types like merge, split, etc.)
-        if (stationType === 'source' || stationType === 'processing' || stationType === 'drain') {
+        // Only validate for basic station types
+        if (stationType === 'source' || stationType === 'processing' || stationType === 'drain' || stationType === 'merge' || stationType === 'split') {
             // Count outgoing connections (分岐チェック)
             const outgoingCount = scenario.connections.filter(c => c.from === station.id).length;
 
             // Count incoming connections (合流チェック)
             const incomingCount = scenario.connections.filter(c => c.to === station.id).length;
 
-            // Source and Processing can only have 1 outgoing connection
-            if ((stationType === 'source' || stationType === 'processing') && outgoingCount > 1) {
+            // Source, Processing, Merge can only have 1 outgoing connection (Split can have multiple)
+            if ((stationType === 'source' || stationType === 'processing' || stationType === 'merge') && outgoingCount > 1) {
                 errors.push(`${station.id} (${stationType}): 複数のステーションへの分岐は許可されていません（接続数: ${outgoingCount}）`);
             }
 
-            // Processing and Drain can only have 1 incoming connection
-            if ((stationType === 'processing' || stationType === 'drain') && incomingCount > 1) {
+            // Processing, Drain, Split can only have 1 incoming connection (Merge can have multiple)
+            if ((stationType === 'processing' || stationType === 'drain' || stationType === 'split') && incomingCount > 1) {
                 errors.push(`${station.id} (${stationType}): 複数のステーションからの合流は許可されていません（接続数: ${incomingCount}）`);
             }
 
@@ -154,6 +154,32 @@ export function validateStation(station) {
     } else if (station.type === 'drain') {
         if (!config.arrivalTime || config.arrivalTime <= 0) {
             errors.arrivalTime = 'arrivalTimeは0より大きい必要があります';
+        }
+    } else if (station.type === 'merge') {
+        if (config.processingTime != null && config.processingTime < 0) {
+            errors.processingTime = 'processingTimeは0以上である必要があります';
+        }
+        if (!config.arrivalTime || config.arrivalTime <= 0) {
+            errors.arrivalTime = 'arrivalTimeは0より大きい必要があります';
+        }
+        if (!config.departureTime || config.departureTime <= 0) {
+            errors.departureTime = 'departureTimeは0より大きい必要があります';
+        }
+        if (!config.outputWorkType) {
+            errors.outputWorkType = 'outputWorkTypeは必須です';
+        }
+        if (!config.mergeRules || config.mergeRules.length === 0) {
+            errors.mergeRules = 'mergeRulesは1つ以上必要です';
+        }
+    } else if (station.type === 'split') {
+        if (config.processingTime != null && config.processingTime < 0) {
+            errors.processingTime = 'processingTimeは0以上である必要があります';
+        }
+        if (!config.arrivalTime || config.arrivalTime <= 0) {
+            errors.arrivalTime = 'arrivalTimeは0より大きい必要があります';
+        }
+        if (!config.departureTime || config.departureTime <= 0) {
+            errors.departureTime = 'departureTimeは0より大きい必要があります';
         }
     }
 

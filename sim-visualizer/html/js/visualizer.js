@@ -440,6 +440,20 @@ export class Visualizer3D {
         });
         toRemove.forEach(id => this.works.delete(id));
 
+        // Count works per station to offset them when multiple are present
+        const worksPerStation = new Map();
+        activeWorks.forEach((workInfo, workId) => {
+            if (workInfo.state === 'at_station') {
+                if (!worksPerStation.has(workInfo.stationId)) {
+                    worksPerStation.set(workInfo.stationId, []);
+                }
+                worksPerStation.get(workInfo.stationId).push(workId);
+            }
+        });
+
+        // Update buffer count labels on stations
+        this._updateBufferCounts(worksPerStation);
+
         // Add or update works
         activeWorks.forEach((workInfo, workId) => {
             if (!this.works.has(workId)) {
@@ -482,12 +496,25 @@ export class Visualizer3D {
             const work = this.works.get(workId);
 
             if (workInfo.state === 'at_station') {
-                // Work is at station
+                // Work is at station — offset if multiple works are present
                 const station = this.stations.get(workInfo.stationId);
                 if (station) {
-                    const x = station.position.x;
+                    const stationWorks = worksPerStation.get(workInfo.stationId) || [];
+                    const index = stationWorks.indexOf(workId);
+                    const count = stationWorks.length;
+
+                    // Offset works in a circular arrangement when multiple at same station
+                    let offsetX = 0, offsetZ = 0;
+                    if (count > 1) {
+                        const angle = (index / count) * Math.PI * 2;
+                        const radius = 15;
+                        offsetX = Math.cos(angle) * radius;
+                        offsetZ = Math.sin(angle) * radius;
+                    }
+
+                    const x = station.position.x + offsetX;
                     const y = 40;
-                    const z = station.position.z;
+                    const z = station.position.z + offsetZ;
                     work.mesh.position.set(x, y, z);
 
                     // Update label position
@@ -523,16 +550,107 @@ export class Visualizer3D {
         });
     }
 
+    _updateBufferCounts(worksPerStation) {
+        // Show buffer count badges on merge/split stations with multiple works
+        this.stations.forEach((stationData, stationId) => {
+            const count = (worksPerStation.get(stationId) || []).length;
+            const stationType = stationData.mesh.userData.type;
+
+            // Only show buffer counts for merge/split stations (or any station with 2+ works)
+            const showCount = (stationType === 'merge' || stationType === 'split') ? count > 0 : count > 1;
+
+            if (showCount) {
+                if (!stationData.bufferLabel) {
+                    // Create buffer count label
+                    stationData.bufferLabel = this._createBufferLabel(
+                        count,
+                        stationData.position.x + 30,
+                        55,
+                        stationData.position.z
+                    );
+                } else {
+                    // Update existing label text
+                    this._updateBufferLabelText(stationData.bufferLabel, count);
+                }
+                stationData.bufferLabel.visible = true;
+            } else if (stationData.bufferLabel) {
+                stationData.bufferLabel.visible = false;
+            }
+        });
+    }
+
+    _createBufferLabel(count, x, y, z) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+
+        this._drawBufferBadge(ctx, count, canvas.width, canvas.height);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+        const sprite = new THREE.Sprite(material);
+        sprite.position.set(x, y, z);
+        sprite.scale.set(30, 15, 1);
+        sprite.userData = { isBufferLabel: true };
+
+        this.scene.add(sprite);
+        return sprite;
+    }
+
+    _updateBufferLabelText(sprite, count) {
+        const material = sprite.material;
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+
+        this._drawBufferBadge(ctx, count, canvas.width, canvas.height);
+
+        if (material.map) material.map.dispose();
+        material.map = new THREE.CanvasTexture(canvas);
+        material.needsUpdate = true;
+    }
+
+    _drawBufferBadge(ctx, count, w, h) {
+        // Round rectangle background
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = 'rgba(255, 165, 0, 0.85)';
+        const r = 12;
+        ctx.beginPath();
+        ctx.moveTo(r, 0);
+        ctx.lineTo(w - r, 0);
+        ctx.quadraticCurveTo(w, 0, w, r);
+        ctx.lineTo(w, h - r);
+        ctx.quadraticCurveTo(w, h, w - r, h);
+        ctx.lineTo(r, h);
+        ctx.quadraticCurveTo(0, h, 0, h - r);
+        ctx.lineTo(0, r);
+        ctx.quadraticCurveTo(0, 0, r, 0);
+        ctx.closePath();
+        ctx.fill();
+
+        // Text
+        ctx.font = 'Bold 36px Arial';
+        ctx.fillStyle = '#000';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`×${count}`, w / 2, h / 2);
+    }
+
     _easeInOutCubic(t) {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
 
     clear() {
-        // Clear stations
+        // Clear stations (including buffer labels)
         this.stations.forEach(station => {
             this.scene.remove(station.mesh);
             if (station.label) {
                 this.scene.remove(station.label);
+            }
+            if (station.bufferLabel) {
+                this.scene.remove(station.bufferLabel);
             }
         });
         this.stations.clear();
