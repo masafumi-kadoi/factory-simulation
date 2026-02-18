@@ -171,13 +171,13 @@ export function validateStation(station) {
         if (!config.mergeCount || config.mergeCount < 1) {
             errors.mergeCount = 'mergeCountは1以上である必要があります';
         }
-        if (!config.buffers || config.buffers.length === 0) {
-            errors.buffers = 'バッファスロットは1つ以上必要です';
-        } else if (config.buffers.length !== (config.mergeCount || 0)) {
-            errors.buffers = `バッファ数(${config.buffers.length})がmergeCount(${config.mergeCount})と一致しません`;
+        if (!config.ports || config.ports.length === 0) {
+            errors.ports = 'ポートスロットは1つ以上必要です';
+        } else if (config.ports.length !== (config.mergeCount || 0)) {
+            errors.ports = `ポート数(${config.ports.length})がmergeCount(${config.mergeCount})と一致しません`;
         } else {
-            config.buffers.forEach((buf, i) => {
-                if (!buf.capacity || buf.capacity < 1) errors[`buffer_${i}_capacity`] = `バッファ${i+1}のcapacityは1以上必要です`;
+            config.ports.forEach((buf, i) => {
+                if (!buf.capacity || buf.capacity < 1) errors[`port_${i}_capacity`] = `ポート${i+1}のcapacityは1以上必要です`;
             });
         }
     } else if (station.type === 'split') {
@@ -193,10 +193,10 @@ export function validateStation(station) {
         if (!config.splitCount || config.splitCount < 1) {
             errors.splitCount = 'splitCountは1以上である必要があります';
         }
-        if (!config.buffers || config.buffers.length === 0) {
-            errors.buffers = 'バッファスロットは1つ以上必要です';
-        } else if (config.buffers.length !== (config.splitCount || 0)) {
-            errors.buffers = `バッファ数(${config.buffers.length})がsplitCount(${config.splitCount})と一致しません`;
+        if (!config.ports || config.ports.length === 0) {
+            errors.ports = 'ポートスロットは1つ以上必要です';
+        } else if (config.ports.length !== (config.splitCount || 0)) {
+            errors.ports = `ポート数(${config.ports.length})がsplitCount(${config.splitCount})と一致しません`;
         }
     }
 

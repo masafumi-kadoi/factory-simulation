@@ -31,7 +31,7 @@ type WorkEventLog struct {
 	Timestamp        float64
 	EventType        string
 	WorkType         string // Work type (e.g. "partA", "partB")
-	BufferIndex      int    // Buffer slot index (-1 = no buffer)
+	PortIndex      int    // Port slot index (-1 = no port)
 }
 
 // WorkLineageLog represents a log entry for work lineage (traceability)
@@ -103,7 +103,7 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, []WorkLineageLog, error) {
 	simulation := domain.NewSimulation(simulationID, friendlyName, e.scenario.ID)
 
-	// Step 1: Initialize interlock rules, signals, and buffer slots for all stations
+	// Step 1: Initialize interlock rules, signals, and port slots for all stations
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
 		// Load custom interlock rules from config (saved by editor)
@@ -112,7 +112,7 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 			station.InterlockRules = domain.GetDefaultInterlockConfig(station.Type)
 		}
 		station.InitializeSignals()
-		station.InitializeBufferSlots()
+		station.InitializePortSlots()
 	}
 
 	// Step 2: Evaluate rules to set initial control signals
@@ -186,14 +186,14 @@ func (e *Engine) processEvent(event *Event, simulation *domain.Simulation) error
 		return e.handleWorkDeparted(event, station)
 	case EventWorkDestroyed:
 		return e.handleWorkDestroyed(event, station)
-	case EventWorkBuffered:
-		return e.handleWorkBuffered(event, station)
+	case EventWorkPortEntered:
+		return e.handleWorkPortEntered(event, station)
 	case EventMergeCompleted:
 		return e.handleMergeCompleted(event, station)
 	case EventSplitCompleted:
 		return e.handleSplitCompleted(event, station)
-	case EventBufferedWorkDeparted:
-		return e.handleBufferedWorkDeparted(event, station)
+	case EventPortWorkDeparted:
+		return e.handlePortWorkDeparted(event, station)
 	default:
 		return fmt.Errorf("unknown event type: %s", event.Type)
 	}
@@ -266,12 +266,12 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	}
 	delete(e.worksInTransit, *event.WorkID)
 
-	// Merge station: add to InputBuffer instead of CurrentWork
+	// Merge station: add to InputPort instead of CurrentWork
 	if station.Type == domain.StationTypeMerge {
-		bufferIndex := e.findToBufferIndex(*event.WorkID, station.ID)
-		// Clear buffer-level reservation
-		delete(e.reservedStations, e.bufferReservationKey(station.ID, bufferIndex))
-		return e.handleMergeWorkArrived(work, station, bufferIndex)
+		portIndex := e.findToPortIndex(*event.WorkID, station.ID)
+		// Clear port-level reservation
+		delete(e.reservedStations, e.portReservationKey(station.ID, portIndex))
+		return e.handleMergeWorkArrived(work, station, portIndex)
 	}
 
 	// Clear station-level reservation
@@ -315,21 +315,21 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	return nil
 }
 
-// handleMergeWorkArrived handles work arrival at a Merge station's input buffer
-func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Station, bufferIndex int) error {
-	// Add work to the specified InputBuffer slot
-	if err := station.AddWorkToBuffer(work, bufferIndex); err != nil {
+// handleMergeWorkArrived handles work arrival at a Merge station's input port
+func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Station, portIndex int) error {
+	// Add work to the specified InputPort slot
+	if err := station.AddWorkToPort(work, portIndex); err != nil {
 		return err
 	}
 
-	// Log work event with buffer index
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkBuffered), work.Type, bufferIndex)
+	// Log work event with port index
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkPortEntered), work.Type, portIndex)
 	e.logStationStatus(station, "ワークバッファ追加")
 
-	// Update derived signals for this buffer (workPresent, bufferFull)
-	e.updateBufferDerivedSignals(station, bufferIndex, true)
+	// Update derived signals for this port (workPresent, portFull)
+	e.updatePortDerivedSignals(station, portIndex, true)
 
-	// Check merge condition (all buffers have required works)
+	// Check merge condition (all ports have required works)
 	if station.CheckMergeCondition() && !e.mergeInProgress[station.ID] {
 		e.mergeInProgress[station.ID] = true
 
@@ -351,9 +351,9 @@ func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Stati
 	return nil
 }
 
-// handleWorkBuffered handles the WorkBuffered event (for logging/tracking)
-func (e *Engine) handleWorkBuffered(event *Event, station *domain.Station) error {
-	// This event is used for logging. Actual buffer logic is in handleMergeWorkArrived.
+// handleWorkPortEntered handles the WorkPortEntered event (for logging/tracking)
+func (e *Engine) handleWorkPortEntered(event *Event, station *domain.Station) error {
+	// This event is used for logging. Actual port logic is in handleMergeWorkArrived.
 	return nil
 }
 
@@ -370,9 +370,9 @@ func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) err
 	// Record work lineage
 	e.recordWorkLineage(mergedWork.ID, mergedWork.FriendlyName, consumedWorks, "merge", station.ID)
 
-	// Update buffer derived signals (buffers are now empty)
-	for i := range station.InputBufferSlots {
-		e.updateBufferDerivedSignals(station, i, true)
+	// Update port derived signals (ports are now empty)
+	for i := range station.InputPortSlots {
+		e.updatePortDerivedSignals(station, i, true)
 	}
 
 	// Update station signals
@@ -455,20 +455,20 @@ func (e *Engine) handleSplitProcessingCompleted(station *domain.Station) error {
 	// Mark as processing complete first
 	station.State = domain.StateCompleted
 
-	// Execute split (places works into OutputBufferSlots by index, clears CurrentWork)
+	// Execute split (places works into OutputPortSlots by index, clears CurrentWork)
 	splitWorks, err := station.ExecuteSplit(e.generateWorkID)
 	if err != nil {
 		return err
 	}
 
-	// Record work lineage and log events for each split work with buffer index
+	// Record work lineage and log events for each split work with port index
 	for i, splitWork := range splitWorks {
 		e.logWorkEvent(splitWork.ID, splitWork.FriendlyName, station.ID, e.currentTime, string(EventWorkSplit), splitWork.Type, i)
 	}
 
-	// Update derived signals for each output buffer (workPresent, then evaluate outputReady)
-	for i := range station.OutputBufferSlots {
-		e.updateBufferDerivedSignals(station, i, false)
+	// Update derived signals for each output port (workPresent, then evaluate outputReady)
+	for i := range station.OutputPortSlots {
+		e.updatePortDerivedSignals(station, i, false)
 	}
 
 	// Update station-level signals: processingComplete=ON, workPresent=OFF (body is empty after split)
@@ -508,9 +508,9 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return err
 	}
 	if nextStation != nil {
-		// For merge downstream: check buffer-level inputReady
-		if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToBufferIndex >= 0 {
-			if !nextStation.IsBufferInputReady(conn.ToBufferIndex) || e.reservedStations[e.bufferReservationKey(nextStation.ID, conn.ToBufferIndex)] {
+		// For merge downstream: check port-level inputReady
+		if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToPortIndex >= 0 {
+			if !nextStation.IsPortInputReady(conn.ToPortIndex) || e.reservedStations[e.portReservationKey(nextStation.ID, conn.ToPortIndex)] {
 				return nil
 			}
 		} else if !nextStation.IsInputReady() || e.reservedStations[nextStation.ID] {
@@ -541,9 +541,9 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return nil
 	}
 
-	// Reserve destination (buffer-level for merge, station-level otherwise)
-	if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToBufferIndex >= 0 {
-		e.reservedStations[e.bufferReservationKey(nextStation.ID, conn.ToBufferIndex)] = true
+	// Reserve destination (port-level for merge, station-level otherwise)
+	if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToPortIndex >= 0 {
+		e.reservedStations[e.portReservationKey(nextStation.ID, conn.ToPortIndex)] = true
 	} else {
 		e.reservedStations[nextStation.ID] = true
 	}
@@ -574,24 +574,24 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	return nil
 }
 
-// handleBufferedWorkDeparted handles the BufferedWorkDeparted event (for Split OutputBuffer)
-// event.WorkID contains a key like "bufferIndex:N" encoded in the work ID field
-func (e *Engine) handleBufferedWorkDeparted(event *Event, station *domain.Station) error {
+// handlePortWorkDeparted handles the PortWorkDeparted event (for Split OutputPort)
+// event.WorkID contains a key like "port:N" encoded in the work ID field
+func (e *Engine) handlePortWorkDeparted(event *Event, station *domain.Station) error {
 	// Clear pending departure flag
-	bufferIndex := e.findBufferedDepartureIndex(event)
-	if bufferIndex < 0 {
+	portIndex := e.findPortDepartureIndex(event)
+	if portIndex < 0 {
 		return nil
 	}
-	depKey := e.bufferDepartureKey(station.ID, bufferIndex)
+	depKey := e.portDepartureKey(station.ID, portIndex)
 	delete(e.pendingDepartures, depKey)
 
-	// Re-verify: buffer outputReady must still be ON
-	if !station.IsBufferOutputReady(bufferIndex) {
+	// Re-verify: port outputReady must still be ON
+	if !station.IsPortOutputReady(portIndex) {
 		return nil
 	}
 
-	// Find the connection from this buffer
-	conn := e.findConnectionFromBuffer(station.ID, bufferIndex)
+	// Find the connection from this port
+	conn := e.findConnectionFromPort(station.ID, portIndex)
 	if conn == nil {
 		return nil
 	}
@@ -602,8 +602,8 @@ func (e *Engine) handleBufferedWorkDeparted(event *Event, station *domain.Statio
 	}
 
 	// Check downstream readiness
-	if toStation.Type == domain.StationTypeMerge && conn.ToBufferIndex >= 0 {
-		if !toStation.IsBufferInputReady(conn.ToBufferIndex) || e.reservedStations[e.bufferReservationKey(toStation.ID, conn.ToBufferIndex)] {
+	if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
+		if !toStation.IsPortInputReady(conn.ToPortIndex) || e.reservedStations[e.portReservationKey(toStation.ID, conn.ToPortIndex)] {
 			return nil
 		}
 	} else {
@@ -612,17 +612,17 @@ func (e *Engine) handleBufferedWorkDeparted(event *Event, station *domain.Statio
 		}
 	}
 
-	// Get work from the buffer
-	work := station.GetOutputBufferWorkByIndex(bufferIndex)
+	// Get work from the port
+	work := station.GetOutputPortWorkByIndex(portIndex)
 	if work == nil {
 		return nil
 	}
 
-	// Update buffer derived signals
-	e.updateBufferDerivedSignals(station, bufferIndex, false)
+	// Update port derived signals
+	e.updatePortDerivedSignals(station, portIndex, false)
 
-	// Check if all output buffers are empty → reset station for next input
-	if !station.HasOutputBufferWorks() {
+	// Check if all output ports are empty → reset station for next input
+	if !station.HasOutputPortWorks() {
 		station.SetSignal("processingComplete", false)
 		// Evaluate station-level rules to re-enable inputReady
 		if err := e.evaluateAndLogSignals(station); err != nil {
@@ -631,12 +631,12 @@ func (e *Engine) handleBufferedWorkDeparted(event *Event, station *domain.Statio
 	}
 
 	// Log work event
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, bufferIndex)
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, portIndex)
 	e.logStationStatus(station, "ワーク出発(バッファ)")
 
 	// Reserve destination
-	if toStation.Type == domain.StationTypeMerge && conn.ToBufferIndex >= 0 {
-		e.reservedStations[e.bufferReservationKey(toStation.ID, conn.ToBufferIndex)] = true
+	if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
+		e.reservedStations[e.portReservationKey(toStation.ID, conn.ToPortIndex)] = true
 	} else {
 		e.reservedStations[toStation.ID] = true
 	}
@@ -681,7 +681,7 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	return nil
 }
 
-// getNextStation determines the next station based on routing conditions (legacy, non-buffer)
+// getNextStation determines the next station based on routing conditions (legacy, non-port)
 func (e *Engine) getNextStation(fromStation *domain.Station, work *domain.Work) (*domain.Station, error) {
 	station, _, err := e.getNextStationWithConn(fromStation, work)
 	return station, err
@@ -718,82 +718,82 @@ func (e *Engine) getNextStationWithConn(fromStation *domain.Station, work *domai
 	return defaultStation, defaultConn, nil
 }
 
-// findToBufferIndex finds the ToBufferIndex for a work arriving at a merge station.
-// It looks up the buffer reservation to determine which buffer the work was destined for.
-func (e *Engine) findToBufferIndex(workID string, toStationID string) int {
-	// Check which buffer reservation exists for this station
+// findToPortIndex finds the ToPortIndex for a work arriving at a merge station.
+// It looks up the port reservation to determine which port the work was destined for.
+func (e *Engine) findToPortIndex(workID string, toStationID string) int {
+	// Check which port reservation exists for this station
 	for _, conn := range e.scenario.Connections {
-		if conn.To == toStationID && conn.ToBufferIndex >= 0 {
-			resKey := e.bufferReservationKey(toStationID, conn.ToBufferIndex)
+		if conn.To == toStationID && conn.ToPortIndex >= 0 {
+			resKey := e.portReservationKey(toStationID, conn.ToPortIndex)
 			if e.reservedStations[resKey] {
-				return conn.ToBufferIndex
+				return conn.ToPortIndex
 			}
 		}
 	}
-	// Fallback: find first connection to this station with a buffer index
+	// Fallback: find first connection to this station with a port index
 	for _, conn := range e.scenario.Connections {
-		if conn.To == toStationID && conn.ToBufferIndex >= 0 {
-			return conn.ToBufferIndex
+		if conn.To == toStationID && conn.ToPortIndex >= 0 {
+			return conn.ToPortIndex
 		}
 	}
 	return 0
 }
 
-// findConnectionFromBuffer finds the connection from a specific output buffer of a station
-func (e *Engine) findConnectionFromBuffer(stationID string, bufferIndex int) *domain.Connection {
+// findConnectionFromPort finds the connection from a specific output port of a station
+func (e *Engine) findConnectionFromPort(stationID string, portIndex int) *domain.Connection {
 	for i, conn := range e.scenario.Connections {
-		if conn.From == stationID && conn.FromBufferIndex == bufferIndex {
+		if conn.From == stationID && conn.FromPortIndex == portIndex {
 			return &e.scenario.Connections[i]
 		}
 	}
 	return nil
 }
 
-// findConnectionToBuffer finds the connection to a specific input buffer of a station
-func (e *Engine) findConnectionToBuffer(stationID string, bufferIndex int) *domain.Connection {
+// findConnectionToPort finds the connection to a specific input port of a station
+func (e *Engine) findConnectionToPort(stationID string, portIndex int) *domain.Connection {
 	for i, conn := range e.scenario.Connections {
-		if conn.To == stationID && conn.ToBufferIndex == bufferIndex {
+		if conn.To == stationID && conn.ToPortIndex == portIndex {
 			return &e.scenario.Connections[i]
 		}
 	}
 	return nil
 }
 
-// bufferReservationKey creates a unique key for buffer-level reservation
-func (e *Engine) bufferReservationKey(stationID string, bufferIndex int) string {
-	return fmt.Sprintf("%s:buf:%d", stationID, bufferIndex)
+// portReservationKey creates a unique key for port-level reservation
+func (e *Engine) portReservationKey(stationID string, portIndex int) string {
+	return fmt.Sprintf("%s:port:%d", stationID, portIndex)
 }
 
-// bufferDepartureKey creates a unique key for buffer-level pending departures
-func (e *Engine) bufferDepartureKey(stationID string, bufferIndex int) string {
-	return fmt.Sprintf("%s:bufdep:%d", stationID, bufferIndex)
+// portDepartureKey creates a unique key for port-level pending departures
+func (e *Engine) portDepartureKey(stationID string, portIndex int) string {
+	return fmt.Sprintf("%s:portdep:%d", stationID, portIndex)
 }
 
-// findBufferedDepartureIndex extracts the buffer index from a BufferedWorkDeparted event
-func (e *Engine) findBufferedDepartureIndex(event *Event) int {
+// findPortDepartureIndex extracts the port index from a PortWorkDeparted event
+func (e *Engine) findPortDepartureIndex(event *Event) int {
 	if event.WorkID == nil {
 		return -1
 	}
-	// WorkID is encoded as "buffer:N" for buffered departures
+	// WorkID is encoded as "port:N" for port departures
 	var idx int
-	if _, err := fmt.Sscanf(*event.WorkID, "buffer:%d", &idx); err == nil {
+	if _, err := fmt.Sscanf(*event.WorkID, "port:%d", &idx); err == nil {
 		return idx
 	}
 	return -1
 }
 
-// updateBufferDerivedSignals updates workPresent and bufferFull signals for a buffer, then evaluates buffer rules
-func (e *Engine) updateBufferDerivedSignals(station *domain.Station, bufferIndex int, isInput bool) {
-	var slots []domain.BufferSlot
+// updatePortDerivedSignals updates workPresent and portFull signals for a port, then evaluates port rules
+func (e *Engine) updatePortDerivedSignals(station *domain.Station, portIndex int, isInput bool) {
+	var slots []domain.PortSlot
 	if isInput {
-		slots = station.InputBufferSlots
+		slots = station.InputPortSlots
 	} else {
-		slots = station.OutputBufferSlots
+		slots = station.OutputPortSlots
 	}
-	if bufferIndex < 0 || bufferIndex >= len(slots) {
+	if portIndex < 0 || portIndex >= len(slots) {
 		return
 	}
-	slot := &slots[bufferIndex]
+	slot := &slots[portIndex]
 
 	// Update derived signals
 	hasWorks := len(slot.Works) > 0
@@ -803,41 +803,41 @@ func (e *Engine) updateBufferDerivedSignals(station *domain.Station, bufferIndex
 		slot.Signals = make(map[string]bool)
 	}
 	slot.Signals["workPresent"] = hasWorks
-	if _, exists := slot.Signals["bufferFull"]; exists || isInput {
-		slot.Signals["bufferFull"] = isFull
+	if _, exists := slot.Signals["portFull"]; exists || isInput {
+		slot.Signals["portFull"] = isFull
 	}
 
-	// Update workType derived signal for buffer
+	// Update workType derived signal for port
 	if hasWorks {
 		setWorkTypeSignal(slot.Signals, slot.Works[0].Type)
 	} else {
 		clearWorkTypeSignals(slot.Signals)
 	}
 
-	// Evaluate per-buffer interlock rules
-	e.evaluateBufferRules(station, bufferIndex, isInput)
+	// Evaluate per-port interlock rules
+	e.evaluatePortRules(station, portIndex, isInput)
 
 	// Write back (slices are reference types but we took a pointer)
 	if isInput {
-		station.InputBufferSlots[bufferIndex] = *slot
+		station.InputPortSlots[portIndex] = *slot
 	} else {
-		station.OutputBufferSlots[bufferIndex] = *slot
+		station.OutputPortSlots[portIndex] = *slot
 	}
 }
 
-// evaluateBufferRules evaluates interlock rules for a specific buffer slot
-func (e *Engine) evaluateBufferRules(station *domain.Station, bufferIndex int, isInput bool) {
-	var slot *domain.BufferSlot
+// evaluatePortRules evaluates interlock rules for a specific port slot
+func (e *Engine) evaluatePortRules(station *domain.Station, portIndex int, isInput bool) {
+	var slot *domain.PortSlot
 	if isInput {
-		if bufferIndex < 0 || bufferIndex >= len(station.InputBufferSlots) {
+		if portIndex < 0 || portIndex >= len(station.InputPortSlots) {
 			return
 		}
-		slot = &station.InputBufferSlots[bufferIndex]
+		slot = &station.InputPortSlots[portIndex]
 	} else {
-		if bufferIndex < 0 || bufferIndex >= len(station.OutputBufferSlots) {
+		if portIndex < 0 || portIndex >= len(station.OutputPortSlots) {
 			return
 		}
-		slot = &station.OutputBufferSlots[bufferIndex]
+		slot = &station.OutputPortSlots[portIndex]
 	}
 
 	if slot.InterlockRules == nil || slot.Signals == nil {
@@ -851,7 +851,7 @@ func (e *Engine) evaluateBufferRules(station *domain.Station, bufferIndex int, i
 		changed = false
 		iterations++
 		for _, rule := range slot.InterlockRules.Rules {
-			if allBufferConditionsMet(rule.Conditions, slot.Signals) {
+			if allPortConditionsMet(rule.Conditions, slot.Signals) {
 				if slot.Signals[rule.Target] != rule.Value {
 					slot.Signals[rule.Target] = rule.Value
 					changed = true
@@ -861,13 +861,13 @@ func (e *Engine) evaluateBufferRules(station *domain.Station, bufferIndex int, i
 	}
 }
 
-// allBufferConditionsMet checks if all conditions are met using buffer-local signals
-func allBufferConditionsMet(conditions []domain.RuleCondition, signals map[string]bool) bool {
+// allPortConditionsMet checks if all conditions are met using port-local signals
+func allPortConditionsMet(conditions []domain.RuleCondition, signals map[string]bool) bool {
 	if len(conditions) == 0 {
 		return false
 	}
 	for _, cond := range conditions {
-		// Buffer rules only reference local signals (stationID is ignored)
+		// Port rules only reference local signals (stationID is ignored)
 		if signals[cond.Signal] != cond.Value {
 			return false
 		}
@@ -905,16 +905,16 @@ func (e *Engine) findWorkByID(workID string) *domain.Work {
 		if station.CurrentWork != nil && station.CurrentWork.ID == workID {
 			return station.CurrentWork
 		}
-		// Check InputBufferSlots
-		for _, slot := range station.InputBufferSlots {
+		// Check InputPortSlots
+		for _, slot := range station.InputPortSlots {
 			for _, work := range slot.Works {
 				if work.ID == workID {
 					return work
 				}
 			}
 		}
-		// Check OutputBufferSlots
-		for _, slot := range station.OutputBufferSlots {
+		// Check OutputPortSlots
+		for _, slot := range station.OutputPortSlots {
 			for _, work := range slot.Works {
 				if work.ID == workID {
 					return work
@@ -926,7 +926,7 @@ func (e *Engine) findWorkByID(workID string) *domain.Work {
 }
 
 // logWorkEvent logs a work event
-func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timestamp float64, eventType string, workType string, bufferIndex int) {
+func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timestamp float64, eventType string, workType string, portIndex int) {
 	e.workEventLogs = append(e.workEventLogs, WorkEventLog{
 		WorkID:           workID,
 		WorkFriendlyName: workFriendlyName,
@@ -934,7 +934,7 @@ func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timest
 		Timestamp:        timestamp,
 		EventType:        eventType,
 		WorkType:         workType,
-		BufferIndex:      bufferIndex,
+		PortIndex:      portIndex,
 	})
 }
 
@@ -1079,7 +1079,7 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 
 // checkHandshakes checks if transfer handshakes are satisfied after signal changes.
 // A transfer begins when upstream.outputReady=ON AND downstream.inputReady=ON.
-// For Merge: uses per-buffer inputReady. For Split: uses per-buffer outputReady.
+// For Merge: uses per-port inputReady. For Split: uses per-port outputReady.
 func (e *Engine) checkHandshakes(station *domain.Station) error {
 	// Case 1: This station is upstream (non-Split) — its outputReady may have just turned ON
 	if station.Type != domain.StationTypeSplit && station.IsOutputReady() && station.CurrentWork != nil && !e.pendingDepartures[station.ID] {
@@ -1093,10 +1093,10 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 			}
 
 			// Check downstream readiness
-			if toStation.Type == domain.StationTypeMerge && conn.ToBufferIndex >= 0 {
-				// Merge downstream: check per-buffer inputReady
-				resKey := e.bufferReservationKey(toStation.ID, conn.ToBufferIndex)
-				if toStation.IsBufferInputReady(conn.ToBufferIndex) && !e.reservedStations[resKey] {
+			if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
+				// Merge downstream: check per-port inputReady
+				resKey := e.portReservationKey(toStation.ID, conn.ToPortIndex)
+				if toStation.IsPortInputReady(conn.ToPortIndex) && !e.reservedStations[resKey] {
 					e.pendingDepartures[station.ID] = true
 					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
 					break
@@ -1112,17 +1112,17 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 		}
 	}
 
-	// Case 1b: This station is Split — check each output buffer's outputReady
+	// Case 1b: This station is Split — check each output port's outputReady
 	if station.Type == domain.StationTypeSplit {
-		for bufIdx := range station.OutputBufferSlots {
-			if !station.IsBufferOutputReady(bufIdx) {
+		for bufIdx := range station.OutputPortSlots {
+			if !station.IsPortOutputReady(bufIdx) {
 				continue
 			}
-			depKey := e.bufferDepartureKey(station.ID, bufIdx)
+			depKey := e.portDepartureKey(station.ID, bufIdx)
 			if e.pendingDepartures[depKey] {
 				continue
 			}
-			conn := e.findConnectionFromBuffer(station.ID, bufIdx)
+			conn := e.findConnectionFromPort(station.ID, bufIdx)
 			if conn == nil {
 				continue
 			}
@@ -1133,17 +1133,17 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 
 			// Check downstream readiness
 			ready := false
-			if toStation.Type == domain.StationTypeMerge && conn.ToBufferIndex >= 0 {
-				resKey := e.bufferReservationKey(toStation.ID, conn.ToBufferIndex)
-				ready = toStation.IsBufferInputReady(conn.ToBufferIndex) && !e.reservedStations[resKey]
+			if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
+				resKey := e.portReservationKey(toStation.ID, conn.ToPortIndex)
+				ready = toStation.IsPortInputReady(conn.ToPortIndex) && !e.reservedStations[resKey]
 			} else {
 				ready = toStation.IsInputReady() && !e.reservedStations[toStation.ID]
 			}
 
 			if ready {
 				e.pendingDepartures[depKey] = true
-				bufIdxStr := fmt.Sprintf("buffer:%d", bufIdx)
-				e.eventQueue.Push(NewEvent(EventBufferedWorkDeparted, e.currentTime, station.ID, &bufIdxStr))
+				bufIdxStr := fmt.Sprintf("port:%d", bufIdx)
+				e.eventQueue.Push(NewEvent(EventPortWorkDeparted, e.currentTime, station.ID, &bufIdxStr))
 			}
 		}
 	}
@@ -1160,13 +1160,13 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 			}
 
 			// Check upstream readiness
-			if fromStation.Type == domain.StationTypeSplit && conn.FromBufferIndex >= 0 {
-				// Split upstream: check per-buffer outputReady
-				depKey := e.bufferDepartureKey(fromStation.ID, conn.FromBufferIndex)
-				if fromStation.IsBufferOutputReady(conn.FromBufferIndex) && !e.pendingDepartures[depKey] {
+			if fromStation.Type == domain.StationTypeSplit && conn.FromPortIndex >= 0 {
+				// Split upstream: check per-port outputReady
+				depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
+				if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
 					e.pendingDepartures[depKey] = true
-					bufIdxStr := fmt.Sprintf("buffer:%d", conn.FromBufferIndex)
-					e.eventQueue.Push(NewEvent(EventBufferedWorkDeparted, e.currentTime, fromStation.ID, &bufIdxStr))
+					bufIdxStr := fmt.Sprintf("port:%d", conn.FromPortIndex)
+					e.eventQueue.Push(NewEvent(EventPortWorkDeparted, e.currentTime, fromStation.ID, &bufIdxStr))
 				}
 			} else {
 				// Normal upstream: check station-level outputReady
@@ -1178,14 +1178,14 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 		}
 	}
 
-	// Case 2b: This station is Merge — check each input buffer's inputReady
+	// Case 2b: This station is Merge — check each input port's inputReady
 	if station.Type == domain.StationTypeMerge {
-		for bufIdx := range station.InputBufferSlots {
-			resKey := e.bufferReservationKey(station.ID, bufIdx)
-			if !station.IsBufferInputReady(bufIdx) || e.reservedStations[resKey] {
+		for bufIdx := range station.InputPortSlots {
+			resKey := e.portReservationKey(station.ID, bufIdx)
+			if !station.IsPortInputReady(bufIdx) || e.reservedStations[resKey] {
 				continue
 			}
-			conn := e.findConnectionToBuffer(station.ID, bufIdx)
+			conn := e.findConnectionToPort(station.ID, bufIdx)
 			if conn == nil {
 				continue
 			}
@@ -1194,12 +1194,12 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 				continue
 			}
 
-			if fromStation.Type == domain.StationTypeSplit && conn.FromBufferIndex >= 0 {
-				depKey := e.bufferDepartureKey(fromStation.ID, conn.FromBufferIndex)
-				if fromStation.IsBufferOutputReady(conn.FromBufferIndex) && !e.pendingDepartures[depKey] {
+			if fromStation.Type == domain.StationTypeSplit && conn.FromPortIndex >= 0 {
+				depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
+				if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
 					e.pendingDepartures[depKey] = true
-					bufIdxStr := fmt.Sprintf("buffer:%d", conn.FromBufferIndex)
-					e.eventQueue.Push(NewEvent(EventBufferedWorkDeparted, e.currentTime, fromStation.ID, &bufIdxStr))
+					bufIdxStr := fmt.Sprintf("port:%d", conn.FromPortIndex)
+					e.eventQueue.Push(NewEvent(EventPortWorkDeparted, e.currentTime, fromStation.ID, &bufIdxStr))
 				}
 			} else {
 				if fromStation.IsOutputReady() && fromStation.CurrentWork != nil && !e.pendingDepartures[fromStation.ID] {

@@ -8,7 +8,7 @@ export const SIGNAL_DISPLAY = {
     inputReady:         { label: '搬入可 (IR)',      abbr: 'IR' },
     outputReady:        { label: '搬出可 (OR)',      abbr: 'OR' },
     mergeReady:         { label: '結合可 (MR)',      abbr: 'MR' },
-    bufferFull:         { label: 'バッファ満杯 (BF)', abbr: 'BF' }
+    portFull:         { label: 'ポート満杯 (PF)', abbr: 'PF' }
 };
 
 /**

@@ -16,12 +16,12 @@ const (
 	EventWorkRouted          EventType = "WorkRouted"
 
 	// Merge events
-	EventWorkBuffered   EventType = "WorkBuffered"   // Work added to Merge InputBuffer
+	EventWorkPortEntered   EventType = "WorkPortEntered"   // Work added to Merge InputPort
 	EventMergeCompleted EventType = "MergeCompleted"  // Merge processing completed
 
 	// Split events
 	EventSplitCompleted        EventType = "SplitCompleted"        // Split processing completed
-	EventBufferedWorkDeparted  EventType = "BufferedWorkDeparted"  // Work departed from Split OutputBuffer
+	EventPortWorkDeparted  EventType = "PortWorkDeparted"  // Work departed from Split OutputPort
 )
 
 // Event represents a simulation event

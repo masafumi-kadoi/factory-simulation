@@ -174,7 +174,7 @@ func TestEngine_MergeSplitScenario(t *testing.T) {
 		*domain.NewStation("merge-1", domain.StationTypeMerge, map[string]interface{}{
 			"mergeCount": float64(2), "processingTime": float64(3.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
 			"outputWorkType": "piyo",
-			"buffers": []interface{}{
+			"ports": []interface{}{
 				map[string]interface{}{"capacity": float64(1)},
 				map[string]interface{}{"capacity": float64(1)},
 			},
@@ -184,7 +184,7 @@ func TestEngine_MergeSplitScenario(t *testing.T) {
 		}),
 		*domain.NewStation("split-1", domain.StationTypeSplit, map[string]interface{}{
 			"splitCount": float64(2), "processingTime": float64(2.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
-			"buffers": []interface{}{
+			"ports": []interface{}{
 				map[string]interface{}{"capacity": float64(1)},
 				map[string]interface{}{"capacity": float64(1)},
 			},
@@ -204,16 +204,16 @@ func TestEngine_MergeSplitScenario(t *testing.T) {
 	}
 
 	connections := []domain.Connection{
-		{From: "src-1", To: "proc-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
-		{From: "src-2", To: "proc-2", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
-		{From: "proc-1", To: "merge-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: 0},
-		{From: "proc-2", To: "merge-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: 1},
-		{From: "merge-1", To: "proc-3", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
-		{From: "proc-3", To: "split-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
-		{From: "split-1", To: "proc-4", Condition: domain.RoutingDefault, FromBufferIndex: 0, ToBufferIndex: -1},
-		{From: "split-1", To: "proc-5", Condition: domain.RoutingDefault, FromBufferIndex: 1, ToBufferIndex: -1},
-		{From: "proc-4", To: "drain-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
-		{From: "proc-5", To: "drain-2", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
+		{From: "src-1", To: "proc-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+		{From: "src-2", To: "proc-2", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+		{From: "proc-1", To: "merge-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 0},
+		{From: "proc-2", To: "merge-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 1},
+		{From: "merge-1", To: "proc-3", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+		{From: "proc-3", To: "split-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+		{From: "split-1", To: "proc-4", Condition: domain.RoutingDefault, FromPortIndex: 0, ToPortIndex: -1},
+		{From: "split-1", To: "proc-5", Condition: domain.RoutingDefault, FromPortIndex: 1, ToPortIndex: -1},
+		{From: "proc-4", To: "drain-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+		{From: "proc-5", To: "drain-2", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
 	}
 
 	scenario := domain.NewScenario("test-merge-split", "MergeSplit Test", stations, connections)
@@ -225,7 +225,7 @@ func TestEngine_MergeSplitScenario(t *testing.T) {
 
 	t.Logf("Simulation ended: status=%s, endTime=%v", sim.Status, sim.EndTime)
 	for _, we := range workEvents {
-		t.Logf("  [%.2f] %s work=%s station=%s bufIdx=%d", we.Timestamp, we.EventType, we.WorkFriendlyName, we.StationID, we.BufferIndex)
+		t.Logf("  [%.2f] %s work=%s station=%s bufIdx=%d", we.Timestamp, we.EventType, we.WorkFriendlyName, we.StationID, we.PortIndex)
 	}
 }
 

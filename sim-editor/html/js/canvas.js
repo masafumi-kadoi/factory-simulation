@@ -15,7 +15,7 @@ export class Canvas {
 
         // Connection drag state
         this.connectFrom = null;
-        this.connectFromBufferIndex = -1; // Buffer index for Split output buffer
+        this.connectFromPortIndex = -1; // Port index for Split output port
         this.connectionDragLine = null; // Temporary line during connection drag
         this.isDraggingConnection = false;
 
@@ -25,8 +25,8 @@ export class Canvas {
         this.connectDragStartSVG = { x: 0, y: 0 }; // SVG coords at mousedown
         this.connectDragThreshold = 5; // pixels of movement before drag mode activates
         this.connectDragPendingStationId = null;
-        this.connectDragPendingBufferIndex = -1;
-        this.connectDragPendingIsBuffer = false;
+        this.connectDragPendingPortIndex = -1;
+        this.connectDragPendingIsPort = false;
         this.suppressNextClick = false; // suppress click event after drag-based connection
 
         // Pan/Zoom state
@@ -78,15 +78,15 @@ export class Canvas {
         // Get SVG coordinates
         const pt = this._getSVGPoint(e);
 
-        // Check if clicked on buffer slot
-        const bufferSlot = target.closest('.buffer-slot');
-        if (bufferSlot) {
-            const stationId = bufferSlot.dataset.stationId;
-            const bufferIndex = parseInt(bufferSlot.dataset.bufferIndex);
-            const bufferType = bufferSlot.dataset.bufferType; // 'input' or 'output'
+        // Check if clicked on port slot
+        const portSlot = target.closest('.port-slot');
+        if (portSlot) {
+            const stationId = portSlot.dataset.stationId;
+            const portIndex = parseInt(portSlot.dataset.portIndex);
+            const portType = portSlot.dataset.portType; // 'input' or 'output'
 
             if (tool === 'connect') {
-                this._handleBufferConnectClick(stationId, bufferIndex, bufferType);
+                this._handlePortConnectClick(stationId, portIndex, portType);
                 return;
             } else if (tool === 'select') {
                 this.editor.selectItem({ type: 'station', id: stationId });
@@ -126,56 +126,56 @@ export class Canvas {
         }
     }
 
-    _handleBufferConnectClick(stationId, bufferIndex, bufferType) {
+    _handlePortConnectClick(stationId, portIndex, portType) {
         const station = this.editor.getStation(stationId);
         if (!station) return;
 
-        if (bufferType === 'input') {
-            // Merge input buffer: this is a connection TARGET
+        if (portType === 'input') {
+            // Merge input port: this is a connection TARGET
             if (this.connectFrom === null) {
-                // Can't start a connection from an input buffer
-                document.getElementById('canvas-info').textContent = '入力バッファからは接続開始できません。上流ステーションからドラッグしてください。';
+                // Can't start a connection from an input port
+                document.getElementById('canvas-info').textContent = '入力ポートからは接続開始できません。上流ステーションからドラッグしてください。';
                 return;
             }
-            // Check if this buffer already has a connection
-            if (this._isBufferConnected(stationId, bufferIndex, 'input')) {
-                alert('このバッファには既に接続があります');
+            // Check if this port already has a connection
+            if (this._isPortConnected(stationId, portIndex, 'input')) {
+                alert('このポートには既に接続があります');
                 this.connectFrom = null;
-                this.connectFromBufferIndex = -1;
+                this.connectFromPortIndex = -1;
                 return;
             }
-            // Create connection to this buffer
-            this.editor.addConnection(this.connectFrom, stationId, this.connectFromBufferIndex, bufferIndex);
+            // Create connection to this port
+            this.editor.addConnection(this.connectFrom, stationId, this.connectFromPortIndex, portIndex);
             this.connectFrom = null;
-            this.connectFromBufferIndex = -1;
+            this.connectFromPortIndex = -1;
             document.getElementById('canvas-info').textContent = 'ステーションをクリックして接続作成';
-        } else if (bufferType === 'output') {
-            // Split output buffer: this is a connection SOURCE
+        } else if (portType === 'output') {
+            // Split output port: this is a connection SOURCE
             if (this.connectFrom !== null) {
-                // Already have a source; can't use output buffer as target
-                document.getElementById('canvas-info').textContent = '出力バッファは接続先として使用できません';
+                // Already have a source; can't use output port as target
+                document.getElementById('canvas-info').textContent = '出力ポートは接続先として使用できません';
                 this.connectFrom = null;
-                this.connectFromBufferIndex = -1;
+                this.connectFromPortIndex = -1;
                 return;
             }
-            // Check if this buffer already has a connection
-            if (this._isBufferConnected(stationId, bufferIndex, 'output')) {
-                alert('このバッファには既に接続があります');
+            // Check if this port already has a connection
+            if (this._isPortConnected(stationId, portIndex, 'output')) {
+                alert('このポートには既に接続があります');
                 return;
             }
-            // Set as connection source
+            // Set as connection source from port
             this.connectFrom = stationId;
-            this.connectFromBufferIndex = bufferIndex;
-            document.getElementById('canvas-info').textContent = `${stationId}[buf${bufferIndex}] から接続 → 次のステーション/バッファをクリック`;
+            this.connectFromPortIndex = portIndex;
+            document.getElementById('canvas-info').textContent = `${stationId}[port${portIndex}] から接続 → 次のステーション/ポートをクリック`;
         }
     }
 
-    _isBufferConnected(stationId, bufferIndex, bufferType) {
+    _isPortConnected(stationId, portIndex, portType) {
         return this.editor.scenario.connections.some(c => {
-            if (bufferType === 'input') {
-                return c.to === stationId && c.toBufferIndex === bufferIndex;
+            if (portType === 'input') {
+                return c.to === stationId && c.toPortIndex === portIndex;
             } else {
-                return c.from === stationId && c.fromBufferIndex === bufferIndex;
+                return c.from === stationId && c.fromPortIndex === portIndex;
             }
         });
     }
@@ -185,32 +185,32 @@ export class Canvas {
             // First click - set source
             const station = this.editor.getStation(stationId);
             if (station && station.type === 'split') {
-                // For split stations, user should click on a specific output buffer
-                document.getElementById('canvas-info').textContent = 'Splitステーションの出力バッファをクリックしてください';
+                // For split stations, user should click on a specific output port
+                document.getElementById('canvas-info').textContent = 'Splitステーションの出力ポートをクリックしてください';
                 return;
             }
             this.connectFrom = stationId;
-            this.connectFromBufferIndex = -1;
-            document.getElementById('canvas-info').textContent = `${stationId} から接続 → 次のステーション/バッファをクリック`;
+            this.connectFromPortIndex = -1;
+            document.getElementById('canvas-info').textContent = `${stationId} から接続 → 次のステーション/ポートをクリック`;
         } else {
             // Second click - create connection
             if (this.connectFrom === stationId) {
                 alert('同じステーションには接続できません');
                 this.connectFrom = null;
-                this.connectFromBufferIndex = -1;
+                this.connectFromPortIndex = -1;
                 return;
             }
 
             const toStation = this.editor.getStation(stationId);
             if (toStation && toStation.type === 'merge') {
-                // For merge stations, user should click on a specific input buffer
-                document.getElementById('canvas-info').textContent = 'Mergeステーションの入力バッファをクリックしてください';
+                // For merge stations, user should click on a specific input port
+                document.getElementById('canvas-info').textContent = 'Mergeステーションの入力ポートをクリックしてください';
                 return;
             }
 
-            this.editor.addConnection(this.connectFrom, stationId, this.connectFromBufferIndex, -1);
+            this.editor.addConnection(this.connectFrom, stationId, this.connectFromPortIndex, -1);
             this.connectFrom = null;
-            this.connectFromBufferIndex = -1;
+            this.connectFromPortIndex = -1;
             document.getElementById('canvas-info').textContent = 'ステーションをクリックして接続作成';
         }
     }
@@ -229,17 +229,17 @@ export class Canvas {
         // Left button (button 0)
         if (e.button === 0) {
             const station = e.target.closest('.station');
-            const bufferSlot = e.target.closest('.buffer-slot');
+            const portSlot = e.target.closest('.port-slot');
 
-            // Check if clicking on buffer slot for connection drag
-            if (bufferSlot && (this.editor.currentTool === 'connect' || e.shiftKey)) {
-                const stationId = bufferSlot.dataset.stationId;
-                const bufferIndex = parseInt(bufferSlot.dataset.bufferIndex);
-                const bufferType = bufferSlot.dataset.bufferType;
+            // Check if clicking on port slot for connection drag
+            if (portSlot && (this.editor.currentTool === 'connect' || e.shiftKey)) {
+                const stationId = portSlot.dataset.stationId;
+                const portIndex = parseInt(portSlot.dataset.portIndex);
+                const portType = portSlot.dataset.portType;
 
-                // Only start drag from output buffers (split)
-                if (bufferType === 'output') {
-                    if (this._isBufferConnected(stationId, bufferIndex, 'output')) {
+                // Only start drag from output ports (split)
+                if (portType === 'output') {
+                    if (this._isPortConnected(stationId, portIndex, 'output')) {
                         return; // Already connected
                     }
                     // Record pending drag start (don't create drag line yet)
@@ -247,8 +247,8 @@ export class Canvas {
                     this.connectDragStartClient = { x: e.clientX, y: e.clientY };
                     this.connectDragStartSVG = { x: pt.x, y: pt.y };
                     this.connectDragPendingStationId = stationId;
-                    this.connectDragPendingBufferIndex = bufferIndex;
-                    this.connectDragPendingIsBuffer = true;
+                    this.connectDragPendingPortIndex = portIndex;
+                    this.connectDragPendingIsPort = true;
 
                     e.preventDefault();
                     return;
@@ -256,11 +256,11 @@ export class Canvas {
             }
 
             // Check if clicking on station edge for connection drag (connect mode or holding Shift)
-            if (station && !bufferSlot && (this.editor.currentTool === 'connect' || e.shiftKey)) {
+            if (station && !portSlot && (this.editor.currentTool === 'connect' || e.shiftKey)) {
                 const stationId = station.dataset.stationId;
                 const stationData = this.editor.getStation(stationId);
 
-                // Don't start connection drag from split stations (must use buffers)
+                // Don't start connection drag from split stations (must use ports)
                 if (stationData && stationData.type === 'split') {
                     return;
                 }
@@ -270,15 +270,15 @@ export class Canvas {
                 this.connectDragStartClient = { x: e.clientX, y: e.clientY };
                 this.connectDragStartSVG = { x: pt.x, y: pt.y };
                 this.connectDragPendingStationId = stationId;
-                this.connectDragPendingBufferIndex = -1;
-                this.connectDragPendingIsBuffer = false;
+                this.connectDragPendingPortIndex = -1;
+                this.connectDragPendingIsPort = false;
 
                 e.preventDefault();
                 return;
             }
 
             // Station drag (select mode only, no Shift)
-            if (station && !bufferSlot && this.editor.currentTool === 'select' && !e.shiftKey) {
+            if (station && !portSlot && this.editor.currentTool === 'select' && !e.shiftKey) {
                 const stationId = station.dataset.stationId;
                 const stationData = this.editor.getStation(stationId);
                 if (!stationData) return;
@@ -325,7 +325,7 @@ export class Canvas {
                 this.connectDragPending = false;
                 this.isDraggingConnection = true;
                 this.connectFrom = this.connectDragPendingStationId;
-                this.connectFromBufferIndex = this.connectDragPendingBufferIndex;
+                this.connectFromPortIndex = this.connectDragPendingPortIndex;
 
                 // Create temporary drag line from original mousedown position
                 this.connectionDragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -371,7 +371,7 @@ export class Canvas {
         // Handle pending connection drag that didn't exceed threshold (= click)
         if (this.connectDragPending) {
             this.connectDragPending = false;
-            // Don't set connectFrom here; let the click event handle it via _handleConnectClick/_handleBufferConnectClick
+            // Don't set connectFrom here; let the click event handle it via _handleConnectClick/_handlePortConnectClick
             return;
         }
 
@@ -383,36 +383,36 @@ export class Canvas {
                 this.connectionDragLine = null;
             }
 
-            // Check if mouse is over a buffer slot or station
-            const bufferSlot = e.target.closest('.buffer-slot');
+            // Check if mouse is over a port slot or station
+            const portSlot = e.target.closest('.port-slot');
             const station = e.target.closest('.station');
 
-            if (bufferSlot && this.connectFrom) {
-                const toStationId = bufferSlot.dataset.stationId;
-                const toBufferIndex = parseInt(bufferSlot.dataset.bufferIndex);
-                const bufferType = bufferSlot.dataset.bufferType;
+            if (portSlot && this.connectFrom) {
+                const toStationId = portSlot.dataset.stationId;
+                const toPortIndex = parseInt(portSlot.dataset.portIndex);
+                const portType = portSlot.dataset.portType;
 
-                if (bufferType === 'input' && toStationId !== this.connectFrom) {
-                    if (!this._isBufferConnected(toStationId, toBufferIndex, 'input')) {
-                        this.editor.addConnection(this.connectFrom, toStationId, this.connectFromBufferIndex, toBufferIndex);
+                if (portType === 'input' && toStationId !== this.connectFrom) {
+                    if (!this._isPortConnected(toStationId, toPortIndex, 'input')) {
+                        this.editor.addConnection(this.connectFrom, toStationId, this.connectFromPortIndex, toPortIndex);
                     }
                 }
             } else if (station && this.connectFrom) {
                 const toId = station.dataset.stationId;
                 if (toId !== this.connectFrom) {
                     const toStation = this.editor.getStation(toId);
-                    // If dropping on a merge station, user should target a buffer
+                    // If dropping on a merge station, user should target a port
                     if (toStation && toStation.type === 'merge') {
-                        // Don't create connection - need to target a buffer
+                        // Don't create connection - need to target a port
                     } else {
-                        this.editor.addConnection(this.connectFrom, toId, this.connectFromBufferIndex, -1);
+                        this.editor.addConnection(this.connectFrom, toId, this.connectFromPortIndex, -1);
                     }
                 }
             }
 
             this.isDraggingConnection = false;
             this.connectFrom = null;
-            this.connectFromBufferIndex = -1;
+            this.connectFromPortIndex = -1;
             this.suppressNextClick = true; // suppress the click event that follows mouseup
             return;
         }
@@ -537,41 +537,41 @@ export class Canvas {
             g.appendChild(rect);
             g.appendChild(text);
 
-            // Render buffer slots for Merge/Split
+            // Render port slots for Merge/Split
             if (station.type === 'merge') {
-                this._renderMergeBuffers(g, station);
+                this._renderMergePorts(g, station);
             } else if (station.type === 'split') {
-                this._renderSplitBuffers(g, station);
+                this._renderSplitPorts(g, station);
             }
 
             this.stationsLayer.appendChild(g);
         });
     }
 
-    _renderMergeBuffers(parentGroup, station) {
-        const buffers = station.config.buffers || [];
-        const count = buffers.length;
+    _renderMergePorts(parentGroup, station) {
+        const ports = station.config.ports || [];
+        const count = ports.length;
         if (count === 0) return;
 
-        const bufferWidth = 30;
-        const bufferHeight = 20;
+        const portWidth = 30;
+        const portHeight = 20;
         const gap = 25;
-        const totalHeight = count * bufferHeight + (count - 1) * (gap - bufferHeight);
+        const totalHeight = count * portHeight + (count - 1) * (gap - portHeight);
         const startY = station.y - totalHeight / 2;
 
-        buffers.forEach((buf, i) => {
-            const bufX = station.x - 40 - bufferWidth - 10; // Left of station
+        ports.forEach((buf, i) => {
+            const bufX = station.x - 40 - portWidth - 10; // Left of station
             const bufY = startY + i * gap;
 
             const bufGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            bufGroup.classList.add('buffer-slot', 'buffer-slot-merge');
+            bufGroup.classList.add('port-slot', 'port-slot-merge');
             bufGroup.dataset.stationId = station.id;
-            bufGroup.dataset.bufferIndex = i;
-            bufGroup.dataset.bufferType = 'input';
+            bufGroup.dataset.portIndex = i;
+            bufGroup.dataset.portType = 'input';
 
             // Check if connected
             const isConnected = this.editor.scenario.connections.some(
-                c => c.to === station.id && c.toBufferIndex === i
+                c => c.to === station.id && c.toPortIndex === i
             );
             if (isConnected) {
                 bufGroup.classList.add('connected');
@@ -580,13 +580,13 @@ export class Canvas {
             const bufRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
             bufRect.setAttribute('x', bufX);
             bufRect.setAttribute('y', bufY);
-            bufRect.setAttribute('width', bufferWidth);
-            bufRect.setAttribute('height', bufferHeight);
+            bufRect.setAttribute('width', portWidth);
+            bufRect.setAttribute('height', portHeight);
             bufRect.setAttribute('rx', 3);
 
             const bufText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            bufText.setAttribute('x', bufX + bufferWidth / 2);
-            bufText.setAttribute('y', bufY + bufferHeight / 2);
+            bufText.setAttribute('x', bufX + portWidth / 2);
+            bufText.setAttribute('y', bufY + portHeight / 2);
             bufText.setAttribute('text-anchor', 'middle');
             bufText.setAttribute('dominant-baseline', 'middle');
             bufText.setAttribute('font-size', '9');
@@ -597,10 +597,10 @@ export class Canvas {
             bufGroup.appendChild(bufText);
             parentGroup.appendChild(bufGroup);
 
-            // Line from buffer to station body
+            // Line from port to station body
             const connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            connLine.setAttribute('x1', bufX + bufferWidth);
-            connLine.setAttribute('y1', bufY + bufferHeight / 2);
+            connLine.setAttribute('x1', bufX + portWidth);
+            connLine.setAttribute('y1', bufY + portHeight / 2);
             connLine.setAttribute('x2', station.x - 40);
             connLine.setAttribute('y2', station.y);
             connLine.setAttribute('stroke', '#6f42c180');
@@ -610,30 +610,30 @@ export class Canvas {
         });
     }
 
-    _renderSplitBuffers(parentGroup, station) {
-        const buffers = station.config.buffers || [];
-        const count = buffers.length;
+    _renderSplitPorts(parentGroup, station) {
+        const ports = station.config.ports || [];
+        const count = ports.length;
         if (count === 0) return;
 
-        const bufferWidth = 30;
-        const bufferHeight = 20;
+        const portWidth = 30;
+        const portHeight = 20;
         const gap = 25;
-        const totalHeight = count * bufferHeight + (count - 1) * (gap - bufferHeight);
+        const totalHeight = count * portHeight + (count - 1) * (gap - portHeight);
         const startY = station.y - totalHeight / 2;
 
-        buffers.forEach((buf, i) => {
+        ports.forEach((buf, i) => {
             const bufX = station.x + 40 + 10; // Right of station
             const bufY = startY + i * gap;
 
             const bufGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            bufGroup.classList.add('buffer-slot', 'buffer-slot-split');
+            bufGroup.classList.add('port-slot', 'port-slot-split');
             bufGroup.dataset.stationId = station.id;
-            bufGroup.dataset.bufferIndex = i;
-            bufGroup.dataset.bufferType = 'output';
+            bufGroup.dataset.portIndex = i;
+            bufGroup.dataset.portType = 'output';
 
             // Check if connected
             const isConnected = this.editor.scenario.connections.some(
-                c => c.from === station.id && c.fromBufferIndex === i
+                c => c.from === station.id && c.fromPortIndex === i
             );
             if (isConnected) {
                 bufGroup.classList.add('connected');
@@ -642,13 +642,13 @@ export class Canvas {
             const bufRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
             bufRect.setAttribute('x', bufX);
             bufRect.setAttribute('y', bufY);
-            bufRect.setAttribute('width', bufferWidth);
-            bufRect.setAttribute('height', bufferHeight);
+            bufRect.setAttribute('width', portWidth);
+            bufRect.setAttribute('height', portHeight);
             bufRect.setAttribute('rx', 3);
 
             const bufText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            bufText.setAttribute('x', bufX + bufferWidth / 2);
-            bufText.setAttribute('y', bufY + bufferHeight / 2);
+            bufText.setAttribute('x', bufX + portWidth / 2);
+            bufText.setAttribute('y', bufY + portHeight / 2);
             bufText.setAttribute('text-anchor', 'middle');
             bufText.setAttribute('dominant-baseline', 'middle');
             bufText.setAttribute('font-size', '9');
@@ -659,12 +659,12 @@ export class Canvas {
             bufGroup.appendChild(bufText);
             parentGroup.appendChild(bufGroup);
 
-            // Line from station body to buffer
+            // Line from station body to port
             const connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             connLine.setAttribute('x1', station.x + 40);
             connLine.setAttribute('y1', station.y);
             connLine.setAttribute('x2', bufX);
-            connLine.setAttribute('y2', bufY + bufferHeight / 2);
+            connLine.setAttribute('y2', bufY + portHeight / 2);
             connLine.setAttribute('stroke', '#fd7e1480');
             connLine.setAttribute('stroke-width', '1');
             connLine.setAttribute('stroke-dasharray', '3,2');
@@ -672,30 +672,30 @@ export class Canvas {
         });
     }
 
-    // Get the position of a buffer slot (for connection line endpoints)
-    _getBufferPosition(stationId, bufferIndex, bufferType) {
+    // Get the position of a port slot (for connection line endpoints)
+    _getPortPosition(stationId, portIndex, portType) {
         const station = this.editor.getStation(stationId);
         if (!station) return null;
 
-        const buffers = station.config.buffers || [];
-        const count = buffers.length;
-        if (bufferIndex < 0 || bufferIndex >= count) return null;
+        const ports = station.config.ports || [];
+        const count = ports.length;
+        if (portIndex < 0 || portIndex >= count) return null;
 
-        const bufferWidth = 30;
-        const bufferHeight = 20;
+        const portWidth = 30;
+        const portHeight = 20;
         const gap = 25;
-        const totalHeight = count * bufferHeight + (count - 1) * (gap - bufferHeight);
+        const totalHeight = count * portHeight + (count - 1) * (gap - portHeight);
         const startY = station.y - totalHeight / 2;
-        const bufY = startY + bufferIndex * gap + bufferHeight / 2;
+        const bufY = startY + portIndex * gap + portHeight / 2;
 
-        if (bufferType === 'input') {
-            // Merge input buffer: left side
-            const bufX = station.x - 40 - bufferWidth - 10;
-            return { x: bufX, y: bufY }; // Left edge of buffer
+        if (portType === 'input') {
+            // Merge input port: left side
+            const bufX = station.x - 40 - portWidth - 10;
+            return { x: bufX, y: bufY }; // Left edge of port
         } else {
-            // Split output buffer: right side
-            const bufX = station.x + 40 + 10 + bufferWidth;
-            return { x: bufX, y: bufY }; // Right edge of buffer
+            // Split output port: right side
+            const bufX = station.x + 40 + 10 + portWidth;
+            return { x: bufX, y: bufY }; // Right edge of port
         }
     }
 
@@ -720,8 +720,8 @@ export class Canvas {
 
             // Determine start point
             let x1, y1;
-            if (connection.fromBufferIndex >= 0 && fromStation.type === 'split') {
-                const bufPos = this._getBufferPosition(connection.from, connection.fromBufferIndex, 'output');
+            if (connection.fromPortIndex >= 0 && fromStation.type === 'split') {
+                const bufPos = this._getPortPosition(connection.from, connection.fromPortIndex, 'output');
                 if (bufPos) {
                     x1 = bufPos.x;
                     y1 = bufPos.y;
@@ -731,8 +731,8 @@ export class Canvas {
                 }
             } else {
                 // Choose the nearest edge based on relative position to target
-                const targetX = (connection.toBufferIndex >= 0 && toStation.type === 'merge')
-                    ? (toStation.x - 40 - 40) // approximate merge buffer left edge
+                const targetX = (connection.toPortIndex >= 0 && toStation.type === 'merge')
+                    ? (toStation.x - 40 - 40) // approximate merge port left edge
                     : toStation.x;
                 x1 = targetX >= fromStation.x ? fromStation.x + 40 : fromStation.x - 40;
                 y1 = fromStation.y;
@@ -740,8 +740,8 @@ export class Canvas {
 
             // Determine end point
             let x2, y2;
-            if (connection.toBufferIndex >= 0 && toStation.type === 'merge') {
-                const bufPos = this._getBufferPosition(connection.to, connection.toBufferIndex, 'input');
+            if (connection.toPortIndex >= 0 && toStation.type === 'merge') {
+                const bufPos = this._getPortPosition(connection.to, connection.toPortIndex, 'input');
                 if (bufPos) {
                     x2 = bufPos.x;
                     y2 = bufPos.y;

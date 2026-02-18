@@ -34,8 +34,8 @@ type ConnectionRequest struct {
 	From            string `json:"from"`
 	To              string `json:"to"`
 	Condition       string `json:"condition"`       // default, quality_ok, quality_ng
-	FromBufferIndex int    `json:"fromBufferIndex"` // Split output buffer index (-1 = no buffer)
-	ToBufferIndex   int    `json:"toBufferIndex"`   // Merge input buffer index (-1 = no buffer)
+	FromPortIndex int    `json:"fromPortIndex"` // Split output port index (-1 = no port)
+	ToPortIndex   int    `json:"toPortIndex"`   // Merge input port index (-1 = no port)
 }
 
 // SimDBConfigRequest represents SimDB connection settings in the request
@@ -92,20 +92,20 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: mergeCount must be >= 1", st.ID))
 				return
 			}
-			// Validate buffers array
-			buffers, ok := st.Config["buffers"].([]interface{})
-			if !ok || len(buffers) != int(mergeCount) {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffers must have exactly mergeCount (%d) entries", st.ID, int(mergeCount)))
+			// Validate ports array
+			ports, ok := st.Config["ports"].([]interface{})
+			if !ok || len(ports) != int(mergeCount) {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: ports must have exactly mergeCount (%d) entries", st.ID, int(mergeCount)))
 				return
 			}
-			for idx, b := range buffers {
+			for idx, b := range ports {
 				bm, ok := b.(map[string]interface{})
 				if !ok {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffer[%d] is invalid", st.ID, idx))
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: port[%d] is invalid", st.ID, idx))
 					return
 				}
 				if cap, ok := bm["capacity"].(float64); ok && cap < 1 {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: buffer[%d].capacity must be >= 1", st.ID, idx))
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: port[%d].capacity must be >= 1", st.ID, idx))
 					return
 				}
 			}
@@ -128,20 +128,20 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: splitCount must be >= 1", st.ID))
 				return
 			}
-			// Validate buffers array
-			buffers, ok := st.Config["buffers"].([]interface{})
-			if !ok || len(buffers) != int(splitCount) {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffers must have exactly splitCount (%d) entries", st.ID, int(splitCount)))
+			// Validate ports array
+			ports, ok := st.Config["ports"].([]interface{})
+			if !ok || len(ports) != int(splitCount) {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: ports must have exactly splitCount (%d) entries", st.ID, int(splitCount)))
 				return
 			}
-			for idx, b := range buffers {
+			for idx, b := range ports {
 				bm, ok := b.(map[string]interface{})
 				if !ok {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffer[%d] is invalid", st.ID, idx))
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: port[%d] is invalid", st.ID, idx))
 					return
 				}
 				if cap, ok := bm["capacity"].(float64); ok && cap < 1 {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: buffer[%d].capacity must be >= 1", st.ID, idx))
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: port[%d].capacity must be >= 1", st.ID, idx))
 					return
 				}
 			}
@@ -204,8 +204,8 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			From:            conn.From,
 			To:              conn.To,
 			Condition:       domain.RoutingCondition(condition),
-			FromBufferIndex: conn.FromBufferIndex,
-			ToBufferIndex:   conn.ToBufferIndex,
+			FromPortIndex: conn.FromPortIndex,
+			ToPortIndex:   conn.ToPortIndex,
 		}
 	}
 
@@ -293,8 +293,8 @@ func (h *Handler) HandleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 			From:            conn.From,
 			To:              conn.To,
 			Condition:       domain.RoutingCondition(condition),
-			FromBufferIndex: conn.FromBufferIndex,
-			ToBufferIndex:   conn.ToBufferIndex,
+			FromPortIndex: conn.FromPortIndex,
+			ToPortIndex:   conn.ToPortIndex,
 		}
 	}
 
@@ -491,8 +491,8 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 			From:            conn.From,
 			To:              conn.To,
 			Condition:       string(conn.Condition),
-			FromBufferIndex: conn.FromBufferIndex,
-			ToBufferIndex:   conn.ToBufferIndex,
+			FromPortIndex: conn.FromPortIndex,
+			ToPortIndex:   conn.ToPortIndex,
 		}
 	}
 

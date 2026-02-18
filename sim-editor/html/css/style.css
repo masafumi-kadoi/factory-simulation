@@ -1007,42 +1007,42 @@ body {
     }
 }
 
-/* Buffer Slot styles */
-.buffer-slot rect {
+/* Port Slot styles */
+.port-slot rect {
     fill: rgba(200, 200, 200, 0.3);
     stroke: #999;
     stroke-width: 1;
     cursor: pointer;
 }
 
-.buffer-slot:hover rect {
+.port-slot:hover rect {
     stroke-width: 2;
 }
 
-.buffer-slot-merge rect {
+.port-slot-merge rect {
     fill: rgba(111, 66, 193, 0.15);
     stroke: #6f42c1;
 }
 
-.buffer-slot-merge:hover rect {
+.port-slot-merge:hover rect {
     fill: rgba(111, 66, 193, 0.3);
 }
 
-.buffer-slot-merge.connected rect {
+.port-slot-merge.connected rect {
     fill: rgba(111, 66, 193, 0.35);
     stroke-width: 1.5;
 }
 
-.buffer-slot-split rect {
+.port-slot-split rect {
     fill: rgba(253, 126, 20, 0.15);
     stroke: #fd7e14;
 }
 
-.buffer-slot-split:hover rect {
+.port-slot-split:hover rect {
     fill: rgba(253, 126, 20, 0.3);
 }
 
-.buffer-slot-split.connected rect {
+.port-slot-split.connected rect {
     fill: rgba(253, 126, 20, 0.35);
     stroke-width: 1.5;
 }

@@ -106,8 +106,8 @@ class ScenarioEditor {
                     from: c.from,
                     to: c.to,
                     condition: c.condition || 'default',
-                    fromBufferIndex: c.fromBufferIndex != null ? c.fromBufferIndex : -1,
-                    toBufferIndex: c.toBufferIndex != null ? c.toBufferIndex : -1
+                    fromPortIndex: c.fromPortIndex != null ? c.fromPortIndex : -1,
+                    toPortIndex: c.toPortIndex != null ? c.toPortIndex : -1
                 }))
             };
             this.savedToAPI = true;
@@ -390,7 +390,7 @@ class ScenarioEditor {
             },
             merge: {
                 mergeCount: 2,
-                buffers: [
+                ports: [
                     { capacity: 1 },
                     { capacity: 1 }
                 ],
@@ -401,7 +401,7 @@ class ScenarioEditor {
             },
             split: {
                 splitCount: 2,
-                buffers: [
+                ports: [
                     { capacity: 1 },
                     { capacity: 1 }
                 ],
@@ -508,12 +508,12 @@ class ScenarioEditor {
         }
     }
 
-    addConnection(fromId, toId, fromBufferIndex = -1, toBufferIndex = -1) {
-        // Check if connection already exists (same from/to and buffer indices)
+    addConnection(fromId, toId, fromPortIndex = -1, toPortIndex = -1) {
+        // Check if connection already exists (same from/to and port indices)
         const exists = this.scenario.connections.some(
             c => c.from === fromId && c.to === toId &&
-                 (c.fromBufferIndex || -1) === fromBufferIndex &&
-                 (c.toBufferIndex || -1) === toBufferIndex
+                 (c.fromPortIndex || -1) === fromPortIndex &&
+                 (c.toPortIndex || -1) === toPortIndex
         );
 
         if (exists) {
@@ -521,22 +521,22 @@ class ScenarioEditor {
             return;
         }
 
-        // Check 1:1 buffer constraint: each buffer can only have one connection
-        if (toBufferIndex >= 0) {
-            const bufferTaken = this.scenario.connections.some(
-                c => c.to === toId && c.toBufferIndex === toBufferIndex
+        // Check 1:1 port constraint: each port can only have one connection
+        if (toPortIndex >= 0) {
+            const portTaken = this.scenario.connections.some(
+                c => c.to === toId && c.toPortIndex === toPortIndex
             );
-            if (bufferTaken) {
-                alert('このバッファには既に接続があります');
+            if (portTaken) {
+                alert('このポートには既に接続があります');
                 return;
             }
         }
-        if (fromBufferIndex >= 0) {
-            const bufferTaken = this.scenario.connections.some(
-                c => c.from === fromId && c.fromBufferIndex === fromBufferIndex
+        if (fromPortIndex >= 0) {
+            const portTaken = this.scenario.connections.some(
+                c => c.from === fromId && c.fromPortIndex === fromPortIndex
             );
-            if (bufferTaken) {
-                alert('このバッファには既に接続があります');
+            if (portTaken) {
+                alert('このポートには既に接続があります');
                 return;
             }
         }
@@ -545,8 +545,8 @@ class ScenarioEditor {
             from: fromId,
             to: toId,
             condition: 'default',
-            fromBufferIndex: fromBufferIndex,
-            toBufferIndex: toBufferIndex
+            fromPortIndex: fromPortIndex,
+            toPortIndex: toPortIndex
         };
 
         const command = new AddConnectionCommand(this, connection);
@@ -667,8 +667,8 @@ class ScenarioEditor {
                     from: c.from,
                     to: c.to,
                     condition: c.condition || 'default',
-                    fromBufferIndex: c.fromBufferIndex != null ? c.fromBufferIndex : -1,
-                    toBufferIndex: c.toBufferIndex != null ? c.toBufferIndex : -1
+                    fromPortIndex: c.fromPortIndex != null ? c.fromPortIndex : -1,
+                    toPortIndex: c.toPortIndex != null ? c.toPortIndex : -1
                 }))
             };
 

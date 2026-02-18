@@ -16,8 +16,8 @@ type Connection struct {
 	From            string
 	To              string
 	Condition       RoutingCondition
-	FromBufferIndex int // Split output buffer index (-1 = no buffer)
-	ToBufferIndex   int // Merge input buffer index (-1 = no buffer)
+	FromPortIndex int // Split output port index (-1 = no buffer)
+	ToPortIndex   int // Merge input port index (-1 = no buffer)
 }
 
 // SimDBConfig represents connection info for a SimDB (per manufacturing line)

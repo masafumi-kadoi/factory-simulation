@@ -294,12 +294,12 @@ func getSplitDefaultConfig() *InterlockConfig {
 	}
 }
 
-// GetDefaultMergeBufferInterlockConfig returns the default interlock config for a merge input buffer
-func GetDefaultMergeBufferInterlockConfig() *InterlockConfig {
+// GetDefaultMergePortInterlockConfig returns the default interlock config for a merge input port
+func GetDefaultMergePortInterlockConfig() *InterlockConfig {
 	return &InterlockConfig{
 		Signals: []SignalDef{
 			{Name: "workPresent", Initial: false},
-			{Name: "bufferFull", Initial: false},
+			{Name: "portFull", Initial: false},
 			{Name: "inputReady", Initial: false},
 		},
 		Rules: []InterlockRule{
@@ -308,21 +308,21 @@ func GetDefaultMergeBufferInterlockConfig() *InterlockConfig {
 				Description: "バッファ満杯 → 搬入可OFF",
 				Target:      "inputReady",
 				Value:       false,
-				Conditions:  []RuleCondition{{Signal: "bufferFull", Value: true}},
+				Conditions:  []RuleCondition{{Signal: "portFull", Value: true}},
 			},
 			{
 				ID:          "R2",
 				Description: "バッファ空き → 搬入可ON",
 				Target:      "inputReady",
 				Value:       true,
-				Conditions:  []RuleCondition{{Signal: "bufferFull", Value: false}},
+				Conditions:  []RuleCondition{{Signal: "portFull", Value: false}},
 			},
 		},
 	}
 }
 
-// GetDefaultSplitBufferInterlockConfig returns the default interlock config for a split output buffer
-func GetDefaultSplitBufferInterlockConfig() *InterlockConfig {
+// GetDefaultSplitPortInterlockConfig returns the default interlock config for a split output port
+func GetDefaultSplitPortInterlockConfig() *InterlockConfig {
 	return &InterlockConfig{
 		Signals: []SignalDef{
 			{Name: "workPresent", Initial: false},

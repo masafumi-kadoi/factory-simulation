@@ -20,7 +20,7 @@ export class Visualizer3D {
         this.renderer = null;
         this.controls = null;
 
-        this.stations = new Map(); // Map<stationId, {mesh, position, label, stationType, bufferSlots}>
+        this.stations = new Map(); // Map<stationId, {mesh, position, label, stationType, portSlots}>
         this.works = new Map(); // Map<workId, {mesh, label}>
         this.connections = []; // [{line, from, to, fromStationId, toStationId, indicators}]
         this.showWorkIDs = true;
@@ -208,23 +208,23 @@ export class Visualizer3D {
 
         this._adjustSceneToPositions(positions);
 
-        // Create stations with buffer slots
+        // Create stations with port slots
         scenario.stations.forEach(station => {
             const pos = positions.get(station.id);
             if (!pos) return;
 
             const { mesh, label } = this._createStation(station, pos);
-            const bufferSlots = this._createBufferSlots(station, pos);
+            const portSlots = this._createPortSlots(station, pos);
 
             this.stations.set(station.id, {
                 mesh, position: pos, label,
                 stationType: station.type,
-                bufferSlots,
-                bufferConfig: station.config?.buffers || []
+                portSlots,
+                portConfig: station.config?.ports || []
             });
         });
 
-        // Create connections (route to buffer slots when applicable)
+        // Create connections (route to port slots when applicable)
         scenario.connections.forEach(conn => {
             const from = this.stations.get(conn.from);
             const to = this.stations.get(conn.to);
@@ -233,15 +233,15 @@ export class Visualizer3D {
             let fromPos = from.position;
             let toPos = to.position;
 
-            // Split station: connect from buffer slot by index
-            if (from.stationType === 'split' && from.bufferSlots.length > 0 && conn.fromBufferIndex >= 0) {
-                const slot = from.bufferSlots[conn.fromBufferIndex];
+            // Split station: connect from port slot by index
+            if (from.stationType === 'split' && from.portSlots.length > 0 && conn.fromPortIndex >= 0) {
+                const slot = from.portSlots[conn.fromPortIndex];
                 if (slot) fromPos = slot.position;
             }
 
-            // Merge station: connect to buffer slot by index
-            if (to.stationType === 'merge' && to.bufferSlots.length > 0 && conn.toBufferIndex >= 0) {
-                const slot = to.bufferSlots[conn.toBufferIndex];
+            // Merge station: connect to port slot by index
+            if (to.stationType === 'merge' && to.portSlots.length > 0 && conn.toPortIndex >= 0) {
+                const slot = to.portSlots[conn.toPortIndex];
                 if (slot) toPos = slot.position;
             }
 
@@ -262,20 +262,20 @@ export class Visualizer3D {
         console.log(`[Visualizer3D] Created ${this.stations.size} stations and ${this.connections.length} connections`);
     }
 
-    _createBufferSlots(station, stationPos) {
-        const buffers = station.config?.buffers || [];
-        if (buffers.length === 0) return [];
+    _createPortSlots(station, stationPos) {
+        const ports = station.config?.ports || [];
+        if (ports.length === 0) return [];
 
         const color = STATION_COLORS[station.type] || 0x6c757d;
         const slotSize = 25;
         const spacing = 35;
-        const count = buffers.length;
+        const count = ports.length;
 
         // Merge: slots on upstream side (Z-), Split: slots on downstream side (Z+)
         const zOffset = station.type === 'merge' ? -60 : (station.type === 'split' ? 60 : 0);
         if (zOffset === 0) return [];
 
-        return buffers.map((buf, i) => {
+        return ports.map((port, i) => {
             const x = stationPos.x + (i - (count - 1) / 2) * spacing;
             const z = stationPos.z + zOffset;
             const position = { x, y: 0, z };
@@ -296,7 +296,7 @@ export class Visualizer3D {
             group.position.set(x, slotSize / 2, z);
             this.scene.add(group);
 
-            // Create label for buffer index
+            // Create label for port index
             const labelText = `B${i}`;
             const label = this._createLabel(labelText, x, slotSize + 10, z);
 
@@ -486,8 +486,8 @@ export class Visualizer3D {
         this.showStationNames = show;
         this.stations.forEach(station => {
             if (station.label) station.label.visible = show;
-            if (station.bufferSlots) {
-                station.bufferSlots.forEach(slot => {
+            if (station.portSlots) {
+                station.portSlots.forEach(slot => {
                     if (slot.label) slot.label.visible = show;
                 });
             }
@@ -583,11 +583,11 @@ export class Visualizer3D {
         return line;
     }
 
-    // Find the buffer slot position by index
-    _getBufferSlotPosition(stationData, bufferIndex) {
-        if (!stationData.bufferSlots || stationData.bufferSlots.length === 0) return null;
-        if (bufferIndex < 0 || bufferIndex >= stationData.bufferSlots.length) return null;
-        return stationData.bufferSlots[bufferIndex].position;
+    // Find the port slot position by index
+    _getPortSlotPosition(stationData, portIndex) {
+        if (!stationData.portSlots || stationData.portSlots.length === 0) return null;
+        if (portIndex < 0 || portIndex >= stationData.portSlots.length) return null;
+        return stationData.portSlots[portIndex].position;
     }
 
     updateWorks(activeWorks, currentTime) {
@@ -639,9 +639,9 @@ export class Visualizer3D {
                     let z = station.position.z;
                     const y = 40;
 
-                    // For buffered works (merge input / split output), position at buffer slot
-                    if (workInfo.isBuffered && workInfo.bufferIndex >= 0) {
-                        const slotPos = this._getBufferSlotPosition(station, workInfo.bufferIndex);
+                    // For port works (merge input / split output), position at port slot
+                    if (workInfo.isInPort && workInfo.portIndex >= 0) {
+                        const slotPos = this._getPortSlotPosition(station, workInfo.portIndex);
                         if (slotPos) {
                             x = slotPos.x;
                             z = slotPos.z;
@@ -660,19 +660,19 @@ export class Visualizer3D {
                     const elapsed = currentTime - workInfo.departTime;
                     const progress = Math.max(0, Math.min(1, elapsed / duration));
 
-                    // Determine start/end positions (may be buffer slots)
+                    // Determine start/end positions (may be port slots)
                     let startX = fromStation.position.x, startZ = fromStation.position.z;
                     let endX = toStation.position.x, endZ = toStation.position.z;
 
-                    // If departing from split station, use buffer slot position
-                    if (fromStation.stationType === 'split' && workInfo.fromBufferIndex >= 0) {
-                        const slotPos = this._getBufferSlotPosition(fromStation, workInfo.fromBufferIndex);
+                    // If departing from split station, use port slot position
+                    if (fromStation.stationType === 'split' && workInfo.fromPortIndex >= 0) {
+                        const slotPos = this._getPortSlotPosition(fromStation, workInfo.fromPortIndex);
                         if (slotPos) { startX = slotPos.x; startZ = slotPos.z; }
                     }
 
-                    // If arriving at merge station, use buffer slot position
-                    if (toStation.stationType === 'merge' && workInfo.toBufferIndex >= 0) {
-                        const slotPos = this._getBufferSlotPosition(toStation, workInfo.toBufferIndex);
+                    // If arriving at merge station, use port slot position
+                    if (toStation.stationType === 'merge' && workInfo.toPortIndex >= 0) {
+                        const slotPos = this._getPortSlotPosition(toStation, workInfo.toPortIndex);
                         if (slotPos) { endX = slotPos.x; endZ = slotPos.z; }
                     }
 
@@ -693,12 +693,12 @@ export class Visualizer3D {
     }
 
     clear() {
-        // Clear stations (including buffer slots)
+        // Clear stations (including port slots)
         this.stations.forEach(station => {
             this.scene.remove(station.mesh);
             if (station.label) this.scene.remove(station.label);
-            if (station.bufferSlots) {
-                station.bufferSlots.forEach(slot => {
+            if (station.portSlots) {
+                station.portSlots.forEach(slot => {
                     this.scene.remove(slot.mesh);
                     if (slot.label) this.scene.remove(slot.label);
                     if (slot.connLine) this.scene.remove(slot.connLine);

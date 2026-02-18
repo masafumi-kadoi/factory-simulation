@@ -31,13 +31,13 @@ type StateTransition struct {
 	Conditions []string     `json:"conditions,omitempty"` // Future: condition expressions
 }
 
-// BufferSlot represents a single buffer slot for Merge/Split stations.
-// Each buffer is 1:1 mapped to a connection and has its own interlock signals.
-type BufferSlot struct {
-	Capacity       int              // Max works this buffer can hold
+// PortSlot represents a single port slot for Merge/Split stations.
+// Each port is 1:1 mapped to a connection and has its own interlock signals.
+type PortSlot struct {
+	Capacity       int              // Max works this port can hold
 	Works          []*Work          // Current works in this slot
-	Signals        map[string]bool  // Per-buffer signal values (inputReady, outputReady, etc.)
-	InterlockRules *InterlockConfig // Per-buffer interlock rules (nil = use default)
+	Signals        map[string]bool  // Per-port signal values (inputReady, outputReady, etc.)
+	InterlockRules *InterlockConfig // Per-port interlock rules (nil = use default)
 }
 
 // Station represents a station in the factory simulation (Processing base class)
@@ -53,9 +53,9 @@ type Station struct {
 	// Work management: Only ONE work at a time (interlock mechanism)
 	CurrentWork *Work // The work currently at this station (nil if idle)
 
-	// Merge/Split buffer slots (1:1 mapped to connections)
-	InputBufferSlots  []BufferSlot // Merge: input buffer slots (one per incoming connection)
-	OutputBufferSlots []BufferSlot // Split: output buffer slots (one per outgoing connection)
+	// Merge/Split port slots (1:1 mapped to connections)
+	InputPortSlots  []PortSlot // Merge: input port slots (one per incoming connection)
+	OutputPortSlots []PortSlot // Split: output port slots (one per outgoing connection)
 
 	// State machine
 	State StationState
@@ -211,7 +211,7 @@ func (s *Station) CanAcceptWork() bool {
 		return false // Source does not accept external works
 	}
 	if s.Type == StationTypeMerge {
-		// Merge accepts works into InputBuffer; inputReady is managed per-connection
+		// Merge accepts works into InputPort; inputReady is managed per-connection
 		return s.IsInputReady()
 	}
 	return s.IsInputReady()
@@ -242,26 +242,26 @@ func (s *Station) InitializeInterlockRulesFromConfig() {
 	}
 }
 
-// InitializeBufferSlots initializes buffer slots from the station config.
-// Each buffer gets its own signals and interlock rules.
+// InitializePortSlots initializes port slots from the station config.
+// Each port gets its own signals and interlock rules.
 // Called during simulation startup.
-func (s *Station) InitializeBufferSlots() {
-	buffers := s.getBuffersConfig()
+func (s *Station) InitializePortSlots() {
+	ports := s.getPortsConfig()
 	if s.Type == StationTypeMerge {
-		s.InputBufferSlots = make([]BufferSlot, len(buffers))
-		for i, b := range buffers {
+		s.InputPortSlots = make([]PortSlot, len(ports))
+		for i, b := range ports {
 			capacity := 1
 			if c, ok := b["capacity"].(float64); ok && c >= 1 {
 				capacity = int(c)
 			}
-			slot := BufferSlot{Capacity: capacity}
+			slot := PortSlot{Capacity: capacity}
 
-			// Load per-buffer interlock rules or use default
+			// Load per-port interlock rules or use default
 			if ilRaw, ok := b["interlockRules"]; ok {
 				slot.InterlockRules = parseInterlockConfig(ilRaw)
 			}
 			if slot.InterlockRules == nil {
-				slot.InterlockRules = GetDefaultMergeBufferInterlockConfig()
+				slot.InterlockRules = GetDefaultMergePortInterlockConfig()
 			}
 
 			// Initialize signals from interlock rules
@@ -271,23 +271,23 @@ func (s *Station) InitializeBufferSlots() {
 			}
 			autoCorrectControlSignals(slot.Signals, slot.InterlockRules)
 
-			s.InputBufferSlots[i] = slot
+			s.InputPortSlots[i] = slot
 		}
 	} else if s.Type == StationTypeSplit {
-		s.OutputBufferSlots = make([]BufferSlot, len(buffers))
-		for i, b := range buffers {
+		s.OutputPortSlots = make([]PortSlot, len(ports))
+		for i, b := range ports {
 			capacity := 1
 			if c, ok := b["capacity"].(float64); ok && c >= 1 {
 				capacity = int(c)
 			}
-			slot := BufferSlot{Capacity: capacity}
+			slot := PortSlot{Capacity: capacity}
 
-			// Load per-buffer interlock rules or use default
+			// Load per-port interlock rules or use default
 			if ilRaw, ok := b["interlockRules"]; ok {
 				slot.InterlockRules = parseInterlockConfig(ilRaw)
 			}
 			if slot.InterlockRules == nil {
-				slot.InterlockRules = GetDefaultSplitBufferInterlockConfig()
+				slot.InterlockRules = GetDefaultSplitPortInterlockConfig()
 			}
 
 			// Initialize signals from interlock rules
@@ -297,7 +297,7 @@ func (s *Station) InitializeBufferSlots() {
 			}
 			autoCorrectControlSignals(slot.Signals, slot.InterlockRules)
 
-			s.OutputBufferSlots[i] = slot
+			s.OutputPortSlots[i] = slot
 		}
 	}
 }
@@ -352,9 +352,9 @@ func parseInterlockConfig(raw interface{}) *InterlockConfig {
 	return config
 }
 
-// getBuffersConfig returns the buffers config as a slice of maps
-func (s *Station) getBuffersConfig() []map[string]interface{} {
-	if val, ok := s.Config["buffers"]; ok {
+// getPortsConfig returns the ports config as a slice of maps
+func (s *Station) getPortsConfig() []map[string]interface{} {
+	if val, ok := s.Config["ports"]; ok {
 		if arr, ok := val.([]interface{}); ok {
 			result := make([]map[string]interface{}, 0, len(arr))
 			for _, item := range arr {
@@ -368,28 +368,28 @@ func (s *Station) getBuffersConfig() []map[string]interface{} {
 	return nil
 }
 
-// AddWorkToBuffer adds a work to the specified InputBufferSlot by index
-func (s *Station) AddWorkToBuffer(work *Work, bufferIndex int) error {
+// AddWorkToPort adds a work to the specified InputPortSlot by index
+func (s *Station) AddWorkToPort(work *Work, portIndex int) error {
 	if s.Type != StationTypeMerge {
 		return fmt.Errorf("station %s is not a merge station", s.ID)
 	}
-	if bufferIndex < 0 || bufferIndex >= len(s.InputBufferSlots) {
-		return fmt.Errorf("buffer index %d out of range for station %s (has %d buffers)", bufferIndex, s.ID, len(s.InputBufferSlots))
+	if portIndex < 0 || portIndex >= len(s.InputPortSlots) {
+		return fmt.Errorf("port index %d out of range for station %s (has %d ports)", portIndex, s.ID, len(s.InputPortSlots))
 	}
-	slot := &s.InputBufferSlots[bufferIndex]
+	slot := &s.InputPortSlots[portIndex]
 	if len(slot.Works) >= slot.Capacity {
-		return fmt.Errorf("buffer %d at station %s is full (capacity=%d)", bufferIndex, s.ID, slot.Capacity)
+		return fmt.Errorf("port %d at station %s is full (capacity=%d)", portIndex, s.ID, slot.Capacity)
 	}
 	slot.Works = append(slot.Works, work)
 	return nil
 }
 
-// CheckMergeCondition checks if all input buffer slots are full
+// CheckMergeCondition checks if all input port slots are full
 func (s *Station) CheckMergeCondition() bool {
-	if s.Type != StationTypeMerge || len(s.InputBufferSlots) == 0 {
+	if s.Type != StationTypeMerge || len(s.InputPortSlots) == 0 {
 		return false
 	}
-	for _, slot := range s.InputBufferSlots {
+	for _, slot := range s.InputPortSlots {
 		if len(slot.Works) < slot.Capacity {
 			return false
 		}
@@ -397,7 +397,7 @@ func (s *Station) CheckMergeCondition() bool {
 	return true
 }
 
-// ExecuteMerge consumes all works from all input buffer slots and creates a merged work.
+// ExecuteMerge consumes all works from all input port slots and creates a merged work.
 // Returns: (mergedWork, consumedWorks, error)
 func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []*Work, error) {
 	if s.Type != StationTypeMerge {
@@ -408,8 +408,8 @@ func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []
 
 	// Consume all works from all slots
 	var consumedWorks []*Work
-	for i := range s.InputBufferSlots {
-		slot := &s.InputBufferSlots[i]
+	for i := range s.InputPortSlots {
+		slot := &s.InputPortSlots[i]
 		consumedWorks = append(consumedWorks, slot.Works...)
 		slot.Works = nil
 	}
@@ -441,8 +441,8 @@ func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []
 	return mergedWork, consumedWorks, nil
 }
 
-// ExecuteSplit splits a merged work into component works and places them into OutputBufferSlots.
-// Works are placed into output buffers sequentially by index (1:1 mapping with connections).
+// ExecuteSplit splits a merged work into component works and places them into OutputPortSlots.
+// Works are placed into output ports sequentially by index (1:1 mapping with connections).
 // Returns: (splitWorks, error)
 func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, error) {
 	if s.Type != StationTypeSplit {
@@ -464,7 +464,7 @@ func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, 
 		return nil, fmt.Errorf("station %s: invalid mergedFrom format", s.ID)
 	}
 
-	// Create split works and place into output buffer slots by index
+	// Create split works and place into output port slots by index
 	var splitWorks []*Work
 	sourceWorkID := s.CurrentWork.ID
 	sourceWorkType := s.CurrentWork.Type
@@ -486,9 +486,9 @@ func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, 
 		}
 		splitWorks = append(splitWorks, splitWork)
 
-		// Place into output buffer slot by index (1:1 mapping)
-		if i < len(s.OutputBufferSlots) {
-			slot := &s.OutputBufferSlots[i]
+		// Place into output port slot by index (1:1 mapping)
+		if i < len(s.OutputPortSlots) {
+			slot := &s.OutputPortSlots[i]
 			slot.Works = append(slot.Works, splitWork)
 		}
 	}
@@ -500,12 +500,12 @@ func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, 
 	return splitWorks, nil
 }
 
-// GetOutputBufferWorkByIndex gets the next work from a specific OutputBufferSlot
-func (s *Station) GetOutputBufferWorkByIndex(bufferIndex int) *Work {
-	if bufferIndex < 0 || bufferIndex >= len(s.OutputBufferSlots) {
+// GetOutputPortWorkByIndex gets the next work from a specific OutputPortSlot
+func (s *Station) GetOutputPortWorkByIndex(portIndex int) *Work {
+	if portIndex < 0 || portIndex >= len(s.OutputPortSlots) {
 		return nil
 	}
-	slot := &s.OutputBufferSlots[bufferIndex]
+	slot := &s.OutputPortSlots[portIndex]
 	if len(slot.Works) > 0 {
 		work := slot.Works[0]
 		slot.Works = slot.Works[1:]
@@ -514,9 +514,9 @@ func (s *Station) GetOutputBufferWorkByIndex(bufferIndex int) *Work {
 	return nil
 }
 
-// HasOutputBufferWorks returns true if any OutputBufferSlot has remaining works
-func (s *Station) HasOutputBufferWorks() bool {
-	for _, slot := range s.OutputBufferSlots {
+// HasOutputPortWorks returns true if any OutputPortSlot has remaining works
+func (s *Station) HasOutputPortWorks() bool {
+	for _, slot := range s.OutputPortSlots {
 		if len(slot.Works) > 0 {
 			return true
 		}
@@ -524,48 +524,48 @@ func (s *Station) HasOutputBufferWorks() bool {
 	return false
 }
 
-// GetBufferSignal gets a signal value from a specific buffer slot
-func (s *Station) GetBufferSignal(isInput bool, bufferIndex int, signalName string) bool {
-	var slots []BufferSlot
+// GetPortSignal gets a signal value from a specific port slot
+func (s *Station) GetPortSignal(isInput bool, portIndex int, signalName string) bool {
+	var slots []PortSlot
 	if isInput {
-		slots = s.InputBufferSlots
+		slots = s.InputPortSlots
 	} else {
-		slots = s.OutputBufferSlots
+		slots = s.OutputPortSlots
 	}
-	if bufferIndex < 0 || bufferIndex >= len(slots) {
+	if portIndex < 0 || portIndex >= len(slots) {
 		return false
 	}
-	if slots[bufferIndex].Signals == nil {
+	if slots[portIndex].Signals == nil {
 		return false
 	}
-	return slots[bufferIndex].Signals[signalName]
+	return slots[portIndex].Signals[signalName]
 }
 
-// SetBufferSignal sets a signal value on a specific buffer slot
-func (s *Station) SetBufferSignal(isInput bool, bufferIndex int, signalName string, value bool) {
-	var slots []BufferSlot
+// SetPortSignal sets a signal value on a specific port slot
+func (s *Station) SetPortSignal(isInput bool, portIndex int, signalName string, value bool) {
+	var slots []PortSlot
 	if isInput {
-		slots = s.InputBufferSlots
+		slots = s.InputPortSlots
 	} else {
-		slots = s.OutputBufferSlots
+		slots = s.OutputPortSlots
 	}
-	if bufferIndex < 0 || bufferIndex >= len(slots) {
+	if portIndex < 0 || portIndex >= len(slots) {
 		return
 	}
-	if slots[bufferIndex].Signals == nil {
-		slots[bufferIndex].Signals = make(map[string]bool)
+	if slots[portIndex].Signals == nil {
+		slots[portIndex].Signals = make(map[string]bool)
 	}
-	slots[bufferIndex].Signals[signalName] = value
+	slots[portIndex].Signals[signalName] = value
 }
 
-// IsBufferInputReady checks if a specific input buffer's inputReady signal is ON
-func (s *Station) IsBufferInputReady(bufferIndex int) bool {
-	return s.GetBufferSignal(true, bufferIndex, "inputReady")
+// IsPortInputReady checks if a specific input port's inputReady signal is ON
+func (s *Station) IsPortInputReady(portIndex int) bool {
+	return s.GetPortSignal(true, portIndex, "inputReady")
 }
 
-// IsBufferOutputReady checks if a specific output buffer's outputReady signal is ON
-func (s *Station) IsBufferOutputReady(bufferIndex int) bool {
-	return s.GetBufferSignal(false, bufferIndex, "outputReady")
+// IsPortOutputReady checks if a specific output port's outputReady signal is ON
+func (s *Station) IsPortOutputReady(portIndex int) bool {
+	return s.GetPortSignal(false, portIndex, "outputReady")
 }
 
 // CanStartProcessing checks if the station can start processing

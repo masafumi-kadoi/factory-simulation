@@ -111,7 +111,7 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 	}
 
 	query := `
-		INSERT INTO work_events (simulation_run_id, work_id, work_friendly_name, station_id, timestamp, event_type, work_type, buffer_index)
+		INSERT INTO work_events (simulation_run_id, work_id, work_friendly_name, station_id, timestamp, event_type, work_type, port_index)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
@@ -136,7 +136,7 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 			log.Timestamp,
 			log.EventType,
 			log.WorkType,
-			log.BufferIndex,
+			log.PortIndex,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert work event: %w", err)
@@ -221,7 +221,7 @@ func (r *Repository) GetStationStatusLogs(simulationID string) ([]simulation.Sta
 // GetWorkEvents retrieves work events from the database
 func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventLog, error) {
 	query := `
-		SELECT work_id, work_friendly_name, station_id, timestamp, event_type, COALESCE(work_type, ''), COALESCE(buffer_index, -1)
+		SELECT work_id, work_friendly_name, station_id, timestamp, event_type, COALESCE(work_type, ''), COALESCE(port_index, -1)
 		FROM work_events
 		WHERE simulation_run_id = $1
 		ORDER BY timestamp ASC
@@ -236,7 +236,7 @@ func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventL
 	var logs []simulation.WorkEventLog
 	for rows.Next() {
 		var log simulation.WorkEventLog
-		if err := rows.Scan(&log.WorkID, &log.WorkFriendlyName, &log.StationID, &log.Timestamp, &log.EventType, &log.WorkType, &log.BufferIndex); err != nil {
+		if err := rows.Scan(&log.WorkID, &log.WorkFriendlyName, &log.StationID, &log.Timestamp, &log.EventType, &log.WorkType, &log.PortIndex); err != nil {
 			return nil, fmt.Errorf("failed to scan work event: %w", err)
 		}
 		logs = append(logs, log)
@@ -433,9 +433,9 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 	// Insert connections
 	for _, conn := range scenario.Connections {
 		_, err = tx.Exec(`
-			INSERT INTO scenario_connections (scenario_id, from_station, to_station, condition, from_buffer_index, to_buffer_index)
+			INSERT INTO scenario_connections (scenario_id, from_station, to_station, condition, from_port_index, to_port_index)
 			VALUES ($1, $2, $3, $4, $5, $6)
-		`, scenario.ID, conn.From, conn.To, conn.Condition, conn.FromBufferIndex, conn.ToBufferIndex)
+		`, scenario.ID, conn.From, conn.To, conn.Condition, conn.FromPortIndex, conn.ToPortIndex)
 		if err != nil {
 			return fmt.Errorf("failed to insert connection: %w", err)
 		}
@@ -541,7 +541,7 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 
 	// Get connections
 	connRows, err := r.db.GetConnection().Query(`
-		SELECT from_station, to_station, condition, COALESCE(from_buffer_index, -1), COALESCE(to_buffer_index, -1)
+		SELECT from_station, to_station, condition, COALESCE(from_port_index, -1), COALESCE(to_port_index, -1)
 		FROM scenario_connections
 		WHERE scenario_id = $1
 	`, id)
@@ -553,8 +553,8 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 	var connections []domain.Connection
 	for connRows.Next() {
 		var from, to, condition string
-		var fromBufferIndex, toBufferIndex int
-		if err := connRows.Scan(&from, &to, &condition, &fromBufferIndex, &toBufferIndex); err != nil {
+		var fromPortIndex, toPortIndex int
+		if err := connRows.Scan(&from, &to, &condition, &fromPortIndex, &toPortIndex); err != nil {
 			return nil, fmt.Errorf("failed to scan connection: %w", err)
 		}
 
@@ -562,8 +562,8 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 			From:            from,
 			To:              to,
 			Condition:       domain.RoutingCondition(condition),
-			FromBufferIndex: fromBufferIndex,
-			ToBufferIndex:   toBufferIndex,
+			FromPortIndex: fromPortIndex,
+			ToPortIndex:   toPortIndex,
 		})
 	}
 

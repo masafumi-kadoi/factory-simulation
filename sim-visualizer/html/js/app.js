@@ -199,19 +199,19 @@ class App {
                         state: 'at_station',
                         stationId: stationId
                     });
-                } else if (event.EventType === 'WorkBuffered') {
-                    // Work is in a merge station's buffer slot
+                } else if (event.EventType === 'WorkPortEntered') {
+                    // Work is in a merge station's port slot
                     activeWorks.set(workId, {
                         state: 'at_station',
                         stationId: stationId,
-                        isBuffered: true,
-                        bufferIndex: event.BufferIndex != null ? event.BufferIndex : -1
+                        isInPort: true,
+                        portIndex: event.PortIndex != null ? event.PortIndex : -1
                     });
                 } else if (event.EventType === 'WorkMerged') {
                     // Merged work appears at station body; remove consumed works
-                    // Remove all buffered works at this station (they were consumed)
+                    // Remove all port works at this station (they were consumed)
                     for (const [wId, wInfo] of activeWorks) {
-                        if (wInfo.stationId === stationId && wInfo.isBuffered) {
+                        if (wInfo.stationId === stationId && wInfo.isInPort) {
                             activeWorks.delete(wId);
                         }
                     }
@@ -220,18 +220,18 @@ class App {
                         stationId: stationId
                     });
                 } else if (event.EventType === 'WorkSplit') {
-                    // Split work placed in output buffer slot
-                    // Remove the original (non-buffered) work at this station
+                    // Split work placed in output port slot
+                    // Remove the original (non-port) work at this station
                     for (const [wId, wInfo] of activeWorks) {
-                        if (wInfo.stationId === stationId && !wInfo.isBuffered) {
+                        if (wInfo.stationId === stationId && !wInfo.isInPort) {
                             activeWorks.delete(wId);
                         }
                     }
                     activeWorks.set(workId, {
                         state: 'at_station',
                         stationId: stationId,
-                        isBuffered: true,
-                        bufferIndex: event.BufferIndex != null ? event.BufferIndex : -1
+                        isInPort: true,
+                        portIndex: event.PortIndex != null ? event.PortIndex : -1
                     });
                 } else if (event.EventType === 'WorkDeparted') {
                     // Look ahead to find next arrival
@@ -239,7 +239,7 @@ class App {
                     for (let j = i + 1; j < this.logs.workEvents.length; j++) {
                         const nextEvent = this.logs.workEvents[j];
                         if (nextEvent.WorkID === workId &&
-                            (nextEvent.EventType === 'WorkArrived' || nextEvent.EventType === 'WorkBuffered' || nextEvent.EventType === 'WorkDestroyed')) {
+                            (nextEvent.EventType === 'WorkArrived' || nextEvent.EventType === 'WorkPortEntered' || nextEvent.EventType === 'WorkDestroyed')) {
                             nextArrival = nextEvent;
                             break;
                         }
@@ -253,8 +253,8 @@ class App {
                             toStation: nextArrival.StationID,
                             departTime: event.Timestamp,
                             arriveTime: nextArrival.Timestamp,
-                            fromBufferIndex: event.BufferIndex != null ? event.BufferIndex : -1,
-                            toBufferIndex: nextArrival.BufferIndex != null ? nextArrival.BufferIndex : -1
+                            fromPortIndex: event.PortIndex != null ? event.PortIndex : -1,
+                            toPortIndex: nextArrival.PortIndex != null ? nextArrival.PortIndex : -1
                         });
                     } else {
                         // No next arrival (destroyed or end of log)
@@ -306,7 +306,7 @@ class App {
         let stationText = '-';
         if (workInfo) {
             if (workInfo.state === 'at_station') {
-                stateText = workInfo.isBuffered ? 'バッファ内' : 'ステーション内';
+                stateText = workInfo.isInPort ? 'バッファ内' : 'ステーション内';
                 stationText = workInfo.stationId || '-';
             } else if (workInfo.state === 'moving') {
                 stateText = '移動中';
@@ -322,7 +322,7 @@ class App {
                 <td style="padding:4px 8px">${e.Timestamp.toFixed(2)}s</td>
                 <td style="padding:4px 8px">${e.EventType}</td>
                 <td style="padding:4px 8px">${e.StationID}</td>
-                <td style="padding:4px 8px">${e.BufferIndex >= 0 ? 'B' + e.BufferIndex : '-'}</td>
+                <td style="padding:4px 8px">${e.PortIndex >= 0 ? 'B' + e.PortIndex : '-'}</td>
             </tr>
         `).join('');
 

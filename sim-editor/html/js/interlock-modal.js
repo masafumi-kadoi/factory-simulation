@@ -23,21 +23,21 @@ export class InterlockModal {
     }
 
     /**
-     * Open the modal for a station or buffer
+     * Open the modal for a station or port
      * @param {object} station - the station object from the scenario
      * @param {object} scenario - the full scenario (for connection lookups)
      * @param {function} onSave - callback when save is clicked
-     * @param {object} [bufferOpts] - optional: { bufferIndex, bufferType: 'mergeInput'|'splitOutput' }
+     * @param {object} [portOpts] - optional: { portIndex, portType: 'mergeInput'|'splitOutput' }
      */
-    open(station, scenario, onSave, bufferOpts) {
+    open(station, scenario, onSave, portOpts) {
         this._station = station;
         this._scenario = scenario;
         this._onSave = onSave;
-        this._bufferOpts = bufferOpts || null;
+        this._portOpts = portOpts || null;
 
-        // For buffer mode, filter tabs to show only relevant ones
-        if (this._bufferOpts) {
-            if (this._bufferOpts.bufferType === 'mergeInput') {
+        // For port mode, filter tabs to show only relevant ones
+        if (this._portOpts) {
+            if (this._portOpts.portType === 'mergeInput') {
                 this._activeTab = 'inputReady-on';
             } else {
                 this._activeTab = 'outputReady-on';
@@ -47,11 +47,11 @@ export class InterlockModal {
         }
 
         // Determine mode and load rules
-        if (this._bufferOpts) {
-            // Buffer mode: load from buffer's interlockRules
-            const bufIdx = this._bufferOpts.bufferIndex;
-            const buffers = station.config.buffers || [];
-            const buf = buffers[bufIdx];
+        if (this._portOpts) {
+            // Port mode: load from port's interlockRules
+            const portIdx = this._portOpts.portIndex;
+            const ports = station.config.ports || [];
+            const buf = ports[portIdx];
             this._isCustom = !!(buf && buf.interlockRules);
 
             if (this._isCustom && buf.interlockRules) {
@@ -59,8 +59,8 @@ export class InterlockModal {
                 this._editRules = config.rules || [];
                 this._editSignals = config.signals || [];
             } else {
-                // Load default buffer preset
-                const preset = this._getDefaultBufferPreset();
+                // Load default port preset
+                const preset = this._getDefaultPortPreset();
                 if (preset) {
                     const config = clonePreset(preset);
                     this._editRules = config.rules || [];
@@ -96,18 +96,18 @@ export class InterlockModal {
         document.addEventListener('keydown', this._boundKeyHandler);
     }
 
-    _getDefaultBufferPreset() {
-        if (!this._bufferOpts) return null;
-        if (this._bufferOpts.bufferType === 'mergeInput') {
+    _getDefaultPortPreset() {
+        if (!this._portOpts) return null;
+        if (this._portOpts.portType === 'mergeInput') {
             return {
                 signals: [
                     { name: 'workPresent', initial: false },
-                    { name: 'bufferFull', initial: false },
+                    { name: 'portFull', initial: false },
                     { name: 'inputReady', initial: false }
                 ],
                 rules: [
-                    { id: 'R1', target: 'inputReady', value: false, conditions: [{ signal: 'bufferFull', value: true }] },
-                    { id: 'R2', target: 'inputReady', value: true, conditions: [{ signal: 'bufferFull', value: false }] }
+                    { id: 'R1', target: 'inputReady', value: false, conditions: [{ signal: 'portFull', value: true }] },
+                    { id: 'R2', target: 'inputReady', value: true, conditions: [{ signal: 'portFull', value: false }] }
                 ]
             };
         } else {
@@ -155,27 +155,27 @@ export class InterlockModal {
         const isCustom = this._isCustom;
 
         // Get available presets
-        const presets = this._bufferOpts ? {} : getPresetsForType(station.type);
+        const presets = this._portOpts ? {} : getPresetsForType(station.type);
         const presetKeys = Object.keys(presets);
 
-        // Build preset selector (visible only in Custom mode, not for buffers)
+        // Build preset selector (visible only in Custom mode, not for ports)
         const presetOptions = presetKeys.map(key =>
             `<option value="${key}">${this._escape(presets[key].name)}</option>`
         ).join('');
 
         // Title
         let title;
-        if (this._bufferOpts) {
-            const bufType = this._bufferOpts.bufferType === 'mergeInput' ? '入力' : '出力';
-            title = `バッファ条件設定: ${this._escape(station.id)} [${bufType}バッファ ${this._bufferOpts.bufferIndex}]`;
+        if (this._portOpts) {
+            const portTypeLabel = this._portOpts.portType === 'mergeInput' ? '入力' : '出力';
+            title = `ポート条件設定: ${this._escape(station.id)} [${portTypeLabel}ポート ${this._portOpts.portIndex}]`;
         } else {
             title = `条件設定: ${this._escape(station.id)}`;
         }
 
-        // Filter tabs for buffer mode
+        // Filter tabs for port mode
         let visibleTabs = TAB_DEFS;
-        if (this._bufferOpts) {
-            if (this._bufferOpts.bufferType === 'mergeInput') {
+        if (this._portOpts) {
+            if (this._portOpts.portType === 'mergeInput') {
                 visibleTabs = TAB_DEFS.filter(t => t.target === 'inputReady' || t.id === 'other');
             } else {
                 visibleTabs = TAB_DEFS.filter(t => t.target === 'outputReady' || t.id === 'other');
@@ -700,8 +700,8 @@ export class InterlockModal {
             this._isCustom = false;
             // Reload default preset
             let preset;
-            if (this._bufferOpts) {
-                preset = this._getDefaultBufferPreset();
+            if (this._portOpts) {
+                preset = this._getDefaultPortPreset();
             } else {
                 preset = getDefaultPreset(this._station.type);
             }
@@ -762,20 +762,20 @@ export class InterlockModal {
         }
 
         // Apply changes
-        if (this._bufferOpts) {
-            // Buffer mode: save to buffer's interlockRules
-            const bufIdx = this._bufferOpts.bufferIndex;
-            if (!this._station.config.buffers) this._station.config.buffers = [];
-            while (this._station.config.buffers.length <= bufIdx) {
-                this._station.config.buffers.push({ capacity: 1 });
+        if (this._portOpts) {
+            // Port mode: save to port's interlockRules
+            const portIdx = this._portOpts.portIndex;
+            if (!this._station.config.ports) this._station.config.ports = [];
+            while (this._station.config.ports.length <= portIdx) {
+                this._station.config.ports.push({ capacity: 1 });
             }
             if (this._isCustom) {
-                this._station.config.buffers[bufIdx].interlockRules = {
+                this._station.config.ports[portIdx].interlockRules = {
                     signals: clonePreset(this._editSignals),
                     rules: clonePreset(this._editRules)
                 };
             } else {
-                delete this._station.config.buffers[bufIdx].interlockRules;
+                delete this._station.config.ports[portIdx].interlockRules;
             }
         } else {
             // Station mode
