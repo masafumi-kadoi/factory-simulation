@@ -7,6 +7,10 @@ import (
 
 // SetupRoutes configures all routes for sim-executor backend
 func (h *Handler) SetupRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
 	mux.HandleFunc("/api/executor/initial-conditions", corsMiddleware(h.HandleInitialConditions))
 	mux.HandleFunc("/api/executor/execute", corsMiddleware(h.HandleExecute))
 	mux.HandleFunc("/api/executor/executions", corsMiddleware(h.HandleGetExecutions))

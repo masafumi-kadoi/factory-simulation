@@ -37,6 +37,10 @@ func main() {
 
 	// Setup router with CORS middleware
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
 	mux.HandleFunc("/api/scenarios/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Handler 1: Method=%s, Path=%s", r.Method, r.URL.Path)
 		// Route based on path
