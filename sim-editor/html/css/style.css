@@ -933,6 +933,57 @@ body {
     margin: 0.1rem;
 }
 
+.interlock-signals-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.6rem;
+    margin-top: 0.3rem;
+}
+
+.interlock-signal-initial {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.interlock-signal-initial.control {
+    border-color: #adb5bd;
+    background: #e9ecef;
+}
+
+.interlock-signal-initial input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+.interlock-signal-initial-label {
+    color: #495057;
+}
+
+.interlock-signal-initial-value {
+    font-weight: 600;
+    font-size: 0.7rem;
+    padding: 0.05rem 0.3rem;
+    border-radius: 2px;
+}
+
+.interlock-signal-initial-value.on {
+    color: #155724;
+    background: #d4edda;
+}
+
+.interlock-signal-initial-value.off {
+    color: #721c24;
+    background: #f8d7da;
+}
+
 /* Interlock section in properties panel */
 .interlock-section {
     border-top: 1px solid #e0e0e0;

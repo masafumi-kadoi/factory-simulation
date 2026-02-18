@@ -103,7 +103,7 @@ export class InterlockModal {
                 signals: [
                     { name: 'workPresent', initial: false },
                     { name: 'bufferFull', initial: false },
-                    { name: 'inputReady', initial: true }
+                    { name: 'inputReady', initial: false }
                 ],
                 rules: [
                     { id: 'R1', target: 'inputReady', value: false, conditions: [{ signal: 'bufferFull', value: true }] },
@@ -218,10 +218,18 @@ export class InterlockModal {
                     ${this._renderTabContent()}
                 </div>
                 <div class="interlock-signals-info">
-                    <span class="interlock-signals-title">信号一覧（現在の定義）:</span>
-                    ${this._editSignals.map(s => {
-                        return `<span class="interlock-signal-badge">${getSignalLabel(s.name)}</span>`;
-                    }).join(' ')}
+                    <span class="interlock-signals-title">信号一覧（初期値）:</span>
+                    <div class="interlock-signals-grid">
+                        ${this._editSignals.map((s, idx) => {
+                            const label = getSignalLabel(s.name);
+                            const isControl = s.name === 'inputReady' || s.name === 'outputReady';
+                            return `<label class="interlock-signal-initial ${isControl ? 'control' : ''}">
+                                <input type="checkbox" class="il-signal-initial" data-signal-idx="${idx}" ${s.initial ? 'checked' : ''} ${!this._isCustom ? 'disabled' : ''}>
+                                <span class="interlock-signal-initial-label">${label}</span>
+                                <span class="interlock-signal-initial-value ${s.initial ? 'on' : 'off'}">${s.initial ? 'ON' : 'OFF'}</span>
+                            </label>`;
+                        }).join('')}
+                    </div>
                 </div>
             </div>
             <div class="interlock-modal-footer">
@@ -260,6 +268,17 @@ export class InterlockModal {
 
         // Bind tab content event listeners
         this._bindTabContentEvents();
+
+        // Signal initial value toggles
+        modal.querySelectorAll('.il-signal-initial').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const idx = parseInt(e.target.dataset.signalIdx);
+                if (this._editSignals[idx] !== undefined) {
+                    this._editSignals[idx].initial = e.target.checked;
+                    this._render();
+                }
+            });
+        });
     }
 
     _renderTabContent() {

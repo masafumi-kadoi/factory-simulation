@@ -97,7 +97,7 @@ export const INTERLOCK_PRESETS = {
                 { name: 'workPresent', initial: false },
                 { name: 'processingComplete', initial: false },
                 { name: 'mergeReady', initial: false },
-                { name: 'inputReady', initial: true },
+                { name: 'inputReady', initial: false },
                 { name: 'outputReady', initial: false }
             ],
             rules: [
@@ -117,7 +117,7 @@ export const INTERLOCK_PRESETS = {
             signals: [
                 { name: 'workPresent', initial: false },
                 { name: 'processingComplete', initial: false },
-                { name: 'inputReady', initial: true },
+                { name: 'inputReady', initial: false },
                 { name: 'outputReady', initial: false }
             ],
             rules: [

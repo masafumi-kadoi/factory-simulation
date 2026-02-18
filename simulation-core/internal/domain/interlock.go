@@ -164,7 +164,7 @@ func getMergeDefaultConfig() *InterlockConfig {
 			{Name: "workPresent", Initial: false},
 			{Name: "processingComplete", Initial: false},
 			{Name: "mergeReady", Initial: false},
-			{Name: "inputReady", Initial: true},
+			{Name: "inputReady", Initial: false},
 			{Name: "outputReady", Initial: false},
 		},
 		Rules: []InterlockRule{
@@ -236,7 +236,7 @@ func getSplitDefaultConfig() *InterlockConfig {
 		Signals: []SignalDef{
 			{Name: "workPresent", Initial: false},
 			{Name: "processingComplete", Initial: false},
-			{Name: "inputReady", Initial: true},
+			{Name: "inputReady", Initial: false},
 			{Name: "outputReady", Initial: false},
 		},
 		Rules: []InterlockRule{
@@ -300,7 +300,7 @@ func GetDefaultMergeBufferInterlockConfig() *InterlockConfig {
 		Signals: []SignalDef{
 			{Name: "workPresent", Initial: false},
 			{Name: "bufferFull", Initial: false},
-			{Name: "inputReady", Initial: true},
+			{Name: "inputReady", Initial: false},
 		},
 		Rules: []InterlockRule{
 			{
