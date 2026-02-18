@@ -1,6 +1,7 @@
 // Interlock Presets — signal and rule definitions for each station type
 
 // Signal display names
+// Note: workType:<type> signals are generated dynamically and displayed as "ワーク種類: <type>"
 export const SIGNAL_DISPLAY = {
     workPresent:        { label: 'ワーク有り (WP)',  abbr: 'WP' },
     processingComplete: { label: '処理完了 (PC)',    abbr: 'PC' },
@@ -9,6 +10,15 @@ export const SIGNAL_DISPLAY = {
     mergeReady:         { label: '結合可 (MR)',      abbr: 'MR' },
     bufferFull:         { label: 'バッファ満杯 (BF)', abbr: 'BF' }
 };
+
+/**
+ * Get display label for a signal name (handles dynamic workType:* signals)
+ */
+export function getSignalLabel(signalName) {
+    if (SIGNAL_DISPLAY[signalName]) return SIGNAL_DISPLAY[signalName].label;
+    if (signalName.startsWith('workType:')) return `ワーク種類: ${signalName.substring(9)}`;
+    return signalName;
+}
 
 export const INTERLOCK_PRESETS = {
     source: {

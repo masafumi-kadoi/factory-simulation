@@ -1,5 +1,5 @@
 // Interlock Modal — condition editor for station interlock rules
-import { INTERLOCK_PRESETS, SIGNAL_DISPLAY, getDefaultPreset, getPresetsForType, clonePreset } from './interlock-presets.js';
+import { INTERLOCK_PRESETS, SIGNAL_DISPLAY, getDefaultPreset, getPresetsForType, clonePreset, getSignalLabel } from './interlock-presets.js';
 
 const TAB_DEFS = [
     { id: 'inputReady-on',  label: '搬入可ON',  target: 'inputReady',  value: true },
@@ -220,8 +220,7 @@ export class InterlockModal {
                 <div class="interlock-signals-info">
                     <span class="interlock-signals-title">信号一覧（現在の定義）:</span>
                     ${this._editSignals.map(s => {
-                        const disp = SIGNAL_DISPLAY[s.name];
-                        return `<span class="interlock-signal-badge">${disp ? disp.label : s.name}</span>`;
+                        return `<span class="interlock-signal-badge">${getSignalLabel(s.name)}</span>`;
                     }).join(' ')}
                 </div>
             </div>
@@ -278,7 +277,7 @@ export class InterlockModal {
         const rule = this._editRules.find(r => r.target === tab.target && r.value === tab.value);
         const conditions = rule ? rule.conditions : [];
 
-        const targetDisplay = SIGNAL_DISPLAY[tab.target] ? SIGNAL_DISPLAY[tab.target].label : tab.target;
+        const targetDisplay = getSignalLabel(tab.target);
         const valueDisplay = tab.value ? 'ON' : 'OFF';
         const transitionDisplay = tab.value ? 'OFF → ON' : 'ON → OFF';
 
@@ -330,7 +329,7 @@ export class InterlockModal {
         } else {
             otherRules.forEach((rule, ruleIdx) => {
                 const globalIdx = this._editRules.indexOf(rule);
-                const targetDisplay = SIGNAL_DISPLAY[rule.target] ? SIGNAL_DISPLAY[rule.target].label : rule.target;
+                const targetDisplay = getSignalLabel(rule.target);
                 const valueDisplay = rule.value ? 'ON' : 'OFF';
 
                 html += `<div class="interlock-other-rule" data-rule-idx="${globalIdx}">`;
@@ -385,7 +384,7 @@ export class InterlockModal {
 
     _renderConditionRow(cond, condIdx, readonly, ruleIdx) {
         if (readonly) {
-            const signalDisp = SIGNAL_DISPLAY[cond.signal] ? SIGNAL_DISPLAY[cond.signal].label : cond.signal;
+            const signalDisp = getSignalLabel(cond.signal);
             const stationPrefix = cond.stationId ? `${cond.stationId}.` : '';
             return `
                 <div class="interlock-condition-row readonly">
@@ -424,9 +423,27 @@ export class InterlockModal {
 
     _renderSignalSelect(id, currentValue) {
         const options = this._editSignals.map(s => {
-            const disp = SIGNAL_DISPLAY[s.name] ? SIGNAL_DISPLAY[s.name].label : s.name;
+            const disp = getSignalLabel(s.name);
             return `<option value="${s.name}" ${currentValue === s.name ? 'selected' : ''}>${disp}</option>`;
         });
+
+        // Add workType signals from scenario
+        const workTypes = this._collectWorkTypes();
+        workTypes.forEach(wt => {
+            const sigName = `workType:${wt}`;
+            const alreadyInSignals = this._editSignals.some(s => s.name === sigName);
+            if (!alreadyInSignals) {
+                const disp = `ワーク種類: ${wt}`;
+                options.push(`<option value="${sigName}" ${currentValue === sigName ? 'selected' : ''}>${disp}</option>`);
+            }
+        });
+
+        // If currentValue is a workType signal not yet listed, add it
+        if (currentValue && currentValue.startsWith('workType:') && !workTypes.includes(currentValue.substring(9))) {
+            const wt = currentValue.substring(9);
+            options.push(`<option value="${currentValue}" selected>ワーク種類: ${wt}</option>`);
+        }
+
         return `<select class="interlock-inline-select" id="il-${id}">${options.join('')}</select>`;
     }
 
@@ -437,6 +454,18 @@ export class InterlockModal {
                 <option value="false" ${!currentValue ? 'selected' : ''}>OFF</option>
             </select>
         `;
+    }
+
+    _collectWorkTypes() {
+        if (!this._scenario) return [];
+        const types = new Set();
+        for (const station of this._scenario.stations) {
+            const wt = station.config?.workType;
+            if (wt) types.add(wt);
+            const owt = station.config?.outputWorkType;
+            if (owt) types.add(owt);
+        }
+        return Array.from(types).sort();
     }
 
     _getConnectedStations() {

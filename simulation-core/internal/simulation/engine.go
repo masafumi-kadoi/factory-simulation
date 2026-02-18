@@ -223,8 +223,9 @@ func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error 
 	station.CurrentWork = work
 	station.State = domain.StateCompleted
 
-	// Update signal: workPresent=ON
+	// Update signal: workPresent=ON, workType:<type>=ON
 	station.SetSignal("workPresent", true)
+	setWorkTypeSignal(station.Signals, work.Type)
 
 	// Log work event
 	e.logWorkEvent(workID, friendlyName, station.ID, e.currentTime, string(EventWorkCreated), work.Type, -1)
@@ -268,8 +269,9 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return err
 	}
 
-	// Update signal: workPresent=ON
+	// Update signal: workPresent=ON, workType:<type>=ON
 	station.SetSignal("workPresent", true)
+	setWorkTypeSignal(station.Signals, work.Type)
 
 	// Log work event
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type, -1)
@@ -357,6 +359,7 @@ func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) err
 
 	// Update station signals
 	station.SetSignal("workPresent", true)
+	setWorkTypeSignal(station.Signals, mergedWork.Type)
 	station.SetSignal("processingComplete", true)
 
 	// Log events
@@ -453,6 +456,7 @@ func (e *Engine) handleSplitProcessingCompleted(station *domain.Station) error {
 	// Update station-level signals: processingComplete=ON, workPresent=OFF (body is empty after split)
 	station.SetSignal("processingComplete", true)
 	station.SetSignal("workPresent", false)
+	clearWorkTypeSignals(station.Signals)
 
 	e.logStationStatus(station, "分割処理完了")
 
@@ -502,8 +506,9 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return err
 	}
 
-	// Update signal: workPresent=OFF
+	// Update signal: workPresent=OFF, clear workType
 	station.SetSignal("workPresent", false)
+	clearWorkTypeSignals(station.Signals)
 
 	// Log work event
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, -1)
@@ -644,8 +649,9 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	station.CurrentWork = nil
 	station.State = domain.StateIdle
 
-	// Update signal: workPresent=OFF
+	// Update signal: workPresent=OFF, clear workType
 	station.SetSignal("workPresent", false)
+	clearWorkTypeSignals(station.Signals)
 
 	e.logStationStatus(station, "ワーク破棄")
 
@@ -783,6 +789,13 @@ func (e *Engine) updateBufferDerivedSignals(station *domain.Station, bufferIndex
 		slot.Signals["bufferFull"] = isFull
 	}
 
+	// Update workType derived signal for buffer
+	if hasWorks {
+		setWorkTypeSignal(slot.Signals, slot.Works[0].Type)
+	} else {
+		clearWorkTypeSignals(slot.Signals)
+	}
+
 	// Evaluate per-buffer interlock rules
 	e.evaluateBufferRules(station, bufferIndex, isInput)
 
@@ -905,6 +918,26 @@ func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timest
 		WorkType:         workType,
 		BufferIndex:      bufferIndex,
 	})
+}
+
+// setWorkTypeSignal sets the workType:<type> derived signal on a station.
+// When a work is present, workType:<type>=true. When work leaves, all workType:* signals are cleared.
+func setWorkTypeSignal(signals map[string]bool, workType string) {
+	// Clear all existing workType signals
+	clearWorkTypeSignals(signals)
+	// Set the new one
+	if workType != "" {
+		signals["workType:"+workType] = true
+	}
+}
+
+// clearWorkTypeSignals removes all workType:* signals from the map
+func clearWorkTypeSignals(signals map[string]bool) {
+	for key := range signals {
+		if len(key) > 9 && key[:9] == "workType:" {
+			delete(signals, key)
+		}
+	}
 }
 
 // logStationStatus logs a station status change
