@@ -278,6 +278,11 @@ class ScenarioEditor {
             this.canvas.snapToGrid = e.target.checked;
         });
 
+        // Auto layout button
+        document.getElementById('auto-layout-btn').addEventListener('click', () => {
+            this.autoLayout();
+        });
+
         // Prevent accidental page leave
         window.addEventListener('beforeunload', (e) => {
             if (this.dirty) {
@@ -406,6 +411,78 @@ class ScenarioEditor {
             }
         };
         return defaults[type] || {};
+    }
+
+    // Auto-layout: arrange stations left-to-right using topological sort
+    autoLayout() {
+        const stations = this.scenario.stations;
+        const connections = this.scenario.connections;
+        if (stations.length === 0) return;
+
+        // Build adjacency list and in-degree map
+        const outEdges = new Map(); // stationId -> [targetStationId, ...]
+        const inDegree = new Map();
+        stations.forEach(s => {
+            outEdges.set(s.id, []);
+            inDegree.set(s.id, 0);
+        });
+        connections.forEach(c => {
+            outEdges.get(c.from)?.push(c.to);
+            inDegree.set(c.to, (inDegree.get(c.to) || 0) + 1);
+        });
+
+        // Topological sort (BFS / Kahn's algorithm) to assign layers
+        const queue = [];
+        stations.forEach(s => {
+            if ((inDegree.get(s.id) || 0) === 0) queue.push(s.id);
+        });
+
+        const layer = new Map(); // stationId -> layer index
+        let maxLayer = 0;
+        while (queue.length > 0) {
+            const id = queue.shift();
+            const currentLayer = layer.get(id) || 0;
+            if (currentLayer > maxLayer) maxLayer = currentLayer;
+            for (const next of (outEdges.get(id) || [])) {
+                const nextLayer = Math.max(layer.get(next) || 0, currentLayer + 1);
+                layer.set(next, nextLayer);
+                if (nextLayer > maxLayer) maxLayer = nextLayer;
+                inDegree.set(next, (inDegree.get(next) || 0) - 1);
+                if (inDegree.get(next) === 0) queue.push(next);
+            }
+        }
+
+        // Assign unvisited stations (cycles or disconnected) to layer 0
+        stations.forEach(s => {
+            if (!layer.has(s.id)) layer.set(s.id, 0);
+        });
+
+        // Group stations by layer
+        const layers = [];
+        for (let i = 0; i <= maxLayer; i++) layers.push([]);
+        stations.forEach(s => {
+            layers[layer.get(s.id)].push(s);
+        });
+
+        // Layout parameters
+        const xStart = 200;
+        const xGap = 200;   // horizontal gap between layers
+        const yStart = 150;
+        const yGap = 120;   // vertical gap between stations in same layer
+
+        // Position each station
+        layers.forEach((layerStations, layerIdx) => {
+            const totalHeight = (layerStations.length - 1) * yGap;
+            const baseY = yStart + (600 - totalHeight) / 2; // center vertically in ~600px area
+
+            layerStations.forEach((station, i) => {
+                station.x = this.canvas._snapToGrid(xStart + layerIdx * xGap);
+                station.y = this.canvas._snapToGrid(baseY + i * yGap);
+            });
+        });
+
+        this._markDirty();
+        this._render();
     }
 
     deleteStation(stationId) {
