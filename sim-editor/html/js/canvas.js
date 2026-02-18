@@ -45,6 +45,7 @@ export class Canvas {
 
     _setupEventListeners() {
         this.svg.addEventListener('click', (e) => this._handleClick(e));
+        this.svg.addEventListener('dblclick', (e) => this._handleDblClick(e));
         this.svg.addEventListener('mousedown', (e) => this._handleMouseDown(e));
         this.svg.addEventListener('mousemove', (e) => this._handleMouseMove(e));
         this.svg.addEventListener('mouseup', (e) => this._handleMouseUp(e));
@@ -118,11 +119,24 @@ export class Canvas {
             }
         } else {
             // Clicked on empty space
-            if (tool === 'source' || tool === 'processing' || tool === 'drain' || tool === 'merge' || tool === 'split') {
+            if (tool === 'source' || tool === 'processing' || tool === 'drain' || tool === 'merge' || tool === 'split' || tool === 'moduler') {
                 this.editor.addStation(tool, pt.x, pt.y);
             } else if (tool === 'select') {
                 this.editor.selectItem(null);
             }
+        }
+    }
+
+    _handleDblClick(e) {
+        const stationEl = e.target.closest('.station');
+        if (!stationEl) return;
+
+        const stationId = stationEl.dataset.stationId;
+        const station = this.editor.getStation(stationId);
+        if (station && station.type === 'moduler') {
+            e.preventDefault();
+            e.stopPropagation();
+            this.editor.drillDown(stationId);
         }
     }
 
@@ -184,9 +198,10 @@ export class Canvas {
         if (this.connectFrom === null) {
             // First click - set source
             const station = this.editor.getStation(stationId);
-            if (station && station.type === 'split') {
-                // For split stations, user should click on a specific output port
-                document.getElementById('canvas-info').textContent = 'Splitステーションの出力ポートをクリックしてください';
+            if (station && (station.type === 'split' || station.type === 'moduler')) {
+                // For split/moduler stations, user should click on a specific output port
+                const label = station.type === 'split' ? 'Split' : 'Moduler';
+                document.getElementById('canvas-info').textContent = `${label}ステーションの出力ポートをクリックしてください`;
                 return;
             }
             this.connectFrom = stationId;
@@ -202,9 +217,10 @@ export class Canvas {
             }
 
             const toStation = this.editor.getStation(stationId);
-            if (toStation && toStation.type === 'merge') {
-                // For merge stations, user should click on a specific input port
-                document.getElementById('canvas-info').textContent = 'Mergeステーションの入力ポートをクリックしてください';
+            if (toStation && (toStation.type === 'merge' || toStation.type === 'moduler')) {
+                // For merge/moduler stations, user should click on a specific input port
+                const label = toStation.type === 'merge' ? 'Merge' : 'Moduler';
+                document.getElementById('canvas-info').textContent = `${label}ステーションの入力ポートをクリックしてください`;
                 return;
             }
 
@@ -260,8 +276,8 @@ export class Canvas {
                 const stationId = station.dataset.stationId;
                 const stationData = this.editor.getStation(stationId);
 
-                // Don't start connection drag from split stations (must use ports)
-                if (stationData && stationData.type === 'split') {
+                // Don't start connection drag from split/moduler stations (must use ports)
+                if (stationData && (stationData.type === 'split' || stationData.type === 'moduler')) {
                     return;
                 }
 
@@ -401,8 +417,8 @@ export class Canvas {
                 const toId = station.dataset.stationId;
                 if (toId !== this.connectFrom) {
                     const toStation = this.editor.getStation(toId);
-                    // If dropping on a merge station, user should target a port
-                    if (toStation && toStation.type === 'merge') {
+                    // If dropping on a merge/moduler station, user should target a port
+                    if (toStation && (toStation.type === 'merge' || toStation.type === 'moduler')) {
                         // Don't create connection - need to target a port
                     } else {
                         this.editor.addConnection(this.connectFrom, toId, this.connectFromPortIndex, -1);
@@ -515,37 +531,245 @@ export class Canvas {
                 g.classList.add('selected');
             }
 
-            // Rectangle
-            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            rect.setAttribute('x', station.x - 40);
-            rect.setAttribute('y', station.y - 30);
-            rect.setAttribute('width', 80);
-            rect.setAttribute('height', 60);
-            rect.setAttribute('rx', 8);
+            if (station.type === 'entry' || station.type === 'exit') {
+                // Entry/Exit: triangle shape
+                this._renderEntryExitStation(g, station);
+            } else if (station.type === 'moduler') {
+                // Moduler: double-border box
+                this._renderModulerStation(g, station);
+            } else {
+                // Rectangle (standard)
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', station.x - 40);
+                rect.setAttribute('y', station.y - 30);
+                rect.setAttribute('width', 80);
+                rect.setAttribute('height', 60);
+                rect.setAttribute('rx', 8);
 
-            // Text
-            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            text.setAttribute('x', station.x);
-            text.setAttribute('y', station.y);
-            text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('dominant-baseline', 'middle');
-            text.setAttribute('font-size', '12');
-            text.setAttribute('font-weight', 'bold');
-            text.setAttribute('fill', '#333');
-            text.textContent = station.id;
+                // Text
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', station.x);
+                text.setAttribute('y', station.y);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('dominant-baseline', 'middle');
+                text.setAttribute('font-size', '12');
+                text.setAttribute('font-weight', 'bold');
+                text.setAttribute('fill', '#333');
+                text.textContent = station.id;
 
-            g.appendChild(rect);
-            g.appendChild(text);
+                g.appendChild(rect);
+                g.appendChild(text);
+            }
 
             // Render port slots for Merge/Split
             if (station.type === 'merge') {
                 this._renderMergePorts(g, station);
             } else if (station.type === 'split') {
                 this._renderSplitPorts(g, station);
+            } else if (station.type === 'moduler') {
+                this._renderModulerPorts(g, station);
             }
 
             this.stationsLayer.appendChild(g);
         });
+    }
+
+    _renderEntryExitStation(g, station) {
+        const x = station.x;
+        const y = station.y;
+        const isEntry = station.type === 'entry';
+
+        // Triangle pointing right
+        const halfW = 25;
+        const halfH = 20;
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        if (isEntry) {
+            // Entry: arrow pointing right (incoming)
+            polygon.setAttribute('points',
+                `${x - halfW},${y - halfH} ${x + halfW},${y} ${x - halfW},${y + halfH}`);
+        } else {
+            // Exit: arrow pointing right (outgoing)
+            polygon.setAttribute('points',
+                `${x - halfW},${y - halfH} ${x + halfW},${y} ${x - halfW},${y + halfH}`);
+        }
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', x - 5);
+        text.setAttribute('y', y);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        text.setAttribute('font-size', '10');
+        text.setAttribute('font-weight', 'bold');
+        text.setAttribute('fill', '#333');
+        text.textContent = station.id;
+
+        g.appendChild(polygon);
+        g.appendChild(text);
+    }
+
+    _renderModulerStation(g, station) {
+        const x = station.x;
+        const y = station.y;
+        const w = 100;
+        const h = 70;
+
+        // Outer rectangle
+        const outerRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        outerRect.setAttribute('x', x - w / 2);
+        outerRect.setAttribute('y', y - h / 2);
+        outerRect.setAttribute('width', w);
+        outerRect.setAttribute('height', h);
+        outerRect.setAttribute('rx', 8);
+
+        // Inner rectangle (double border effect)
+        const innerRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        innerRect.setAttribute('x', x - w / 2 + 4);
+        innerRect.setAttribute('y', y - h / 2 + 4);
+        innerRect.setAttribute('width', w - 8);
+        innerRect.setAttribute('height', h - 8);
+        innerRect.setAttribute('rx', 5);
+        innerRect.classList.add('moduler-inner-rect');
+
+        // Text
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', x);
+        text.setAttribute('y', y - 5);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        text.setAttribute('font-size', '11');
+        text.setAttribute('font-weight', 'bold');
+        text.setAttribute('fill', '#333');
+        text.textContent = station.id;
+
+        // Sub-label showing entry/exit count
+        const subText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        subText.setAttribute('x', x);
+        subText.setAttribute('y', y + 12);
+        subText.setAttribute('text-anchor', 'middle');
+        subText.setAttribute('dominant-baseline', 'middle');
+        subText.setAttribute('font-size', '9');
+        subText.setAttribute('fill', '#666');
+        const entryCount = station.config.entryCount || 1;
+        const exitCount = station.config.exitCount || 1;
+        subText.textContent = `E:${entryCount} X:${exitCount}`;
+
+        g.appendChild(outerRect);
+        g.appendChild(innerRect);
+        g.appendChild(text);
+        g.appendChild(subText);
+    }
+
+    _renderModulerPorts(parentGroup, station) {
+        const entryCount = station.config.entryCount || 1;
+        const exitCount = station.config.exitCount || 1;
+        const w = 100;
+        const h = 70;
+
+        const portWidth = 20;
+        const portHeight = 14;
+        const gap = 20;
+
+        // Entry ports (left side - input)
+        const entryTotalH = entryCount * portHeight + (entryCount - 1) * (gap - portHeight);
+        const entryStartY = station.y - entryTotalH / 2;
+
+        for (let i = 0; i < entryCount; i++) {
+            const bufX = station.x - w / 2 - portWidth - 6;
+            const bufY = entryStartY + i * gap;
+
+            const bufGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            bufGroup.classList.add('port-slot', 'port-slot-entry');
+            bufGroup.dataset.stationId = station.id;
+            bufGroup.dataset.portIndex = i;
+            bufGroup.dataset.portType = 'input';
+
+            const isConnected = this.editor.scenario.connections.some(
+                c => c.to === station.id && c.toPortIndex === i
+            );
+            if (isConnected) bufGroup.classList.add('connected');
+
+            const bufRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bufRect.setAttribute('x', bufX);
+            bufRect.setAttribute('y', bufY);
+            bufRect.setAttribute('width', portWidth);
+            bufRect.setAttribute('height', portHeight);
+            bufRect.setAttribute('rx', 2);
+
+            const bufText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            bufText.setAttribute('x', bufX + portWidth / 2);
+            bufText.setAttribute('y', bufY + portHeight / 2);
+            bufText.setAttribute('text-anchor', 'middle');
+            bufText.setAttribute('dominant-baseline', 'middle');
+            bufText.setAttribute('font-size', '7');
+            bufText.setAttribute('fill', '#2e7d32');
+            bufText.textContent = `E${i}`;
+
+            bufGroup.appendChild(bufRect);
+            bufGroup.appendChild(bufText);
+            parentGroup.appendChild(bufGroup);
+
+            // Line from port to station body
+            const connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            connLine.setAttribute('x1', bufX + portWidth);
+            connLine.setAttribute('y1', bufY + portHeight / 2);
+            connLine.setAttribute('x2', station.x - w / 2);
+            connLine.setAttribute('y2', station.y);
+            connLine.setAttribute('stroke', '#2e7d3280');
+            connLine.setAttribute('stroke-width', '1');
+            connLine.setAttribute('stroke-dasharray', '3,2');
+            parentGroup.appendChild(connLine);
+        }
+
+        // Exit ports (right side - output)
+        const exitTotalH = exitCount * portHeight + (exitCount - 1) * (gap - portHeight);
+        const exitStartY = station.y - exitTotalH / 2;
+
+        for (let i = 0; i < exitCount; i++) {
+            const bufX = station.x + w / 2 + 6;
+            const bufY = exitStartY + i * gap;
+
+            const bufGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            bufGroup.classList.add('port-slot', 'port-slot-exit');
+            bufGroup.dataset.stationId = station.id;
+            bufGroup.dataset.portIndex = i;
+            bufGroup.dataset.portType = 'output';
+
+            const isConnected = this.editor.scenario.connections.some(
+                c => c.from === station.id && c.fromPortIndex === i
+            );
+            if (isConnected) bufGroup.classList.add('connected');
+
+            const bufRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bufRect.setAttribute('x', bufX);
+            bufRect.setAttribute('y', bufY);
+            bufRect.setAttribute('width', portWidth);
+            bufRect.setAttribute('height', portHeight);
+            bufRect.setAttribute('rx', 2);
+
+            const bufText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            bufText.setAttribute('x', bufX + portWidth / 2);
+            bufText.setAttribute('y', bufY + portHeight / 2);
+            bufText.setAttribute('text-anchor', 'middle');
+            bufText.setAttribute('dominant-baseline', 'middle');
+            bufText.setAttribute('font-size', '7');
+            bufText.setAttribute('fill', '#e65100');
+            bufText.textContent = `X${i}`;
+
+            bufGroup.appendChild(bufRect);
+            bufGroup.appendChild(bufText);
+            parentGroup.appendChild(bufGroup);
+
+            // Line from station body to port
+            const connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            connLine.setAttribute('x1', station.x + w / 2);
+            connLine.setAttribute('y1', station.y);
+            connLine.setAttribute('x2', bufX);
+            connLine.setAttribute('y2', bufY + portHeight / 2);
+            connLine.setAttribute('stroke', '#e6510080');
+            connLine.setAttribute('stroke-width', '1');
+            connLine.setAttribute('stroke-dasharray', '3,2');
+            parentGroup.appendChild(connLine);
+        }
     }
 
     _renderMergePorts(parentGroup, station) {
@@ -677,6 +901,33 @@ export class Canvas {
         const station = this.editor.getStation(stationId);
         if (!station) return null;
 
+        // ModulerStation ports
+        if (station.type === 'moduler') {
+            const w = 100;
+            const portWidth = 20;
+            const portHeight = 14;
+            const gap = 20;
+
+            if (portType === 'input') {
+                const count = station.config.entryCount || 1;
+                if (portIndex < 0 || portIndex >= count) return null;
+                const totalH = count * portHeight + (count - 1) * (gap - portHeight);
+                const startY = station.y - totalH / 2;
+                const bufX = station.x - w / 2 - portWidth - 6;
+                const bufY = startY + portIndex * gap + portHeight / 2;
+                return { x: bufX, y: bufY };
+            } else {
+                const count = station.config.exitCount || 1;
+                if (portIndex < 0 || portIndex >= count) return null;
+                const totalH = count * portHeight + (count - 1) * (gap - portHeight);
+                const startY = station.y - totalH / 2;
+                const bufX = station.x + w / 2 + 6 + portWidth;
+                const bufY = startY + portIndex * gap + portHeight / 2;
+                return { x: bufX, y: bufY };
+            }
+        }
+
+        // Merge/Split ports
         const ports = station.config.ports || [];
         const count = ports.length;
         if (portIndex < 0 || portIndex >= count) return null;
@@ -720,7 +971,7 @@ export class Canvas {
 
             // Determine start point
             let x1, y1;
-            if (connection.fromPortIndex >= 0 && fromStation.type === 'split') {
+            if (connection.fromPortIndex >= 0 && (fromStation.type === 'split' || fromStation.type === 'moduler')) {
                 const bufPos = this._getPortPosition(connection.from, connection.fromPortIndex, 'output');
                 if (bufPos) {
                     x1 = bufPos.x;
@@ -731,16 +982,17 @@ export class Canvas {
                 }
             } else {
                 // Choose the nearest edge based on relative position to target
-                const targetX = (connection.toPortIndex >= 0 && toStation.type === 'merge')
-                    ? (toStation.x - 40 - 40) // approximate merge port left edge
+                const targetX = (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler'))
+                    ? (toStation.x - 40 - 40) // approximate port left edge
                     : toStation.x;
-                x1 = targetX >= fromStation.x ? fromStation.x + 40 : fromStation.x - 40;
+                const halfW = fromStation.type === 'moduler' ? 50 : 40;
+                x1 = targetX >= fromStation.x ? fromStation.x + halfW : fromStation.x - halfW;
                 y1 = fromStation.y;
             }
 
             // Determine end point
             let x2, y2;
-            if (connection.toPortIndex >= 0 && toStation.type === 'merge') {
+            if (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler')) {
                 const bufPos = this._getPortPosition(connection.to, connection.toPortIndex, 'input');
                 if (bufPos) {
                     x2 = bufPos.x;
@@ -751,7 +1003,8 @@ export class Canvas {
                 }
             } else {
                 // Choose the nearest edge based on relative position to source
-                x2 = x1 <= toStation.x ? toStation.x - 40 : toStation.x + 40;
+                const halfW = toStation.type === 'moduler' ? 50 : 40;
+                x2 = x1 <= toStation.x ? toStation.x - halfW : toStation.x + halfW;
                 y2 = toStation.y;
             }
 

@@ -48,6 +48,9 @@
                     <button class="tool-btn" data-tool="split" title="Split Station">
                         🔃 Split
                     </button>
+                    <button class="tool-btn" data-tool="moduler" title="Moduler Station">
+                        📦📦 Moduler
+                    </button>
                 </div>
                 <div class="tool-section">
                     <h4>編集</h4>
@@ -75,6 +78,9 @@
 
             <!-- Center: Canvas -->
             <div class="canvas-container">
+                <div id="breadcrumb" class="breadcrumb" style="display: none;">
+                    <span class="breadcrumb-item breadcrumb-root" data-depth="0">Root</span>
+                </div>
                 <svg id="canvas" width="100%" height="100%">
                     <defs>
                         <marker id="arrowhead" markerWidth="10" markerHeight="7"

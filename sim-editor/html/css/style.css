@@ -1046,3 +1046,99 @@ body {
     fill: rgba(253, 126, 20, 0.35);
     stroke-width: 1.5;
 }
+
+/* Moduler Station */
+.station-moduler rect {
+    fill: rgba(74, 20, 140, 0.15);
+    stroke: #4a148c;
+}
+
+.station-moduler .moduler-inner-rect {
+    fill: none;
+    stroke: #4a148c;
+    stroke-width: 1;
+    stroke-dasharray: 4,2;
+    pointer-events: none;
+}
+
+/* Entry Station */
+.station-entry polygon {
+    fill: rgba(46, 125, 50, 0.2);
+    stroke: #2e7d32;
+    stroke-width: 2;
+}
+
+/* Exit Station */
+.station-exit polygon {
+    fill: rgba(230, 81, 0, 0.2);
+    stroke: #e65100;
+    stroke-width: 2;
+}
+
+/* Moduler Entry/Exit port slots */
+.port-slot-entry rect {
+    fill: rgba(46, 125, 50, 0.15);
+    stroke: #2e7d32;
+}
+
+.port-slot-entry:hover rect {
+    fill: rgba(46, 125, 50, 0.3);
+}
+
+.port-slot-entry.connected rect {
+    fill: rgba(46, 125, 50, 0.35);
+    stroke-width: 1.5;
+}
+
+.port-slot-exit rect {
+    fill: rgba(230, 81, 0, 0.15);
+    stroke: #e65100;
+}
+
+.port-slot-exit:hover rect {
+    fill: rgba(230, 81, 0, 0.3);
+}
+
+.port-slot-exit.connected rect {
+    fill: rgba(230, 81, 0, 0.35);
+    stroke-width: 1.5;
+}
+
+/* Breadcrumb */
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background: rgba(74, 20, 140, 0.08);
+    border-bottom: 1px solid rgba(74, 20, 140, 0.2);
+    font-size: 0.85rem;
+    z-index: 10;
+}
+
+.breadcrumb-item {
+    cursor: pointer;
+    color: #4a148c;
+    font-weight: 500;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    transition: background 0.15s;
+}
+
+.breadcrumb-item:hover {
+    background: rgba(74, 20, 140, 0.12);
+}
+
+.breadcrumb-current {
+    color: #333;
+    font-weight: 600;
+    cursor: default;
+}
+
+.breadcrumb-current:hover {
+    background: transparent;
+}
+
+.breadcrumb-separator {
+    color: #999;
+    margin: 0 0.25rem;
+}

@@ -30,6 +30,10 @@ class ScenarioEditor {
         this.commandManager = new CommandManager(this);
         this.tooltipManager = new TooltipManager();
 
+        // Drill-down state for ModulerStation editing
+        this._editStack = []; // Stack of { scenario, selectedItem, commandManager }
+        this._currentSubScenarioPath = []; // Array of station IDs for breadcrumb
+
         this._init();
     }
 
@@ -93,15 +97,7 @@ class ScenarioEditor {
                 apiScenarioId: apiScenarioId,
                 name: data.name,
                 simdbConfig: data.simdbConfig || null,
-                stations: (data.stations || []).map((s, i) => ({
-                    id: s.id,
-                    name: s.name || '',
-                    type: s.type,
-                    locationId: s.locationId || null,
-                    config: s.config || {},
-                    x: (s.positionX != null) ? s.positionX : 100 + i * 200,
-                    y: (s.positionY != null) ? s.positionY : 300
-                })),
+                stations: (data.stations || []).map((s, i) => this._stationFromAPIData(s, i)),
                 connections: (data.connections || []).map(c => ({
                     from: c.from,
                     to: c.to,
@@ -300,6 +296,7 @@ class ScenarioEditor {
             'drain': 'Drainステーション配置 (R)',
             'merge': 'Mergeステーション配置（複数ワークを結合）',
             'split': 'Splitステーション配置（結合ワークを分割）',
+            'moduler': 'Modulerステーション配置（内部にSubScenarioを持つ階層ステーション）| ダブルクリックで内部編集',
             'select': '選択/移動モード (V)',
             'connect': '接続作成モード (C) | Shiftキー押しながらドラッグでも接続作成可能',
             'delete': '削除モード (D) | Deleteキーでも削除可能'
@@ -340,6 +337,7 @@ class ScenarioEditor {
             source: 'クリックでSourceステーション配置 | マウスホイールでズーム',
             processing: 'クリックでProcessingステーション配置 | マウスホイールでズーム',
             drain: 'クリックでDrainステーション配置 | マウスホイールでズーム',
+            moduler: 'クリックでModulerステーション配置 | ダブルクリックで内部編集',
             connect: 'ステーションをドラッグして接続作成 | Shiftキー+ドラッグでも可',
             delete: 'クリックで削除 | Deleteキーでも可'
         };
@@ -408,9 +406,20 @@ class ScenarioEditor {
                 processingTime: 2.0,
                 arrivalTime: 1.0,
                 departureTime: 1.0
+            },
+            moduler: {
+                entryCount: 1,
+                exitCount: 1,
+                subScenario: {
+                    stations: [
+                        { id: 'entry-0', name: '', type: 'entry', config: {}, x: 100, y: 300 },
+                        { id: 'exit-0', name: '', type: 'exit', config: {}, x: 700, y: 300 }
+                    ],
+                    connections: []
+                }
             }
         };
-        return defaults[type] || {};
+        return defaults[type] ? JSON.parse(JSON.stringify(defaults[type])) : {};
     }
 
     // Auto-layout: arrange stations left-to-right using topological sort
@@ -486,6 +495,12 @@ class ScenarioEditor {
     }
 
     deleteStation(stationId) {
+        // Prevent deletion of Entry/Exit stations inside SubScenario
+        const station = this.getStation(stationId);
+        if (station && (station.type === 'entry' || station.type === 'exit') && this.isInSubScenario()) {
+            alert('Entry/Exitステーションは削除できません。親ステーションのプロパティでEntry/Exit数を変更してください。');
+            return;
+        }
         const command = new DeleteStationCommand(this, stationId);
         this.commandManager.execute(command);
     }
@@ -650,19 +665,27 @@ class ScenarioEditor {
 
     async _saveToAPI(overwrite = false) {
         try {
+            // Before saving, drill all the way up to root to ensure SubScenarios are saved
+            while (this._editStack.length > 0) {
+                if (this.scenario._parentStation) {
+                    this.scenario._parentStation.config.subScenario = {
+                        stations: this.scenario.stations,
+                        connections: this.scenario.connections
+                    };
+                }
+                const prev = this._editStack.pop();
+                this._currentSubScenarioPath.pop();
+                this.scenario = prev.scenario;
+                this.selectedItem = prev.selectedItem;
+                this.commandManager = prev.commandManager;
+            }
+            this._updateBreadcrumb();
+
             // Prepare scenario data for API
             const scenarioData = {
                 name: this.scenario.name,
                 simdbConfig: this.scenario.simdbConfig || undefined,
-                stations: this.scenario.stations.map(s => ({
-                    id: s.id,
-                    name: s.name || '',
-                    type: s.type,
-                    locationId: s.locationId || undefined,
-                    config: s.config,
-                    positionX: s.x,
-                    positionY: s.y
-                })),
+                stations: this.scenario.stations.map(s => this._stationToAPIData(s)),
                 connections: this.scenario.connections.map(c => ({
                     from: c.from,
                     to: c.to,
@@ -759,6 +782,66 @@ class ScenarioEditor {
         alert('JSONをエクスポートしました');
     }
 
+    _stationFromAPIData(s, i = 0) {
+        const station = {
+            id: s.id,
+            name: s.name || '',
+            type: s.type,
+            locationId: s.locationId || null,
+            config: s.config || {},
+            x: (s.positionX != null) ? s.positionX : 100 + i * 200,
+            y: (s.positionY != null) ? s.positionY : 300
+        };
+
+        // Reconstruct moduler station subScenario
+        if (s.type === 'moduler' && s.subScenario) {
+            station.config.entryCount = s.entryCount || 1;
+            station.config.exitCount = s.exitCount || 1;
+            station.config.subScenario = {
+                stations: (s.subScenario.stations || []).map((sub, j) => this._stationFromAPIData(sub, j)),
+                connections: (s.subScenario.connections || []).map(c => ({
+                    from: c.from,
+                    to: c.to,
+                    condition: c.condition || 'default',
+                    fromPortIndex: c.fromPortIndex != null ? c.fromPortIndex : -1,
+                    toPortIndex: c.toPortIndex != null ? c.toPortIndex : -1
+                }))
+            };
+        }
+
+        return station;
+    }
+
+    _stationToAPIData(s) {
+        const data = {
+            id: s.id,
+            name: s.name || '',
+            type: s.type,
+            locationId: s.locationId || undefined,
+            config: s.config,
+            positionX: s.x,
+            positionY: s.y
+        };
+
+        // For moduler stations, include entryCount, exitCount, subScenario
+        if (s.type === 'moduler' && s.config.subScenario) {
+            data.entryCount = s.config.entryCount || 1;
+            data.exitCount = s.config.exitCount || 1;
+            data.subScenario = {
+                stations: (s.config.subScenario.stations || []).map(sub => this._stationToAPIData(sub)),
+                connections: (s.config.subScenario.connections || []).map(c => ({
+                    from: c.from,
+                    to: c.to,
+                    condition: c.condition || 'default',
+                    fromPortIndex: c.fromPortIndex != null ? c.fromPortIndex : -1,
+                    toPortIndex: c.toPortIndex != null ? c.toPortIndex : -1
+                }))
+            };
+        }
+
+        return data;
+    }
+
     async _importJSON(file) {
         try {
             const text = await file.text();
@@ -828,6 +911,159 @@ class ScenarioEditor {
             console.error('Import failed:', error);
             alert('JSONインポートに失敗しました:\n' + error.message);
         }
+    }
+
+    // --- Drill-down / Drill-up for ModulerStation ---
+
+    drillDown(stationId) {
+        const station = this.scenario.stations.find(s => s.id === stationId);
+        if (!station || station.type !== 'moduler') return;
+        if (!station.config.subScenario) return;
+
+        // Push current state to stack
+        this._editStack.push({
+            scenario: this.scenario,
+            selectedItem: this.selectedItem,
+            commandManager: this.commandManager
+        });
+        this._currentSubScenarioPath.push(stationId);
+
+        // Create a virtual scenario from the SubScenario
+        const sub = station.config.subScenario;
+        this.scenario = {
+            id: this.scenario.id,
+            name: this.scenario.name,
+            stations: sub.stations || [],
+            connections: sub.connections || [],
+            _parentStation: station, // reference back to parent for saving
+            _isSubScenario: true
+        };
+
+        // Reset selection and command manager
+        this.selectedItem = null;
+        this.commandManager = new CommandManager(this);
+
+        // Auto-place Entry/Exit if positions not set
+        this._autoPlaceEntryExit();
+
+        // Update breadcrumb
+        this._updateBreadcrumb();
+
+        this._render();
+    }
+
+    drillUp() {
+        if (this._editStack.length === 0) return;
+
+        // Save current SubScenario back to parent station
+        if (this.scenario._parentStation) {
+            this.scenario._parentStation.config.subScenario = {
+                stations: this.scenario.stations,
+                connections: this.scenario.connections
+            };
+        }
+
+        // Pop state from stack
+        const prev = this._editStack.pop();
+        this._currentSubScenarioPath.pop();
+
+        this.scenario = prev.scenario;
+        this.selectedItem = prev.selectedItem;
+        this.commandManager = prev.commandManager;
+
+        this._markDirty();
+        this._updateBreadcrumb();
+        this._render();
+    }
+
+    drillToDepth(depth) {
+        // Drill up until we reach the target depth
+        while (this._editStack.length > depth) {
+            // Save current SubScenario back
+            if (this.scenario._parentStation) {
+                this.scenario._parentStation.config.subScenario = {
+                    stations: this.scenario.stations,
+                    connections: this.scenario.connections
+                };
+            }
+            const prev = this._editStack.pop();
+            this._currentSubScenarioPath.pop();
+            this.scenario = prev.scenario;
+            this.selectedItem = prev.selectedItem;
+            this.commandManager = prev.commandManager;
+        }
+
+        this._markDirty();
+        this._updateBreadcrumb();
+        this._render();
+    }
+
+    _autoPlaceEntryExit() {
+        const entries = this.scenario.stations.filter(s => s.type === 'entry');
+        const exits = this.scenario.stations.filter(s => s.type === 'exit');
+
+        // Place entries on the left
+        const entryX = 100;
+        const exitX = 700;
+        const yStart = 200;
+        const yGap = 100;
+
+        entries.forEach((entry, i) => {
+            if (entry.x === 0 && entry.y === 0) {
+                entry.x = entryX;
+                entry.y = yStart + i * yGap;
+            }
+        });
+
+        exits.forEach((exit, i) => {
+            if (exit.x === 0 && exit.y === 0) {
+                exit.x = exitX;
+                exit.y = yStart + i * yGap;
+            }
+        });
+    }
+
+    _updateBreadcrumb() {
+        const breadcrumb = document.getElementById('breadcrumb');
+        if (!breadcrumb) return;
+
+        if (this._editStack.length === 0) {
+            breadcrumb.style.display = 'none';
+            return;
+        }
+
+        breadcrumb.style.display = 'flex';
+        breadcrumb.innerHTML = '';
+
+        // Root item
+        const rootSpan = document.createElement('span');
+        rootSpan.className = 'breadcrumb-item breadcrumb-root';
+        rootSpan.textContent = 'Root';
+        rootSpan.dataset.depth = '0';
+        rootSpan.addEventListener('click', () => this.drillToDepth(0));
+        breadcrumb.appendChild(rootSpan);
+
+        // Path items
+        this._currentSubScenarioPath.forEach((stationId, i) => {
+            const sep = document.createElement('span');
+            sep.className = 'breadcrumb-separator';
+            sep.textContent = ' > ';
+            breadcrumb.appendChild(sep);
+
+            const item = document.createElement('span');
+            item.className = 'breadcrumb-item';
+            if (i === this._currentSubScenarioPath.length - 1) {
+                item.classList.add('breadcrumb-current');
+            }
+            item.textContent = stationId;
+            item.dataset.depth = String(i + 1);
+            item.addEventListener('click', () => this.drillToDepth(i + 1));
+            breadcrumb.appendChild(item);
+        });
+    }
+
+    isInSubScenario() {
+        return this._editStack.length > 0;
     }
 
     getStation(id) {

@@ -8,7 +8,11 @@ export const SIGNAL_DISPLAY = {
     inputReady:         { label: '搬入可 (IR)',      abbr: 'IR' },
     outputReady:        { label: '搬出可 (OR)',      abbr: 'OR' },
     mergeReady:         { label: '結合可 (MR)',      abbr: 'MR' },
-    portFull:         { label: 'ポート満杯 (PF)', abbr: 'PF' }
+    portFull:         { label: 'ポート満杯 (PF)', abbr: 'PF' },
+    workFull:         { label: 'ワーク満杯 (WF)', abbr: 'WF' },
+    workEmpty:        { label: 'ワーク空 (WE)', abbr: 'WE' },
+    stationStop:      { label: 'ステーション停止 (SS)', abbr: 'SS' },
+    stationProcessing:{ label: 'ステーション処理中 (SP)', abbr: 'SP' }
 };
 
 /**
@@ -141,6 +145,55 @@ export const INTERLOCK_PRESETS = {
                 { id: 'R1', target: 'inputReady', value: true,  conditions: [{ signal: 'workPresent', value: false }] },
                 { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'workPresent', value: true }] }
             ]
+        }
+    },
+    entry: {
+        standard: {
+            name: 'Standard Entry',
+            description: 'ModulerStation入口。ワーク到着後すぐに通過。',
+            signals: [
+                { name: 'workPresent', initial: false },
+                { name: 'inputReady', initial: true },
+                { name: 'outputReady', initial: false }
+            ],
+            rules: [
+                { id: 'R1', target: 'inputReady', value: true,  conditions: [{ signal: 'workPresent', value: false }] },
+                { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'workPresent', value: true }] },
+                { id: 'R3', target: 'outputReady', value: true, conditions: [{ signal: 'workPresent', value: true }] },
+                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'workPresent', value: false }] }
+            ]
+        }
+    },
+    exit: {
+        standard: {
+            name: 'Standard Exit',
+            description: 'ModulerStation出口。ワーク到着後すぐに通過。',
+            signals: [
+                { name: 'workPresent', initial: false },
+                { name: 'inputReady', initial: true },
+                { name: 'outputReady', initial: false }
+            ],
+            rules: [
+                { id: 'R1', target: 'inputReady', value: true,  conditions: [{ signal: 'workPresent', value: false }] },
+                { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'workPresent', value: true }] },
+                { id: 'R3', target: 'outputReady', value: true, conditions: [{ signal: 'workPresent', value: true }] },
+                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'workPresent', value: false }] }
+            ]
+        }
+    },
+    moduler: {
+        standard: {
+            name: 'Standard Moduler',
+            description: 'Modulerステーション。信号評価用。内部のEntry/Exitがワーク搬送を制御。',
+            signals: [
+                { name: 'workPresent', initial: false },
+                { name: 'workFull', initial: false },
+                { name: 'workEmpty', initial: true },
+                { name: 'stationStop', initial: false },
+                { name: 'stationProcessing', initial: false },
+                { name: 'processingComplete', initial: false }
+            ],
+            rules: []
         }
     }
 };

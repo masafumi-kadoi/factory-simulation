@@ -213,6 +213,7 @@ export class PropertiesPanel {
 
         const mergeConfigHtml = station.type === 'merge' ? this._renderMergeConfig(station) : '';
         const splitConfigHtml = station.type === 'split' ? this._renderSplitConfig(station) : '';
+        const modulerConfigHtml = station.type === 'moduler' ? this._renderModulerConfig(station) : '';
 
         this.container.innerHTML = `
             <div class="property-group">
@@ -246,7 +247,8 @@ export class PropertiesPanel {
             `).join('')}
             ${mergeConfigHtml}
             ${splitConfigHtml}
-            ${this._renderInterlockSection(station)}
+            ${modulerConfigHtml}
+            ${station.type !== 'entry' && station.type !== 'exit' ? this._renderInterlockSection(station) : ''}
             <div class="property-actions">
                 <button class="btn-primary" id="update-btn">更新</button>
                 <button class="btn-danger" id="delete-btn">削除</button>
@@ -296,6 +298,13 @@ export class PropertiesPanel {
             if (station.type === 'split') {
                 newConfig.splitCount = parseInt(this.container.querySelector('#prop-splitCount')?.value) || 2;
                 newConfig.ports = this._collectSplitPorts();
+            }
+
+            // Save moduler config (preserve subScenario)
+            if (station.type === 'moduler') {
+                newConfig.entryCount = parseInt(this.container.querySelector('#prop-entryCount')?.value) || 1;
+                newConfig.exitCount = parseInt(this.container.querySelector('#prop-exitCount')?.value) || 1;
+                newConfig.subScenario = station.config.subScenario;
             }
 
             // Save name
@@ -423,6 +432,41 @@ export class PropertiesPanel {
                 }
             });
         });
+
+        // Moduler config
+        if (station.type === 'moduler') {
+            const entryCountInput = this.container.querySelector('#prop-entryCount');
+            const exitCountInput = this.container.querySelector('#prop-exitCount');
+            const drilldownBtn = this.container.querySelector('#moduler-drilldown-btn');
+
+            if (entryCountInput) {
+                entryCountInput.addEventListener('change', () => {
+                    const newCount = Math.max(1, parseInt(entryCountInput.value) || 1);
+                    station.config.entryCount = newCount;
+                    // Sync SubScenario entry stations
+                    this._syncModulerEntryExit(station);
+                    this.editor._markDirty();
+                    this.editor.canvas.render();
+                    this.render();
+                });
+            }
+            if (exitCountInput) {
+                exitCountInput.addEventListener('change', () => {
+                    const newCount = Math.max(1, parseInt(exitCountInput.value) || 1);
+                    station.config.exitCount = newCount;
+                    // Sync SubScenario exit stations
+                    this._syncModulerEntryExit(station);
+                    this.editor._markDirty();
+                    this.editor.canvas.render();
+                    this.render();
+                });
+            }
+            if (drilldownBtn) {
+                drilldownBtn.addEventListener('click', () => {
+                    this.editor.drillDown(stationId);
+                });
+            }
+        }
 
         // Interlock config button
         const interlockBtn = this.container.querySelector('#interlock-config-btn');
@@ -601,7 +645,10 @@ export class PropertiesPanel {
                 { key: 'processingTime', label: 'Processing Time (s)', step: '0.1', min: '0' },
                 { key: 'arrivalTime', label: 'Arrival Time (s)', step: '0.1', min: '0.1' },
                 { key: 'departureTime', label: 'Departure Time (s)', step: '0.1', min: '0.1' }
-            ]
+            ],
+            moduler: [],
+            entry: [],
+            exit: []
         };
         return fields[type] || [];
     }
@@ -675,6 +722,90 @@ export class PropertiesPanel {
                 </div>
                 <div class="property-hint">各ポートの容量・搬出可条件（1:1接続）</div>
                 <div id="split-ports-list">${portsHtml}</div>
+            </div>
+        `;
+    }
+
+    _syncModulerEntryExit(station) {
+        if (!station.config.subScenario) {
+            station.config.subScenario = { stations: [], connections: [] };
+        }
+        const sub = station.config.subScenario;
+        const entryCount = station.config.entryCount || 1;
+        const exitCount = station.config.exitCount || 1;
+
+        // Current entries and exits
+        const entries = sub.stations.filter(s => s.type === 'entry');
+        const exits = sub.stations.filter(s => s.type === 'exit');
+
+        // Add missing entries
+        for (let i = entries.length; i < entryCount; i++) {
+            sub.stations.push({
+                id: `entry-${i}`,
+                name: '',
+                type: 'entry',
+                config: {},
+                x: 100,
+                y: 200 + i * 100
+            });
+        }
+
+        // Remove excess entries (from the end)
+        if (entries.length > entryCount) {
+            const toRemove = entries.slice(entryCount);
+            toRemove.forEach(entry => {
+                sub.stations = sub.stations.filter(s => s.id !== entry.id);
+                sub.connections = sub.connections.filter(c => c.from !== entry.id && c.to !== entry.id);
+            });
+        }
+
+        // Add missing exits
+        for (let i = exits.length; i < exitCount; i++) {
+            sub.stations.push({
+                id: `exit-${i}`,
+                name: '',
+                type: 'exit',
+                config: {},
+                x: 700,
+                y: 200 + i * 100
+            });
+        }
+
+        // Remove excess exits (from the end)
+        if (exits.length > exitCount) {
+            const toRemove = exits.slice(exitCount);
+            toRemove.forEach(exit => {
+                sub.stations = sub.stations.filter(s => s.id !== exit.id);
+                sub.connections = sub.connections.filter(c => c.from !== exit.id && c.to !== exit.id);
+            });
+        }
+    }
+
+    _renderModulerConfig(station) {
+        const entryCount = station.config.entryCount || 1;
+        const exitCount = station.config.exitCount || 1;
+        const subStations = station.config.subScenario?.stations || [];
+        const subConnections = station.config.subScenario?.connections || [];
+
+        return `
+            <div class="property-group moduler-config-section">
+                <label class="property-label" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">Moduler設定</label>
+                <div class="property-group">
+                    <label class="property-label">Entry数</label>
+                    <input type="number" class="property-input" id="prop-entryCount" value="${entryCount}" min="1" step="1">
+                </div>
+                <div class="property-group">
+                    <label class="property-label">Exit数</label>
+                    <input type="number" class="property-input" id="prop-exitCount" value="${exitCount}" min="1" step="1">
+                </div>
+                <div class="property-group">
+                    <label class="property-label">SubScenario</label>
+                    <div style="font-size: 0.8rem; color: #6c757d;">
+                        <div>内部Station: ${subStations.length}</div>
+                        <div>内部Connection: ${subConnections.length}</div>
+                    </div>
+                    <button class="btn-secondary" id="moduler-drilldown-btn" style="width: 100%; margin-top: 0.5rem;">内部を編集 (ドリルダウン)</button>
+                </div>
             </div>
         `;
     }
