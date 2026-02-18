@@ -730,6 +730,18 @@ export class InterlockModal {
             if (!confirm(msg)) return;
         }
 
+        // Ensure workType signals used in rules are added to _editSignals
+        for (const rule of this._editRules) {
+            for (const cond of rule.conditions) {
+                if (cond.signal.startsWith('workType:')) {
+                    const exists = this._editSignals.some(s => s.name === cond.signal);
+                    if (!exists) {
+                        this._editSignals.push({ name: cond.signal, initial: false });
+                    }
+                }
+            }
+        }
+
         // Apply changes
         if (this._bufferOpts) {
             // Buffer mode: save to buffer's interlockRules
@@ -803,9 +815,13 @@ export class InterlockModal {
 
         // Check for undefined signals
         const signalNames = new Set(this._editSignals.map(s => s.name));
+        // Also include workType signals from scenario as valid
+        const workTypes = this._collectWorkTypes();
+        workTypes.forEach(wt => signalNames.add(`workType:${wt}`));
         for (const rule of this._editRules) {
             for (const cond of rule.conditions) {
-                if (!signalNames.has(cond.signal)) {
+                // Allow any workType:* signal (dynamic signals)
+                if (!signalNames.has(cond.signal) && !cond.signal.startsWith('workType:')) {
                     errors.push(`信号 '${cond.signal}' は定義されていません。`);
                 }
                 if (cond.stationId) {
