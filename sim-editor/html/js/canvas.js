@@ -19,6 +19,16 @@ export class Canvas {
         this.connectionDragLine = null; // Temporary line during connection drag
         this.isDraggingConnection = false;
 
+        // Connection drag detection (distinguish click vs drag)
+        this.connectDragPending = false; // mousedown occurred, waiting to see if it's a drag
+        this.connectDragStartClient = { x: 0, y: 0 }; // client coords at mousedown
+        this.connectDragStartSVG = { x: 0, y: 0 }; // SVG coords at mousedown
+        this.connectDragThreshold = 5; // pixels of movement before drag mode activates
+        this.connectDragPendingStationId = null;
+        this.connectDragPendingBufferIndex = -1;
+        this.connectDragPendingIsBuffer = false;
+        this.suppressNextClick = false; // suppress click event after drag-based connection
+
         // Pan/Zoom state
         this.viewBox = { x: 0, y: 0, width: 2000, height: 1200 };
         this.zoom = 1.0;
@@ -56,6 +66,12 @@ export class Canvas {
     }
 
     _handleClick(e) {
+        // Suppress click event that fires after a drag-based connection
+        if (this.suppressNextClick) {
+            this.suppressNextClick = false;
+            return;
+        }
+
         const target = e.target;
         const tool = this.editor.currentTool;
 
@@ -226,19 +242,13 @@ export class Canvas {
                     if (this._isBufferConnected(stationId, bufferIndex, 'output')) {
                         return; // Already connected
                     }
-                    this.isDraggingConnection = true;
-                    this.connectFrom = stationId;
-                    this.connectFromBufferIndex = bufferIndex;
-
-                    this.connectionDragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                    this.connectionDragLine.setAttribute('stroke', '#4a9eff');
-                    this.connectionDragLine.setAttribute('stroke-width', '2');
-                    this.connectionDragLine.setAttribute('stroke-dasharray', '5,5');
-                    this.connectionDragLine.setAttribute('x1', pt.x);
-                    this.connectionDragLine.setAttribute('y1', pt.y);
-                    this.connectionDragLine.setAttribute('x2', pt.x);
-                    this.connectionDragLine.setAttribute('y2', pt.y);
-                    this.connectionsLayer.appendChild(this.connectionDragLine);
+                    // Record pending drag start (don't create drag line yet)
+                    this.connectDragPending = true;
+                    this.connectDragStartClient = { x: e.clientX, y: e.clientY };
+                    this.connectDragStartSVG = { x: pt.x, y: pt.y };
+                    this.connectDragPendingStationId = stationId;
+                    this.connectDragPendingBufferIndex = bufferIndex;
+                    this.connectDragPendingIsBuffer = true;
 
                     e.preventDefault();
                     return;
@@ -255,20 +265,13 @@ export class Canvas {
                     return;
                 }
 
-                this.isDraggingConnection = true;
-                this.connectFrom = stationId;
-                this.connectFromBufferIndex = -1;
-
-                // Create temporary drag line
-                this.connectionDragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                this.connectionDragLine.setAttribute('stroke', '#4a9eff');
-                this.connectionDragLine.setAttribute('stroke-width', '2');
-                this.connectionDragLine.setAttribute('stroke-dasharray', '5,5');
-                this.connectionDragLine.setAttribute('x1', pt.x);
-                this.connectionDragLine.setAttribute('y1', pt.y);
-                this.connectionDragLine.setAttribute('x2', pt.x);
-                this.connectionDragLine.setAttribute('y2', pt.y);
-                this.connectionsLayer.appendChild(this.connectionDragLine);
+                // Record pending drag start (don't create drag line yet)
+                this.connectDragPending = true;
+                this.connectDragStartClient = { x: e.clientX, y: e.clientY };
+                this.connectDragStartSVG = { x: pt.x, y: pt.y };
+                this.connectDragPendingStationId = stationId;
+                this.connectDragPendingBufferIndex = -1;
+                this.connectDragPendingIsBuffer = false;
 
                 e.preventDefault();
                 return;
@@ -313,6 +316,31 @@ export class Canvas {
             return;
         }
 
+        // Handle pending connection drag: check if movement exceeds threshold
+        if (this.connectDragPending) {
+            const dx = e.clientX - this.connectDragStartClient.x;
+            const dy = e.clientY - this.connectDragStartClient.y;
+            if (Math.sqrt(dx * dx + dy * dy) >= this.connectDragThreshold) {
+                // Threshold exceeded: promote to actual drag
+                this.connectDragPending = false;
+                this.isDraggingConnection = true;
+                this.connectFrom = this.connectDragPendingStationId;
+                this.connectFromBufferIndex = this.connectDragPendingBufferIndex;
+
+                // Create temporary drag line from original mousedown position
+                this.connectionDragLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                this.connectionDragLine.setAttribute('stroke', '#4a9eff');
+                this.connectionDragLine.setAttribute('stroke-width', '2');
+                this.connectionDragLine.setAttribute('stroke-dasharray', '5,5');
+                this.connectionDragLine.setAttribute('x1', this.connectDragStartSVG.x);
+                this.connectionDragLine.setAttribute('y1', this.connectDragStartSVG.y);
+                this.connectionDragLine.setAttribute('x2', pt.x);
+                this.connectionDragLine.setAttribute('y2', pt.y);
+                this.connectionsLayer.appendChild(this.connectionDragLine);
+            }
+            return;
+        }
+
         // Handle connection drag
         if (this.isDraggingConnection && this.connectionDragLine) {
             this.connectionDragLine.setAttribute('x2', pt.x);
@@ -337,6 +365,13 @@ export class Canvas {
         // Handle panning end
         if (this.isPanning) {
             this.isPanning = false;
+            return;
+        }
+
+        // Handle pending connection drag that didn't exceed threshold (= click)
+        if (this.connectDragPending) {
+            this.connectDragPending = false;
+            // Don't set connectFrom here; let the click event handle it via _handleConnectClick/_handleBufferConnectClick
             return;
         }
 
@@ -378,6 +413,7 @@ export class Canvas {
             this.isDraggingConnection = false;
             this.connectFrom = null;
             this.connectFromBufferIndex = -1;
+            this.suppressNextClick = true; // suppress the click event that follows mouseup
             return;
         }
 
