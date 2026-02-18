@@ -158,6 +158,35 @@ func (s *Station) InitializeSignals() {
 	for _, sig := range s.InterlockRules.Signals {
 		s.Signals[sig.Name] = sig.Initial
 	}
+
+	// Auto-correct control signal initial values
+	autoCorrectControlSignals(s.Signals, s.InterlockRules)
+}
+
+// autoCorrectControlSignals fixes control signal initial values:
+// If a control signal (inputReady/outputReady) has initial=true but no rule
+// can ever set it to true, force initial to false to prevent stuck-on state.
+// This handles cases where the user removes the ON rule in the editor but
+// the signal's initial value was inherited from the default preset as true.
+func autoCorrectControlSignals(signals map[string]bool, rules *InterlockConfig) {
+	if signals == nil || rules == nil {
+		return
+	}
+	for _, controlSig := range []string{"inputReady", "outputReady"} {
+		if !signals[controlSig] {
+			continue // already false, no issue
+		}
+		hasOnRule := false
+		for _, rule := range rules.Rules {
+			if rule.Target == controlSig && rule.Value {
+				hasOnRule = true
+				break
+			}
+		}
+		if !hasOnRule {
+			signals[controlSig] = false
+		}
+	}
 }
 
 // SetSignal sets a signal value
@@ -240,6 +269,7 @@ func (s *Station) InitializeBufferSlots() {
 			for _, sig := range slot.InterlockRules.Signals {
 				slot.Signals[sig.Name] = sig.Initial
 			}
+			autoCorrectControlSignals(slot.Signals, slot.InterlockRules)
 
 			s.InputBufferSlots[i] = slot
 		}
@@ -265,6 +295,7 @@ func (s *Station) InitializeBufferSlots() {
 			for _, sig := range slot.InterlockRules.Signals {
 				slot.Signals[sig.Name] = sig.Initial
 			}
+			autoCorrectControlSignals(slot.Signals, slot.InterlockRules)
 
 			s.OutputBufferSlots[i] = slot
 		}
