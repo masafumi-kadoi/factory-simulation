@@ -478,14 +478,21 @@ export class Canvas {
     }
 
     _getSVGPoint(e) {
+        // Use SVG's built-in coordinate transformation for accuracy
+        const point = this.svg.createSVGPoint();
+        point.x = e.clientX;
+        point.y = e.clientY;
+        const ctm = this.svg.getScreenCTM();
+        if (ctm) {
+            const svgPoint = point.matrixTransform(ctm.inverse());
+            return { x: svgPoint.x, y: svgPoint.y };
+        }
+        // Fallback to manual calculation
         const rect = this.svg.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-
-        // Convert to SVG coordinates considering viewBox
         const svgX = this.viewBox.x + (x / rect.width) * this.viewBox.width;
         const svgY = this.viewBox.y + (y / rect.height) * this.viewBox.height;
-
         return { x: svgX, y: svgY };
     }
 
@@ -723,7 +730,11 @@ export class Canvas {
                     y1 = fromStation.y;
                 }
             } else {
-                x1 = fromStation.x + 40;
+                // Choose the nearest edge based on relative position to target
+                const targetX = (connection.toBufferIndex >= 0 && toStation.type === 'merge')
+                    ? (toStation.x - 40 - 40) // approximate merge buffer left edge
+                    : toStation.x;
+                x1 = targetX >= fromStation.x ? fromStation.x + 40 : fromStation.x - 40;
                 y1 = fromStation.y;
             }
 
@@ -739,7 +750,8 @@ export class Canvas {
                     y2 = toStation.y;
                 }
             } else {
-                x2 = toStation.x - 40;
+                // Choose the nearest edge based on relative position to source
+                x2 = x1 <= toStation.x ? toStation.x - 40 : toStation.x + 40;
                 y2 = toStation.y;
             }
 
