@@ -201,6 +201,18 @@ func (s *Station) AddWork(work *Work) error {
 	return nil
 }
 
+// InitializeInterlockRulesFromConfig loads custom interlock rules from the station's config map.
+// This bridges the gap between the JSON config (where editor saves interlockRules)
+// and the Station.InterlockRules field (used by the engine).
+func (s *Station) InitializeInterlockRulesFromConfig() {
+	if ilRaw, ok := s.Config["interlockRules"]; ok {
+		parsed := parseInterlockConfig(ilRaw)
+		if parsed != nil {
+			s.InterlockRules = parsed
+		}
+	}
+}
+
 // InitializeBufferSlots initializes buffer slots from the station config.
 // Each buffer gets its own signals and interlock rules.
 // Called during simulation startup.

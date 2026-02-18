@@ -106,6 +106,8 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 	// Step 1: Initialize interlock rules, signals, and buffer slots for all stations
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
+		// Load custom interlock rules from config (saved by editor)
+		station.InitializeInterlockRulesFromConfig()
 		if station.InterlockRules == nil {
 			station.InterlockRules = domain.GetDefaultInterlockConfig(station.Type)
 		}

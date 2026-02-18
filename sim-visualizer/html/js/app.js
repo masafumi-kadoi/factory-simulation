@@ -122,6 +122,12 @@ class App {
                 this.visualizer.setShowWorkIDs(e.target.checked);
             }
         });
+
+        document.getElementById('show-interlocks').addEventListener('change', (e) => {
+            if (this.visualizer) {
+                this.visualizer.setShowInterlocks(e.target.checked);
+            }
+        });
     }
 
     play() {
@@ -260,9 +266,24 @@ class App {
             }
         }
 
+        // Build signal states from stationStatusLogs
+        const signalStates = new Map(); // Map<stationId, Map<signalName, bool>>
+        if (this.logs.stationStatusLogs) {
+            for (const log of this.logs.stationStatusLogs) {
+                if (log.Timestamp > this.currentTime) break;
+                if (log.StatusType === 'signal_change') {
+                    if (!signalStates.has(log.StationID)) {
+                        signalStates.set(log.StationID, new Map());
+                    }
+                    signalStates.get(log.StationID).set(log.SignalName, log.Value);
+                }
+            }
+        }
+
         // Update visualizer
         if (this.visualizer) {
             this.visualizer.updateWorks(activeWorks, this.currentTime);
+            this.visualizer.updateInterlockStates(signalStates);
         }
     }
 

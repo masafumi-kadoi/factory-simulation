@@ -22,9 +22,11 @@ export class Visualizer3D {
 
         this.stations = new Map(); // Map<stationId, {mesh, position, label, stationType, bufferSlots}>
         this.works = new Map(); // Map<workId, {mesh, label}>
-        this.connections = [];
+        this.connections = []; // [{line, from, to, fromStationId, toStationId, indicators}]
         this.showWorkIDs = true;
         this.showStationNames = true;
+        this.showInterlocks = false;
+        this.interlockIndicators = []; // [{mesh, stationId, signalName, connectionIndex}]
         this.ground = null;
         this.gridHelper = null;
         this._raycaster = new THREE.Raycaster();
@@ -244,7 +246,17 @@ export class Visualizer3D {
             }
 
             const line = this._createConnection(fromPos, toPos, conn.condition);
-            this.connections.push(line);
+            const connData = {
+                line,
+                from: fromPos,
+                to: toPos,
+                fromStationId: conn.from,
+                toStationId: conn.to
+            };
+            this.connections.push(connData);
+
+            // Create interlock indicator cubes on the connection
+            this._createInterlockIndicators(connData, from, to);
         });
 
         console.log(`[Visualizer3D] Created ${this.stations.size} stations and ${this.connections.length} connections`);
@@ -482,6 +494,74 @@ export class Visualizer3D {
         });
     }
 
+    _createInterlockIndicators(connData, fromStationData, toStationData) {
+        const cubeSize = 8;
+        const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+
+        const fromPos = connData.from;
+        const toPos = connData.to;
+        const dx = toPos.x - fromPos.x;
+        const dz = toPos.z - fromPos.z;
+
+        // outputReady indicator near the "from" station (20% along the line)
+        const outX = fromPos.x + dx * 0.2;
+        const outZ = fromPos.z + dz * 0.2;
+        const outMaterial = new THREE.MeshStandardMaterial({
+            color: 0x28a745, emissive: 0x28a745, emissiveIntensity: 0.5,
+            transparent: true, opacity: 0.9
+        });
+        const outMesh = new THREE.Mesh(geometry, outMaterial);
+        outMesh.position.set(outX, cubeSize / 2 + 1, outZ);
+        outMesh.visible = this.showInterlocks;
+        this.scene.add(outMesh);
+        this.interlockIndicators.push({
+            mesh: outMesh,
+            stationId: connData.fromStationId,
+            signalName: 'outputReady',
+            connectionIndex: this.connections.length - 1
+        });
+
+        // inputReady indicator near the "to" station (80% along the line)
+        const inX = fromPos.x + dx * 0.8;
+        const inZ = fromPos.z + dz * 0.8;
+        const inMaterial = new THREE.MeshStandardMaterial({
+            color: 0x28a745, emissive: 0x28a745, emissiveIntensity: 0.5,
+            transparent: true, opacity: 0.9
+        });
+        const inMesh = new THREE.Mesh(geometry, inMaterial);
+        inMesh.position.set(inX, cubeSize / 2 + 1, inZ);
+        inMesh.visible = this.showInterlocks;
+        this.scene.add(inMesh);
+        this.interlockIndicators.push({
+            mesh: inMesh,
+            stationId: connData.toStationId,
+            signalName: 'inputReady',
+            connectionIndex: this.connections.length - 1
+        });
+    }
+
+    setShowInterlocks(show) {
+        this.showInterlocks = show;
+        this.interlockIndicators.forEach(indicator => {
+            indicator.mesh.visible = show;
+        });
+    }
+
+    updateInterlockStates(signalStates) {
+        // signalStates: Map<stationId, Map<signalName, bool>>
+        this.interlockIndicators.forEach(indicator => {
+            const stationSignals = signalStates.get(indicator.stationId);
+            if (!stationSignals) return;
+
+            const value = stationSignals.get(indicator.signalName);
+            if (value === undefined) return;
+
+            const color = value ? 0x28a745 : 0xdc3545; // green=ON, red=OFF
+            indicator.mesh.material.color.setHex(color);
+            indicator.mesh.material.emissive.setHex(color);
+        });
+    }
+
     _createConnection(from, to, condition) {
         let color = 0x3a4f6f;
         if (condition === 'quality_ok') color = 0x28a745;
@@ -635,7 +715,18 @@ export class Visualizer3D {
         this.works.clear();
 
         // Clear connections
-        this.connections.forEach(line => this.scene.remove(line));
+        this.connections.forEach(conn => {
+            if (conn.line) this.scene.remove(conn.line);
+            else this.scene.remove(conn); // backward compat
+        });
         this.connections = [];
+
+        // Clear interlock indicators
+        this.interlockIndicators.forEach(indicator => {
+            this.scene.remove(indicator.mesh);
+            indicator.mesh.geometry.dispose();
+            indicator.mesh.material.dispose();
+        });
+        this.interlockIndicators = [];
     }
 }
