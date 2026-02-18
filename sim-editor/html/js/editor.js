@@ -1066,6 +1066,65 @@ class ScenarioEditor {
         return this._editStack.length > 0;
     }
 
+    // Auto-connect unconnected Entry/Exit to nearest station
+    autoConnectEntryExit() {
+        if (!this.isInSubScenario()) return;
+        const entries = this.scenario.stations.filter(s => s.type === 'entry');
+        const exits = this.scenario.stations.filter(s => s.type === 'exit');
+        const others = this.scenario.stations.filter(s => s.type !== 'entry' && s.type !== 'exit');
+
+        entries.forEach(entry => {
+            // Check if already connected (outgoing)
+            const hasOutgoing = this.scenario.connections.some(c => c.from === entry.id);
+            if (hasOutgoing || others.length === 0) return;
+
+            // Find nearest non-entry/exit station
+            const nearest = this._findNearestStation(entry, others);
+            if (nearest) {
+                this.scenario.connections.push({
+                    from: entry.id, to: nearest.id,
+                    condition: 'default', fromPortIndex: -1, toPortIndex: -1
+                });
+            }
+        });
+
+        exits.forEach(exit => {
+            // Check if already connected (incoming)
+            const hasIncoming = this.scenario.connections.some(c => c.to === exit.id);
+            if (hasIncoming || others.length === 0) return;
+
+            const nearest = this._findNearestStation(exit, others);
+            if (nearest) {
+                this.scenario.connections.push({
+                    from: nearest.id, to: exit.id,
+                    condition: 'default', fromPortIndex: -1, toPortIndex: -1
+                });
+            }
+        });
+
+        this._markDirty();
+        this._render();
+    }
+
+    _findNearestStation(target, candidates) {
+        let nearest = null;
+        let minDist = Infinity;
+
+        candidates.forEach(c => {
+            const dx = c.x - target.x;
+            const dy = c.y - target.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < minDist || (dist === minDist && nearest && (
+                c.y < nearest.y || (c.y === nearest.y && (c.x < nearest.x || (c.x === nearest.x && c.id < nearest.id)))
+            ))) {
+                minDist = dist;
+                nearest = c;
+            }
+        });
+
+        return nearest;
+    }
+
     getStation(id) {
         return this.scenario.stations.find(s => s.id === id);
     }

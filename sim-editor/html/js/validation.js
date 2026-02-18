@@ -33,7 +33,37 @@ export function validateScenario(scenario) {
 
     scenario.stations.forEach(station => {
         if (!connectedStations.has(station.id)) {
-            errors.push(`${station.id}が接続されていません`);
+            // Entry/Exit inside SubScenario: warn, don't error
+            if (station.type === 'entry' || station.type === 'exit') {
+                warnings.push(`${station.id} (${station.type})が接続されていません`);
+            } else {
+                errors.push(`${station.id}が接続されていません`);
+            }
+        }
+    });
+
+    // Validate ModulerStation SubScenarios recursively
+    scenario.stations.forEach(station => {
+        if (station.type === 'moduler' && station.config.subScenario) {
+            const sub = station.config.subScenario;
+            const subScenario = {
+                stations: sub.stations || [],
+                connections: sub.connections || []
+            };
+            // Check cycle detection inside SubScenario
+            const subGraph = new Map();
+            subScenario.stations.forEach(s => subGraph.set(s.id, []));
+            subScenario.connections.forEach(c => {
+                if (subGraph.has(c.from)) subGraph.get(c.from).push(c.to);
+            });
+            const subVisited = new Set();
+            const subRecStack = new Set();
+            for (const sid of subScenario.stations.map(s => s.id)) {
+                if (hasCycleAdvanced(sid, subGraph, subVisited, subRecStack)) {
+                    errors.push(`${station.id}: SubScenario内で循環接続が検出されました`);
+                    break;
+                }
+            }
         }
     });
 

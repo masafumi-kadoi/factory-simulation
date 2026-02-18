@@ -735,8 +735,8 @@ export class PropertiesPanel {
         const exitCount = station.config.exitCount || 1;
 
         // Current entries and exits
-        const entries = sub.stations.filter(s => s.type === 'entry');
-        const exits = sub.stations.filter(s => s.type === 'exit');
+        const entries = sub.stations.filter(s => s.type === 'entry').sort((a, b) => a.id.localeCompare(b.id));
+        const exits = sub.stations.filter(s => s.type === 'exit').sort((a, b) => a.id.localeCompare(b.id));
 
         // Add missing entries
         for (let i = entries.length; i < entryCount; i++) {
@@ -753,6 +753,38 @@ export class PropertiesPanel {
         // Remove excess entries (from the end)
         if (entries.length > entryCount) {
             const toRemove = entries.slice(entryCount);
+            // Check for affected external connections
+            const parentScenario = this.editor.scenario;
+            const affectedExternalConns = parentScenario.connections.filter(c =>
+                c.to === station.id && c.toPortIndex >= entryCount
+            );
+            // Check for affected internal connections
+            const affectedInternalConns = [];
+            toRemove.forEach(entry => {
+                sub.connections.filter(c => c.from === entry.id || c.to === entry.id).forEach(c => {
+                    affectedInternalConns.push(c);
+                });
+            });
+
+            if (affectedExternalConns.length > 0 || affectedInternalConns.length > 0) {
+                const msgs = [];
+                if (affectedExternalConns.length > 0) {
+                    msgs.push(`外部接続 ${affectedExternalConns.length} 件が削除されます`);
+                }
+                if (affectedInternalConns.length > 0) {
+                    msgs.push(`内部接続 ${affectedInternalConns.length} 件が削除されます`);
+                }
+                if (!confirm(`Entry数を減少します。\n${msgs.join('\n')}\n\n続行しますか？`)) {
+                    station.config.entryCount = entries.length;
+                    return;
+                }
+                // Remove affected external connections
+                affectedExternalConns.forEach(c => {
+                    const idx = parentScenario.connections.indexOf(c);
+                    if (idx >= 0) parentScenario.connections.splice(idx, 1);
+                });
+            }
+
             toRemove.forEach(entry => {
                 sub.stations = sub.stations.filter(s => s.id !== entry.id);
                 sub.connections = sub.connections.filter(c => c.from !== entry.id && c.to !== entry.id);
@@ -774,6 +806,35 @@ export class PropertiesPanel {
         // Remove excess exits (from the end)
         if (exits.length > exitCount) {
             const toRemove = exits.slice(exitCount);
+            const parentScenario = this.editor.scenario;
+            const affectedExternalConns = parentScenario.connections.filter(c =>
+                c.from === station.id && c.fromPortIndex >= exitCount
+            );
+            const affectedInternalConns = [];
+            toRemove.forEach(exit => {
+                sub.connections.filter(c => c.from === exit.id || c.to === exit.id).forEach(c => {
+                    affectedInternalConns.push(c);
+                });
+            });
+
+            if (affectedExternalConns.length > 0 || affectedInternalConns.length > 0) {
+                const msgs = [];
+                if (affectedExternalConns.length > 0) {
+                    msgs.push(`外部接続 ${affectedExternalConns.length} 件が削除されます`);
+                }
+                if (affectedInternalConns.length > 0) {
+                    msgs.push(`内部接続 ${affectedInternalConns.length} 件が削除されます`);
+                }
+                if (!confirm(`Exit数を減少します。\n${msgs.join('\n')}\n\n続行しますか？`)) {
+                    station.config.exitCount = exits.length;
+                    return;
+                }
+                affectedExternalConns.forEach(c => {
+                    const idx = parentScenario.connections.indexOf(c);
+                    if (idx >= 0) parentScenario.connections.splice(idx, 1);
+                });
+            }
+
             toRemove.forEach(exit => {
                 sub.stations = sub.stations.filter(s => s.id !== exit.id);
                 sub.connections = sub.connections.filter(c => c.from !== exit.id && c.to !== exit.id);
