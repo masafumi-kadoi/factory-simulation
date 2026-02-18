@@ -428,6 +428,11 @@ export class Visualizer3D {
         this.showStationNames = show;
         this.stations.forEach(station => {
             if (station.label) station.label.visible = show;
+            if (station.bufferSlots) {
+                station.bufferSlots.forEach(slot => {
+                    if (slot.label) slot.label.visible = show;
+                });
+            }
         });
     }
 

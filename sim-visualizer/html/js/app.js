@@ -212,6 +212,12 @@ class App {
                     });
                 } else if (event.EventType === 'WorkSplit') {
                     // Split work placed in output buffer slot
+                    // Remove the original (non-buffered) work at this station
+                    for (const [wId, wInfo] of activeWorks) {
+                        if (wInfo.stationId === stationId && !wInfo.isBuffered) {
+                            activeWorks.delete(wId);
+                        }
+                    }
                     activeWorks.set(workId, {
                         state: 'at_station',
                         stationId: stationId,
