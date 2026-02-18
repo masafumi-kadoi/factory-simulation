@@ -11,6 +11,9 @@ const (
 	StationTypeDrain      StationType = "drain"      // Simplified: Drain only destroys works
 	StationTypeMerge      StationType = "merge"      // Merge: combines multiple works into one
 	StationTypeSplit      StationType = "split"       // Split: separates combined work into components
+	StationTypeModuler    StationType = "moduler"    // Moduler: contains sub-stations (entry/exit interface)
+	StationTypeEntry      StationType = "entry"      // Entry: transparent input gateway for ModulerStation
+	StationTypeExit       StationType = "exit"       // Exit: transparent output gateway for ModulerStation
 )
 
 // StationState represents the state of a station in the state machine
@@ -77,6 +80,11 @@ type Station struct {
 	// Signal-based interlock
 	Signals        map[string]bool  // Current signal values
 	InterlockRules *InterlockConfig // Rule definitions (nil = use type default)
+
+	// ModulerStation fields
+	SubScenario *SubScenario // Internal stations and connections (moduler type only)
+	EntryCount  int          // Number of Entry stations (moduler type only)
+	ExitCount   int          // Number of Exit stations (moduler type only)
 }
 
 // NewStation creates a new station

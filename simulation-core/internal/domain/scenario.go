@@ -40,6 +40,13 @@ type Scenario struct {
 	UpdatedAt   *time.Time
 }
 
+// SubScenario represents the internal stations and connections within a ModulerStation.
+// It is a lightweight container that holds only the station graph without scenario metadata.
+type SubScenario struct {
+	Stations    []Station
+	Connections []Connection
+}
+
 // NewScenario creates a new scenario
 func NewScenario(id, name string, stations []Station, connections []Connection) *Scenario {
 	return &Scenario{

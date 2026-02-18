@@ -64,6 +64,12 @@ func GetDefaultInterlockConfig(stationType StationType) *InterlockConfig {
 		return getMergeDefaultConfig()
 	case StationTypeSplit:
 		return getSplitDefaultConfig()
+	case StationTypeEntry:
+		return getEntryDefaultConfig()
+	case StationTypeExit:
+		return getExitDefaultConfig()
+	case StationTypeModuler:
+		return getModulerDefaultConfig()
 	default:
 		return getProcessingDefaultConfig()
 	}
@@ -344,6 +350,71 @@ func GetDefaultSplitPortInterlockConfig() *InterlockConfig {
 				Conditions:  []RuleCondition{{Signal: "workPresent", Value: false}},
 			},
 		},
+	}
+}
+
+// getEntryDefaultConfig returns the default interlock config for an Entry station.
+// Entry is transparent (zero processing time): workPresent, inputReady, outputReady.
+func getEntryDefaultConfig() *InterlockConfig {
+	return &InterlockConfig{
+		Signals: []SignalDef{
+			{Name: "workPresent", Initial: false},
+			{Name: "inputReady", Initial: true},
+			{Name: "outputReady", Initial: false},
+		},
+		Rules: []InterlockRule{
+			{
+				ID:          "R1",
+				Description: "ワーク到着 → 搬出可ON",
+				Target:      "outputReady",
+				Value:       true,
+				Conditions:  []RuleCondition{{Signal: "workPresent", Value: true}},
+			},
+			{
+				ID:          "R2",
+				Description: "ワーク出発 → 搬出可OFF",
+				Target:      "outputReady",
+				Value:       false,
+				Conditions:  []RuleCondition{{Signal: "workPresent", Value: false}},
+			},
+			{
+				ID:          "R3",
+				Description: "空き → 搬入可ON",
+				Target:      "inputReady",
+				Value:       true,
+				Conditions:  []RuleCondition{{Signal: "workPresent", Value: false}},
+			},
+			{
+				ID:          "R4",
+				Description: "ワーク有り → 搬入可OFF",
+				Target:      "inputReady",
+				Value:       false,
+				Conditions:  []RuleCondition{{Signal: "workPresent", Value: true}},
+			},
+		},
+	}
+}
+
+// getExitDefaultConfig returns the default interlock config for an Exit station.
+// Exit has the same rules as Entry (transparent pass-through).
+func getExitDefaultConfig() *InterlockConfig {
+	return getEntryDefaultConfig()
+}
+
+// getModulerDefaultConfig returns the default interlock config for a ModulerStation.
+// ModulerStation has 6 signals for monitoring internal state.
+// No default rules - all rules are user-defined via the interlock editor.
+func getModulerDefaultConfig() *InterlockConfig {
+	return &InterlockConfig{
+		Signals: []SignalDef{
+			{Name: "workPresent", Initial: false},
+			{Name: "workFull", Initial: false},
+			{Name: "workEmpty", Initial: true},
+			{Name: "stationStop", Initial: false},
+			{Name: "stationProcessing", Initial: false},
+			{Name: "processingComplete", Initial: false},
+		},
+		Rules: []InterlockRule{},
 	}
 }
 
