@@ -9,6 +9,19 @@ export class PropertiesPanel {
         this.editor = editor;
         this._locationMasterCache = null;
         this._interlockModal = null;
+        this.autoSave = false;
+
+        // Auto-save toggle
+        const checkbox = document.getElementById('auto-save-checkbox');
+        if (checkbox) {
+            // Restore from localStorage
+            this.autoSave = localStorage.getItem('sim-editor-autosave') === 'true';
+            checkbox.checked = this.autoSave;
+            checkbox.addEventListener('change', () => {
+                this.autoSave = checkbox.checked;
+                localStorage.setItem('sim-editor-autosave', this.autoSave);
+            });
+        }
     }
 
     setInterlockModal(modal) {
@@ -251,7 +264,8 @@ export class PropertiesPanel {
             });
         }
 
-        this.container.querySelector('#update-btn').addEventListener('click', () => {
+        // Shared save logic for update button and auto-save
+        const saveStationConfig = () => {
             const newConfig = {};
             configFields.forEach(field => {
                 const value = parseFloat(this.container.querySelector(`#prop-${field.key}`).value);
@@ -298,7 +312,19 @@ export class PropertiesPanel {
             }
 
             this.editor.updateStation(stationId, newConfig);
-        });
+        };
+
+        this.container.querySelector('#update-btn').addEventListener('click', saveStationConfig);
+
+        // Auto-save on blur (when input loses focus)
+        if (this.autoSave) {
+            this.container.querySelectorAll('.property-input, select.property-input').forEach(input => {
+                if (!input.disabled) {
+                    input.addEventListener('blur', () => saveStationConfig());
+                    input.addEventListener('change', () => saveStationConfig());
+                }
+            });
+        }
 
         this.container.querySelector('#delete-btn').addEventListener('click', () => {
             if (confirm('このステーションを削除しますか？')) {
@@ -521,7 +547,7 @@ export class PropertiesPanel {
             group.style.display = e.target.value === 'workType' ? '' : 'none';
         });
 
-        this.container.querySelector('#update-connection-btn').addEventListener('click', () => {
+        const saveConnectionConfig = () => {
             const condSelect = this.container.querySelector('#prop-condition').value;
             let condition = condSelect;
             if (condSelect === 'workType') {
@@ -531,7 +557,19 @@ export class PropertiesPanel {
             connection.condition = condition;
             this.editor._markDirty();
             this.render();
-        });
+        };
+
+        this.container.querySelector('#update-connection-btn').addEventListener('click', saveConnectionConfig);
+
+        // Auto-save on blur for connection properties
+        if (this.autoSave) {
+            this.container.querySelectorAll('.property-input, select.property-input').forEach(input => {
+                if (!input.disabled) {
+                    input.addEventListener('blur', () => saveConnectionConfig());
+                    input.addEventListener('change', () => saveConnectionConfig());
+                }
+            });
+        }
 
         this.container.querySelector('#delete-connection-btn').addEventListener('click', () => {
             if (confirm('この接続を削除しますか？')) {

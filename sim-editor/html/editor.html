@@ -98,7 +98,13 @@
 
             <!-- Right: Properties Panel -->
             <aside class="properties-panel">
-                <h3>プロパティ</h3>
+                <h3 style="display: flex; align-items: center; justify-content: space-between;">
+                    プロパティ
+                    <label id="auto-save-toggle" style="display: flex; align-items: center; font-size: 0.75rem; font-weight: normal; cursor: pointer; gap: 0.25rem;">
+                        <input type="checkbox" id="auto-save-checkbox">
+                        <span>自動保存</span>
+                    </label>
+                </h3>
                 <div id="properties-content">
                     <!-- Properties displayed here -->
                 </div>
