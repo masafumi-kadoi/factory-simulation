@@ -103,6 +103,9 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, []WorkLineageLog, error) {
 	simulation := domain.NewSimulation(simulationID, friendlyName, e.scenario.ID)
 
+	// Step 0: Flatten ModulerStations (recursive expansion)
+	e.scenario = FlattenScenario(e.scenario)
+
 	// Step 1: Initialize interlock rules, signals, and port slots for all stations
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
@@ -282,6 +285,11 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return fmt.Errorf("interlock violation: station %s InputReady=OFF (state=%s), cannot accept work", station.ID, station.State)
 	}
 
+	// Entry/Exit stations: transparent pass-through (skip Receiving/Processing)
+	if station.Type == domain.StationTypeEntry || station.Type == domain.StationTypeExit {
+		return e.handleEntryExitWorkArrived(work, station)
+	}
+
 	// Delegate to station logic
 	if err := station.AddWork(work); err != nil {
 		return err
@@ -310,6 +318,30 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	if station.CanStartProcessing() {
 		arrivalTime := station.GetFloatConfig("arrivalTime")
 		e.eventQueue.Push(NewEvent(EventProcessingStarted, e.currentTime+arrivalTime, station.ID, nil))
+	}
+
+	return nil
+}
+
+// handleEntryExitWorkArrived handles work arrival at an Entry or Exit station.
+// Entry/Exit are transparent (zero processing time): WorkArrived → Completed → WorkDeparted.
+// No ProcessingStarted/ProcessingCompleted events are generated.
+func (e *Engine) handleEntryExitWorkArrived(work *domain.Work, station *domain.Station) error {
+	// Set work directly (bypass AddWork which sets state to Receiving)
+	station.CurrentWork = work
+	station.State = domain.StateCompleted
+
+	// Update signals
+	station.SetSignal("workPresent", true)
+	setWorkTypeSignal(station.Signals, work.Type)
+
+	// Log work event
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type, -1)
+	e.logStationStatus(station, "ワーク到着")
+
+	// Evaluate interlock rules (outputReady should turn ON via rules)
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
 	}
 
 	return nil

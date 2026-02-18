@@ -215,8 +215,8 @@ func (s *Station) GetSignal(name string) bool {
 // CanAcceptWork checks if the station can accept a new work
 // This is the interlock mechanism: only accept when InputReady is ON
 func (s *Station) CanAcceptWork() bool {
-	if s.Type == StationTypeSource {
-		return false // Source does not accept external works
+	if s.Type == StationTypeSource || s.Type == StationTypeModuler {
+		return false // Source and Moduler do not accept external works directly
 	}
 	if s.Type == StationTypeMerge {
 		// Merge accepts works into InputPort; inputReady is managed per-connection
@@ -583,6 +583,9 @@ func (s *Station) CanStartProcessing() bool {
 	}
 	if s.Type == StationTypeMerge {
 		return false // Merge has its own processing flow via EventMergeCompleted
+	}
+	if s.Type == StationTypeEntry || s.Type == StationTypeExit || s.Type == StationTypeModuler {
+		return false // Entry/Exit are transparent, Moduler is a container
 	}
 	// Processing and Split station can start when work has arrived
 	return s.CurrentWork != nil && s.State == StateReceiving
