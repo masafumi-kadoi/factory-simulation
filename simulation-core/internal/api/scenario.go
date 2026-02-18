@@ -19,14 +19,23 @@ func formatTime(t *time.Time) *string {
 
 // StationRequest represents a station in the request
 type StationRequest struct {
-	ID         string                 `json:"id"`
-	Name       string                 `json:"name,omitempty"`
-	Type       string                 `json:"type"`
-	ParentID   *string                `json:"parentId"`
-	LocationID *int64                 `json:"locationId,omitempty"`
-	Config     map[string]interface{} `json:"config"`
-	PositionX  *float64               `json:"positionX,omitempty"`
-	PositionY  *float64               `json:"positionY,omitempty"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name,omitempty"`
+	Type        string                 `json:"type"`
+	ParentID    *string                `json:"parentId"`
+	LocationID  *int64                 `json:"locationId,omitempty"`
+	Config      map[string]interface{} `json:"config"`
+	PositionX   *float64               `json:"positionX,omitempty"`
+	PositionY   *float64               `json:"positionY,omitempty"`
+	SubScenario *SubScenarioRequest    `json:"subScenario,omitempty"`
+	EntryCount  int                    `json:"entryCount,omitempty"`
+	ExitCount   int                    `json:"exitCount,omitempty"`
+}
+
+// SubScenarioRequest represents the internal stations and connections of a ModulerStation
+type SubScenarioRequest struct {
+	Stations    []StationRequest    `json:"stations"`
+	Connections []ConnectionRequest `json:"connections"`
 }
 
 // ConnectionRequest represents a connection in the request
@@ -152,6 +161,44 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		if st.Type == "moduler" {
+			if st.EntryCount < 1 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: entryCount must be >= 1", st.ID))
+				return
+			}
+			if st.ExitCount < 1 {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: exitCount must be >= 1", st.ID))
+				return
+			}
+			if st.SubScenario != nil {
+				// Count entry/exit stations in SubScenario
+				entryCount := 0
+				exitCount := 0
+				subIDs := make(map[string]bool)
+				for _, sub := range st.SubScenario.Stations {
+					if subIDs[sub.ID] {
+						respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: duplicate station ID '%s' in subScenario", st.ID, sub.ID))
+						return
+					}
+					subIDs[sub.ID] = true
+					if sub.Type == "entry" {
+						entryCount++
+					}
+					if sub.Type == "exit" {
+						exitCount++
+					}
+				}
+				if entryCount != st.EntryCount {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: subScenario has %d entry stations but entryCount is %d", st.ID, entryCount, st.EntryCount))
+					return
+				}
+				if exitCount != st.ExitCount {
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: subScenario has %d exit stations but exitCount is %d", st.ID, exitCount, st.ExitCount))
+					return
+				}
+			}
+		}
+
 		if st.Type == "inspection" {
 			if okProbability, ok := st.Config["okProbability"].(float64); ok {
 				if okProbability < 0.0 || okProbability > 1.0 {
@@ -182,32 +229,8 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert request to domain model
-	stations := make([]domain.Station, len(req.Stations))
-	for i, st := range req.Stations {
-		stationType := domain.StationType(st.Type)
-		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
-		stations[i].Name = st.Name
-		stations[i].ParentID = st.ParentID
-		stations[i].LocationID = st.LocationID
-		stations[i].PositionX = st.PositionX
-		stations[i].PositionY = st.PositionY
-	}
-
-	connections := make([]domain.Connection, len(req.Connections))
-	for i, conn := range req.Connections {
-		// Default condition if not specified
-		condition := conn.Condition
-		if condition == "" {
-			condition = "default"
-		}
-		connections[i] = domain.Connection{
-			From:            conn.From,
-			To:              conn.To,
-			Condition:       domain.RoutingCondition(condition),
-			FromPortIndex: conn.FromPortIndex,
-			ToPortIndex:   conn.ToPortIndex,
-		}
-	}
+	stations := convertStationRequests(req.Stations)
+	connections := convertConnectionRequests(req.Connections)
 
 	// Generate scenario ID using UUID
 	scenarioID := uuid.New().String()
@@ -272,31 +295,8 @@ func (h *Handler) HandleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert request to domain model
-	stations := make([]domain.Station, len(req.Stations))
-	for i, st := range req.Stations {
-		stationType := domain.StationType(st.Type)
-		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
-		stations[i].Name = st.Name
-		stations[i].ParentID = st.ParentID
-		stations[i].LocationID = st.LocationID
-		stations[i].PositionX = st.PositionX
-		stations[i].PositionY = st.PositionY
-	}
-
-	connections := make([]domain.Connection, len(req.Connections))
-	for i, conn := range req.Connections {
-		condition := conn.Condition
-		if condition == "" {
-			condition = "default"
-		}
-		connections[i] = domain.Connection{
-			From:            conn.From,
-			To:              conn.To,
-			Condition:       domain.RoutingCondition(condition),
-			FromPortIndex: conn.FromPortIndex,
-			ToPortIndex:   conn.ToPortIndex,
-		}
-	}
+	stations := convertStationRequests(req.Stations)
+	connections := convertConnectionRequests(req.Connections)
 
 	scenario := domain.NewScenario(scenarioID, req.Name, stations, connections)
 
@@ -471,30 +471,8 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert domain model to response
-	stations := make([]StationRequest, len(scenario.Stations))
-	for i, st := range scenario.Stations {
-		stations[i] = StationRequest{
-			ID:         st.ID,
-			Name:       st.Name,
-			Type:       string(st.Type),
-			ParentID:   st.ParentID,
-			LocationID: st.LocationID,
-			Config:     st.Config,
-			PositionX:  st.PositionX,
-			PositionY:  st.PositionY,
-		}
-	}
-
-	connections := make([]ConnectionRequest, len(scenario.Connections))
-	for i, conn := range scenario.Connections {
-		connections[i] = ConnectionRequest{
-			From:            conn.From,
-			To:              conn.To,
-			Condition:       string(conn.Condition),
-			FromPortIndex: conn.FromPortIndex,
-			ToPortIndex:   conn.ToPortIndex,
-		}
-	}
+	stations := convertStationsToResponse(scenario.Stations)
+	connections := convertConnectionsToResponse(scenario.Connections)
 
 	// Build SimDB config response (password masked)
 	var simdbConfig *SimDBConfigRequest
@@ -516,4 +494,88 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   formatTime(scenario.CreatedAt),
 		UpdatedAt:   formatTime(scenario.UpdatedAt),
 	})
+}
+
+// convertStationRequests converts API station requests to domain stations (recursive for SubScenario)
+func convertStationRequests(reqs []StationRequest) []domain.Station {
+	stations := make([]domain.Station, len(reqs))
+	for i, st := range reqs {
+		stationType := domain.StationType(st.Type)
+		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
+		stations[i].Name = st.Name
+		stations[i].ParentID = st.ParentID
+		stations[i].LocationID = st.LocationID
+		stations[i].PositionX = st.PositionX
+		stations[i].PositionY = st.PositionY
+		stations[i].EntryCount = st.EntryCount
+		stations[i].ExitCount = st.ExitCount
+
+		if st.SubScenario != nil {
+			stations[i].SubScenario = &domain.SubScenario{
+				Stations:    convertStationRequests(st.SubScenario.Stations),
+				Connections: convertConnectionRequests(st.SubScenario.Connections),
+			}
+		}
+	}
+	return stations
+}
+
+// convertConnectionRequests converts API connection requests to domain connections
+func convertConnectionRequests(reqs []ConnectionRequest) []domain.Connection {
+	connections := make([]domain.Connection, len(reqs))
+	for i, conn := range reqs {
+		condition := conn.Condition
+		if condition == "" {
+			condition = "default"
+		}
+		connections[i] = domain.Connection{
+			From:          conn.From,
+			To:            conn.To,
+			Condition:     domain.RoutingCondition(condition),
+			FromPortIndex: conn.FromPortIndex,
+			ToPortIndex:   conn.ToPortIndex,
+		}
+	}
+	return connections
+}
+
+// convertStationsToResponse converts domain stations to API response (recursive for SubScenario)
+func convertStationsToResponse(stations []domain.Station) []StationRequest {
+	result := make([]StationRequest, len(stations))
+	for i, st := range stations {
+		result[i] = StationRequest{
+			ID:         st.ID,
+			Name:       st.Name,
+			Type:       string(st.Type),
+			ParentID:   st.ParentID,
+			LocationID: st.LocationID,
+			Config:     st.Config,
+			PositionX:  st.PositionX,
+			PositionY:  st.PositionY,
+			EntryCount: st.EntryCount,
+			ExitCount:  st.ExitCount,
+		}
+		if st.SubScenario != nil {
+			result[i].SubScenario = &SubScenarioRequest{
+				Stations:    convertStationsToResponse(st.SubScenario.Stations),
+				Connections: convertConnectionsToResponse(st.SubScenario.Connections),
+			}
+		}
+	}
+	return result
+}
+
+// convertConnectionsToResponse converts domain connections to API response
+func convertConnectionsToResponse(connections []domain.Connection) []ConnectionRequest {
+	result := make([]ConnectionRequest, len(connections))
+	for i, conn := range connections {
+		result[i] = ConnectionRequest{
+			From:          conn.From,
+			To:            conn.To,
+			Condition:     string(conn.Condition),
+			FromPortIndex: conn.FromPortIndex,
+			ToPortIndex:   conn.ToPortIndex,
+		}
+	}
+	return result
 }
