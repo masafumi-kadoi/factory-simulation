@@ -27,6 +27,10 @@ export class Visualizer3D {
         this.showStationNames = true;
         this.ground = null;
         this.gridHelper = null;
+        this._raycaster = new THREE.Raycaster();
+        this._mouse = new THREE.Vector2();
+        this._onWorkClick = null; // callback: (workId) => void
+        this._activeWorks = null; // reference to current activeWorks map
 
         this._initScene();
         this._animate();
@@ -73,6 +77,43 @@ export class Visualizer3D {
         this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
 
         window.addEventListener('resize', () => this._onResize());
+
+        // Click handler for work selection
+        this.renderer.domElement.addEventListener('click', (event) => this._handleClick(event));
+    }
+
+    setOnWorkClick(callback) {
+        this._onWorkClick = callback;
+    }
+
+    _handleClick(event) {
+        if (!this._onWorkClick) return;
+
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this._mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this._mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        this._raycaster.setFromCamera(this._mouse, this.camera);
+
+        // Collect all work meshes
+        const workMeshes = [];
+        this.works.forEach((work) => {
+            workMeshes.push(work.mesh);
+            // Also add children for group intersection
+            work.mesh.children.forEach(child => workMeshes.push(child));
+        });
+
+        const intersects = this._raycaster.intersectObjects(workMeshes, false);
+        if (intersects.length > 0) {
+            // Find the work group (may be a child mesh)
+            let obj = intersects[0].object;
+            while (obj && !obj.userData.workId) {
+                obj = obj.parent;
+            }
+            if (obj && obj.userData.workId) {
+                this._onWorkClick(obj.userData.workId);
+            }
+        }
     }
 
     _onResize() {
@@ -417,6 +458,11 @@ export class Visualizer3D {
         return sprite;
     }
 
+    getWorkInfo(workId) {
+        if (!this._activeWorks) return null;
+        return this._activeWorks.get(workId) || null;
+    }
+
     setShowWorkIDs(show) {
         this.showWorkIDs = show;
         this.works.forEach(work => {
@@ -465,6 +511,8 @@ export class Visualizer3D {
     }
 
     updateWorks(activeWorks, currentTime) {
+        this._activeWorks = activeWorks;
+
         // Remove works that no longer exist
         const toRemove = [];
         this.works.forEach((work, workId) => {

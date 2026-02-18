@@ -54,6 +54,9 @@ class App {
             this.visualizer = new Visualizer3D(container);
             this.visualizer.loadScenario(scenario);
 
+            // Setup work click handler
+            this.visualizer.setOnWorkClick((workId) => this._showWorkModal(workId));
+
             // Setup controls
             this._setupControls();
 
@@ -261,6 +264,90 @@ class App {
         if (this.visualizer) {
             this.visualizer.updateWorks(activeWorks, this.currentTime);
         }
+    }
+
+    _showWorkModal(workId) {
+        // Get current state from visualizer
+        const workInfo = this.visualizer.getWorkInfo(workId);
+
+        // Gather event history for this work
+        const events = [];
+        if (this.logs.workEvents) {
+            for (const e of this.logs.workEvents) {
+                if (e.WorkID === workId) {
+                    events.push(e);
+                }
+            }
+        }
+
+        // Build modal content
+        let stateText = '不明';
+        let stationText = '-';
+        if (workInfo) {
+            if (workInfo.state === 'at_station') {
+                stateText = workInfo.isBuffered ? 'バッファ内' : 'ステーション内';
+                stationText = workInfo.stationId || '-';
+            } else if (workInfo.state === 'moving') {
+                stateText = '移動中';
+                stationText = `${workInfo.fromStation} → ${workInfo.toStation}`;
+            }
+        }
+
+        const workType = events.length > 0 ? (events[events.length - 1].WorkType || '-') : '-';
+        const friendlyName = events.length > 0 ? (events[0].WorkFriendlyName || workId) : workId;
+
+        const eventRows = events.map(e => `
+            <tr>
+                <td style="padding:4px 8px">${e.Timestamp.toFixed(2)}s</td>
+                <td style="padding:4px 8px">${e.EventType}</td>
+                <td style="padding:4px 8px">${e.StationID}</td>
+                <td style="padding:4px 8px">${e.BufferIndex >= 0 ? 'B' + e.BufferIndex : '-'}</td>
+            </tr>
+        `).join('');
+
+        // Remove existing modal
+        const existing = document.getElementById('work-info-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.id = 'work-info-modal';
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+        modal.innerHTML = `
+            <div style="background:#1e1e2e;color:#cdd6f4;border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                    <h2 style="margin:0;font-size:18px;color:#89b4fa">${friendlyName}</h2>
+                    <button id="work-modal-close" style="background:none;border:none;color:#6c7086;font-size:24px;cursor:pointer;padding:0 4px">&times;</button>
+                </div>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:14px">
+                    <tr><td style="padding:4px 8px;color:#a6adc8">ワークID</td><td style="padding:4px 8px">${workId.substring(0, 12)}...</td></tr>
+                    <tr><td style="padding:4px 8px;color:#a6adc8">表示名</td><td style="padding:4px 8px">${friendlyName}</td></tr>
+                    <tr><td style="padding:4px 8px;color:#a6adc8">ワーク種類</td><td style="padding:4px 8px">${workType}</td></tr>
+                    <tr><td style="padding:4px 8px;color:#a6adc8">現在状態</td><td style="padding:4px 8px">${stateText}</td></tr>
+                    <tr><td style="padding:4px 8px;color:#a6adc8">場所</td><td style="padding:4px 8px">${stationText}</td></tr>
+                </table>
+                <h3 style="font-size:14px;color:#89b4fa;margin-bottom:8px">イベント履歴</h3>
+                <div style="max-height:300px;overflow-y:auto">
+                    <table style="width:100%;border-collapse:collapse;font-size:12px">
+                        <thead>
+                            <tr style="border-bottom:1px solid #313244;color:#a6adc8">
+                                <th style="padding:4px 8px;text-align:left">時刻</th>
+                                <th style="padding:4px 8px;text-align:left">イベント</th>
+                                <th style="padding:4px 8px;text-align:left">ステーション</th>
+                                <th style="padding:4px 8px;text-align:left">バッファ</th>
+                            </tr>
+                        </thead>
+                        <tbody>${eventRows}</tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        // Close handlers
+        modal.querySelector('#work-modal-close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
     }
 
     _updateUI() {
