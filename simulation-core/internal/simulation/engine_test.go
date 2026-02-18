@@ -156,6 +156,79 @@ func TestEngine_ContinuousMode(t *testing.T) {
 	t.Logf("Created %d works in continuous mode", createdCount)
 }
 
+func TestEngine_MergeSplitScenario(t *testing.T) {
+	// Build a scenario matching the user's: Source→Proc→Merge→Proc→Split→Proc→Drain
+	stations := []domain.Station{
+		*domain.NewStation("src-1", domain.StationTypeSource, map[string]interface{}{
+			"workCount": float64(3), "departureTime": float64(5.0), "continuous": true, "workType": "hoge",
+		}),
+		*domain.NewStation("src-2", domain.StationTypeSource, map[string]interface{}{
+			"workCount": float64(3), "departureTime": float64(5.0), "continuous": true, "workType": "fuga",
+		}),
+		*domain.NewStation("proc-1", domain.StationTypeProcessing, map[string]interface{}{
+			"processingTime": float64(2.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
+		}),
+		*domain.NewStation("proc-2", domain.StationTypeProcessing, map[string]interface{}{
+			"processingTime": float64(2.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
+		}),
+		*domain.NewStation("merge-1", domain.StationTypeMerge, map[string]interface{}{
+			"mergeCount": float64(2), "processingTime": float64(3.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
+			"outputWorkType": "piyo",
+			"buffers": []interface{}{
+				map[string]interface{}{"capacity": float64(1)},
+				map[string]interface{}{"capacity": float64(1)},
+			},
+		}),
+		*domain.NewStation("proc-3", domain.StationTypeProcessing, map[string]interface{}{
+			"processingTime": float64(2.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
+		}),
+		*domain.NewStation("split-1", domain.StationTypeSplit, map[string]interface{}{
+			"splitCount": float64(2), "processingTime": float64(2.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
+			"buffers": []interface{}{
+				map[string]interface{}{"capacity": float64(1)},
+				map[string]interface{}{"capacity": float64(1)},
+			},
+		}),
+		*domain.NewStation("proc-4", domain.StationTypeProcessing, map[string]interface{}{
+			"processingTime": float64(2.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
+		}),
+		*domain.NewStation("proc-5", domain.StationTypeProcessing, map[string]interface{}{
+			"processingTime": float64(2.0), "arrivalTime": float64(1.0), "departureTime": float64(1.0),
+		}),
+		*domain.NewStation("drain-1", domain.StationTypeDrain, map[string]interface{}{
+			"arrivalTime": float64(1.0),
+		}),
+		*domain.NewStation("drain-2", domain.StationTypeDrain, map[string]interface{}{
+			"arrivalTime": float64(1.0),
+		}),
+	}
+
+	connections := []domain.Connection{
+		{From: "src-1", To: "proc-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
+		{From: "src-2", To: "proc-2", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
+		{From: "proc-1", To: "merge-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: 0},
+		{From: "proc-2", To: "merge-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: 1},
+		{From: "merge-1", To: "proc-3", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
+		{From: "proc-3", To: "split-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
+		{From: "split-1", To: "proc-4", Condition: domain.RoutingDefault, FromBufferIndex: 0, ToBufferIndex: -1},
+		{From: "split-1", To: "proc-5", Condition: domain.RoutingDefault, FromBufferIndex: 1, ToBufferIndex: -1},
+		{From: "proc-4", To: "drain-1", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
+		{From: "proc-5", To: "drain-2", Condition: domain.RoutingDefault, FromBufferIndex: -1, ToBufferIndex: -1},
+	}
+
+	scenario := domain.NewScenario("test-merge-split", "MergeSplit Test", stations, connections)
+	engine := NewEngine(scenario)
+	sim, _, workEvents, _, err := engine.Run("test-ms-1", "MergeSplit Run", 50.0)
+	if err != nil {
+		t.Fatalf("simulation failed: %v", err)
+	}
+
+	t.Logf("Simulation ended: status=%s, endTime=%v", sim.Status, sim.EndTime)
+	for _, we := range workEvents {
+		t.Logf("  [%.2f] %s work=%s station=%s bufIdx=%d", we.Timestamp, we.EventType, we.WorkFriendlyName, we.StationID, we.BufferIndex)
+	}
+}
+
 func TestEngine_InitialSignals(t *testing.T) {
 	scenario := buildSimpleScenario()
 	engine := NewEngine(scenario)

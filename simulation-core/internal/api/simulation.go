@@ -3,7 +3,9 @@ package api
 import (
 	"factory-simulation/simulation-core/internal/simulation"
 	"fmt"
+	"log"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -61,6 +63,17 @@ type LogsResponse struct {
 
 // HandleRunSimulation handles POST /api/simulations
 func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rv := recover(); rv != nil {
+			log.Printf("PANIC in HandleRunSimulation: %v", rv)
+			// Print stack trace
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			log.Printf("Stack trace:\n%s", buf[:n])
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Internal panic: %v", rv))
+		}
+	}()
+
 	if r.Method != http.MethodPost {
 		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
