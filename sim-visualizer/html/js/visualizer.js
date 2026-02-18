@@ -9,7 +9,10 @@ const STATION_COLORS = {
     'split': 0xfd7e14,
     'inspection': 0xffc107,
     'discharge': 0xdc3545,
-    'drain': 0x6c757d
+    'drain': 0x6c757d,
+    'moduler': 0x4a148c,
+    'entry': 0x2e7d32,
+    'exit': 0xe65100
 };
 
 export class Visualizer3D {
@@ -27,6 +30,8 @@ export class Visualizer3D {
         this.showStationNames = true;
         this.showInterlocks = false;
         this.interlockIndicators = []; // [{mesh, stationId, signalName, connectionIndex}]
+        this.modulerHierarchy = new Map(); // Map<parentId, Set<childId>> (dot-ID based)
+        this.modulerCollapseState = new Map(); // Map<parentStationId, boolean> (true = collapsed)
         this.ground = null;
         this.gridHelper = null;
         this._raycaster = new THREE.Raycaster();
@@ -89,25 +94,46 @@ export class Visualizer3D {
     }
 
     _handleClick(event) {
-        if (!this._onWorkClick) return;
-
         const rect = this.renderer.domElement.getBoundingClientRect();
         this._mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         this._mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
         this._raycaster.setFromCamera(this._mouse, this.camera);
 
-        // Collect all work meshes
+        // Check station clicks first (for moduler collapse/expand)
+        const stationMeshes = [];
+        this.stations.forEach((station) => {
+            stationMeshes.push(station.mesh);
+            station.mesh.children.forEach(child => stationMeshes.push(child));
+        });
+
+        const stationIntersects = this._raycaster.intersectObjects(stationMeshes, false);
+        if (stationIntersects.length > 0) {
+            let obj = stationIntersects[0].object;
+            while (obj && !obj.userData.stationId) {
+                obj = obj.parent;
+            }
+            if (obj && obj.userData.stationId) {
+                const stationId = obj.userData.stationId;
+                // Toggle collapse for moduler stations
+                if (this.modulerHierarchy.has(stationId)) {
+                    this.toggleModulerCollapse(stationId);
+                    return;
+                }
+            }
+        }
+
+        // Then check work clicks
+        if (!this._onWorkClick) return;
+
         const workMeshes = [];
         this.works.forEach((work) => {
             workMeshes.push(work.mesh);
-            // Also add children for group intersection
             work.mesh.children.forEach(child => workMeshes.push(child));
         });
 
         const intersects = this._raycaster.intersectObjects(workMeshes, false);
         if (intersects.length > 0) {
-            // Find the work group (may be a child mesh)
             let obj = intersects[0].object;
             while (obj && !obj.userData.workId) {
                 obj = obj.parent;
@@ -233,15 +259,15 @@ export class Visualizer3D {
             let fromPos = from.position;
             let toPos = to.position;
 
-            // Split station: connect from port slot by index
-            if (from.stationType === 'split' && from.portSlots.length > 0 && conn.fromPortIndex >= 0) {
-                const slot = from.portSlots[conn.fromPortIndex];
+            // Split/Moduler: connect from port slot by index
+            if ((from.stationType === 'split' || from.stationType === 'moduler') && from.portSlots.length > 0 && conn.fromPortIndex >= 0) {
+                const slot = this._findPortSlot(from, conn.fromPortIndex, 'exit');
                 if (slot) fromPos = slot.position;
             }
 
-            // Merge station: connect to port slot by index
-            if (to.stationType === 'merge' && to.portSlots.length > 0 && conn.toPortIndex >= 0) {
-                const slot = to.portSlots[conn.toPortIndex];
+            // Merge/Moduler: connect to port slot by index
+            if ((to.stationType === 'merge' || to.stationType === 'moduler') && to.portSlots.length > 0 && conn.toPortIndex >= 0) {
+                const slot = this._findPortSlot(to, conn.toPortIndex, 'entry');
                 if (slot) toPos = slot.position;
             }
 
@@ -259,10 +285,94 @@ export class Visualizer3D {
             this._createInterlockIndicators(connData, from, to);
         });
 
+        // Build moduler hierarchy from dot-separated station IDs
+        this._buildModulerHierarchy();
+
+        // Default: all moduler stations collapsed
+        this.modulerHierarchy.forEach((children, parentId) => {
+            this.modulerCollapseState.set(parentId, true);
+        });
+
+        // Apply initial collapse state
+        this._applyCollapseState();
+
         console.log(`[Visualizer3D] Created ${this.stations.size} stations and ${this.connections.length} connections`);
+        if (this.modulerHierarchy.size > 0) {
+            console.log(`[Visualizer3D] Found ${this.modulerHierarchy.size} moduler station group(s)`);
+        }
+    }
+
+    _buildModulerHierarchy() {
+        this.modulerHierarchy.clear();
+
+        // Find stations with dot-separated IDs and group by parent prefix
+        this.stations.forEach((stationData, stationId) => {
+            const dotIdx = stationId.indexOf('.');
+            if (dotIdx === -1) return; // Top-level station
+
+            const parentId = stationId.substring(0, dotIdx);
+            if (!this.modulerHierarchy.has(parentId)) {
+                this.modulerHierarchy.set(parentId, new Set());
+            }
+            this.modulerHierarchy.get(parentId).add(stationId);
+        });
+    }
+
+    toggleModulerCollapse(parentStationId) {
+        const current = this.modulerCollapseState.get(parentStationId);
+        if (current === undefined) return;
+        this.modulerCollapseState.set(parentStationId, !current);
+        this._applyCollapseState();
+    }
+
+    _applyCollapseState() {
+        this.modulerHierarchy.forEach((children, parentId) => {
+            const collapsed = this.modulerCollapseState.get(parentId) !== false;
+            const parentStation = this.stations.get(parentId);
+
+            // Show/hide child stations
+            children.forEach(childId => {
+                const child = this.stations.get(childId);
+                if (!child) return;
+                child.mesh.visible = !collapsed;
+                if (child.label) child.label.visible = !collapsed && this.showStationNames;
+                if (child.portSlots) {
+                    child.portSlots.forEach(slot => {
+                        slot.mesh.visible = !collapsed;
+                        if (slot.label) slot.label.visible = !collapsed && this.showStationNames;
+                        if (slot.connLine) slot.connLine.visible = !collapsed;
+                    });
+                }
+            });
+
+            // Show/hide connections between children
+            this.connections.forEach(conn => {
+                const fromIsChild = children.has(conn.fromStationId);
+                const toIsChild = children.has(conn.toStationId);
+                // Internal connections (both ends are children)
+                if (fromIsChild && toIsChild) {
+                    if (conn.line) conn.line.visible = !collapsed;
+                }
+            });
+
+            // Update parent station signals text if collapsed
+            if (parentStation && collapsed) {
+                this._updateModulerSignalText(parentId);
+            }
+        });
+    }
+
+    _updateModulerSignalText(parentStationId) {
+        // Signal text is updated via updateInterlockStates - this is a placeholder
+        // The actual signal values are shown through the interlock indicators
     }
 
     _createPortSlots(station, stationPos) {
+        // Moduler stations: create entry/exit port slots
+        if (station.type === 'moduler') {
+            return this._createModulerPortSlots(station, stationPos);
+        }
+
         const ports = station.config?.ports || [];
         if (ports.length === 0) return [];
 
@@ -309,6 +419,72 @@ export class Visualizer3D {
 
             return { mesh: group, label, position, connLine };
         });
+    }
+
+    _createModulerPortSlots(station, stationPos) {
+        const entryCount = station.config?.entryCount || station.entryCount || 1;
+        const exitCount = station.config?.exitCount || station.exitCount || 1;
+        const slotSize = 20;
+        const spacing = 30;
+        const slots = [];
+
+        // Entry ports on upstream side (Z-)
+        const entryColor = STATION_COLORS['entry'];
+        for (let i = 0; i < entryCount; i++) {
+            const x = stationPos.x + (i - (entryCount - 1) / 2) * spacing;
+            const z = stationPos.z - 70;
+            const position = { x, y: 0, z };
+
+            const geometry = new THREE.BoxGeometry(slotSize, slotSize, slotSize);
+            const fillMaterial = new THREE.MeshStandardMaterial({
+                color: entryColor, transparent: true, opacity: 0.15,
+                emissive: entryColor, emissiveIntensity: 0.1
+            });
+            const fillMesh = new THREE.Mesh(geometry, fillMaterial);
+            const wireGeom = new THREE.EdgesGeometry(geometry);
+            const wireMat = new THREE.LineBasicMaterial({ color: entryColor, linewidth: 1, transparent: true, opacity: 0.5 });
+            const wireMesh = new THREE.LineSegments(wireGeom, wireMat);
+            const group = new THREE.Group();
+            group.add(fillMesh);
+            group.add(wireMesh);
+            group.position.set(x, slotSize / 2, z);
+            this.scene.add(group);
+
+            const label = this._createLabel(`E${i}`, x, slotSize + 10, z);
+            const connLine = this._createSlotConnectorLine({ x, z }, stationPos, entryColor);
+
+            slots.push({ mesh: group, label, position, connLine, portType: 'entry', portIndex: i });
+        }
+
+        // Exit ports on downstream side (Z+)
+        const exitColor = STATION_COLORS['exit'];
+        for (let i = 0; i < exitCount; i++) {
+            const x = stationPos.x + (i - (exitCount - 1) / 2) * spacing;
+            const z = stationPos.z + 70;
+            const position = { x, y: 0, z };
+
+            const geometry = new THREE.BoxGeometry(slotSize, slotSize, slotSize);
+            const fillMaterial = new THREE.MeshStandardMaterial({
+                color: exitColor, transparent: true, opacity: 0.15,
+                emissive: exitColor, emissiveIntensity: 0.1
+            });
+            const fillMesh = new THREE.Mesh(geometry, fillMaterial);
+            const wireGeom = new THREE.EdgesGeometry(geometry);
+            const wireMat = new THREE.LineBasicMaterial({ color: exitColor, linewidth: 1, transparent: true, opacity: 0.5 });
+            const wireMesh = new THREE.LineSegments(wireGeom, wireMat);
+            const group = new THREE.Group();
+            group.add(fillMesh);
+            group.add(wireMesh);
+            group.position.set(x, slotSize / 2, z);
+            this.scene.add(group);
+
+            const label = this._createLabel(`X${i}`, x, slotSize + 10, z);
+            const connLine = this._createSlotConnectorLine({ x, z }, stationPos, exitColor);
+
+            slots.push({ mesh: group, label, position, connLine, portType: 'exit', portIndex: i });
+        }
+
+        return slots;
     }
 
     _createSlotConnectorLine(slotPos, stationPos, color) {
@@ -393,9 +569,13 @@ export class Visualizer3D {
     _createStation(station, position) {
         const color = STATION_COLORS[station.type] || 0x6c757d;
 
-        const geometry = new THREE.BoxGeometry(50, 50, 50);
+        // Moduler stations are larger
+        const isModuler = station.type === 'moduler';
+        const boxSize = isModuler ? 80 : 50;
+
+        const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
         const fillMaterial = new THREE.MeshStandardMaterial({
-            color, transparent: true, opacity: 0.3,
+            color, transparent: true, opacity: isModuler ? 0.2 : 0.3,
             emissive: color, emissiveIntensity: 0.2
         });
         const fillMesh = new THREE.Mesh(geometry, fillMaterial);
@@ -407,13 +587,24 @@ export class Visualizer3D {
         const group = new THREE.Group();
         group.add(fillMesh);
         group.add(wireframeMesh);
-        group.position.set(position.x, 25, position.z);
+
+        // Moduler: add inner wireframe for double-border effect
+        if (isModuler) {
+            const innerGeo = new THREE.BoxGeometry(boxSize - 10, boxSize - 10, boxSize - 10);
+            const innerWireGeo = new THREE.EdgesGeometry(innerGeo);
+            const innerWireMat = new THREE.LineBasicMaterial({ color, linewidth: 1, transparent: true, opacity: 0.5 });
+            const innerWire = new THREE.LineSegments(innerWireGeo, innerWireMat);
+            group.add(innerWire);
+        }
+
+        group.position.set(position.x, boxSize / 2, position.z);
         group.userData = { stationId: station.id, type: station.type };
 
         this.scene.add(group);
 
         const labelText = station.name || station.id;
-        const label = this._createLabel(labelText, position.x, 65, position.z);
+        const labelY = isModuler ? boxSize + 15 : 65;
+        const label = this._createLabel(labelText, position.x, labelY, position.z);
 
         return { mesh: group, label };
     }
@@ -590,6 +781,21 @@ export class Visualizer3D {
         return stationData.portSlots[portIndex].position;
     }
 
+    // Find port slot by index and type (for moduler stations with mixed entry/exit slots)
+    _findPortSlot(stationData, portIndex, portType) {
+        if (!stationData.portSlots || stationData.portSlots.length === 0) return null;
+
+        // For moduler stations, filter by portType
+        if (stationData.stationType === 'moduler') {
+            const matching = stationData.portSlots.filter(s => s.portType === portType);
+            return matching[portIndex] || null;
+        }
+
+        // For merge/split, use index directly
+        if (portIndex < 0 || portIndex >= stationData.portSlots.length) return null;
+        return stationData.portSlots[portIndex];
+    }
+
     updateWorks(activeWorks, currentTime) {
         this._activeWorks = activeWorks;
 
@@ -664,16 +870,16 @@ export class Visualizer3D {
                     let startX = fromStation.position.x, startZ = fromStation.position.z;
                     let endX = toStation.position.x, endZ = toStation.position.z;
 
-                    // If departing from split station, use port slot position
-                    if (fromStation.stationType === 'split' && workInfo.fromPortIndex >= 0) {
-                        const slotPos = this._getPortSlotPosition(fromStation, workInfo.fromPortIndex);
-                        if (slotPos) { startX = slotPos.x; startZ = slotPos.z; }
+                    // If departing from split/moduler station, use port slot position
+                    if ((fromStation.stationType === 'split' || fromStation.stationType === 'moduler') && workInfo.fromPortIndex >= 0) {
+                        const slot = this._findPortSlot(fromStation, workInfo.fromPortIndex, 'exit');
+                        if (slot) { startX = slot.position.x; startZ = slot.position.z; }
                     }
 
-                    // If arriving at merge station, use port slot position
-                    if (toStation.stationType === 'merge' && workInfo.toPortIndex >= 0) {
-                        const slotPos = this._getPortSlotPosition(toStation, workInfo.toPortIndex);
-                        if (slotPos) { endX = slotPos.x; endZ = slotPos.z; }
+                    // If arriving at merge/moduler station, use port slot position
+                    if ((toStation.stationType === 'merge' || toStation.stationType === 'moduler') && workInfo.toPortIndex >= 0) {
+                        const slot = this._findPortSlot(toStation, workInfo.toPortIndex, 'entry');
+                        if (slot) { endX = slot.position.x; endZ = slot.position.z; }
                     }
 
                     const t = this._easeInOutCubic(progress);
