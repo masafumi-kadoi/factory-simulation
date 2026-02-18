@@ -119,6 +119,9 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if len(initialWorks) > 0 {
+		log.Printf("Initial conditions: %d works to place", len(initialWorks))
+	}
 
 	// Generate unique simulation ID using UUID
 	simulationID := uuid.New().String()

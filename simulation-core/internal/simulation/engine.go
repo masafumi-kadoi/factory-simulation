@@ -3,6 +3,7 @@ package simulation
 import (
 	"factory-simulation/simulation-core/internal/domain"
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -961,7 +962,14 @@ func (e *Engine) placeInitialWorks() error {
 			workID, friendlyName = e.generateWorkID()
 		}
 
-		work := domain.NewWork(workID, friendlyName)
+		// Determine work type from station config
+		workType := station.GetStringConfig("workType")
+		var work *domain.Work
+		if workType != "" {
+			work = domain.NewWorkWithType(workID, friendlyName, workType)
+		} else {
+			work = domain.NewWork(workID, friendlyName)
+		}
 		if cond.QualityStatus != "" {
 			work.QualityStatus = domain.QualityStatus(cond.QualityStatus)
 		}
@@ -996,6 +1004,8 @@ func (e *Engine) placeInitialWorks() error {
 		if err := e.evaluateAndLogSignals(station); err != nil {
 			return err
 		}
+
+		log.Printf("Placed initial work %s at station %s (elapsed=%.1f, remaining=%.1f)", work.ID, stationID, cond.ElapsedTime, processingTime-cond.ElapsedTime)
 	}
 
 	return nil
