@@ -102,12 +102,20 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract work IDs from initial conditions
+	// Extract work IDs and initial work conditions from initial conditions
 	workIDsByStation := make(map[string][]string)
+	initialWorks := make(map[string]simulation.InitialWorkCondition)
 	if req.InitialConditions != nil {
 		for stationID, condition := range req.InitialConditions {
 			if len(condition.WorkIDs) > 0 {
 				workIDsByStation[stationID] = condition.WorkIDs
+			}
+			if condition.CurrentWork != nil && condition.CurrentWork.ID != "" {
+				initialWorks[stationID] = simulation.InitialWorkCondition{
+					WorkID:        condition.CurrentWork.ID,
+					QualityStatus: condition.CurrentWork.QualityStatus,
+					ElapsedTime:   condition.ElapsedTime,
+				}
 			}
 		}
 	}
@@ -120,7 +128,7 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 	friendlyName := fmt.Sprintf("%s_実行_%s", scenario.Name, timestamp)
 
 	// Run simulation with initial conditions
-	engine := simulation.NewEngineWithInitialConditions(scenario, workIDsByStation)
+	engine := simulation.NewEngineWithInitialConditions(scenario, workIDsByStation, initialWorks)
 	sim, statusLogs, workEventLogs, workLineageLogs, err := engine.Run(simulationID, friendlyName, req.SimulationTime)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Simulation failed: %v", err))

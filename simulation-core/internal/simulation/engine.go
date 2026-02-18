@@ -60,16 +60,25 @@ type Engine struct {
 	reservedStations   map[string]bool         // Stations that have a work in transit heading to them (prevents double-send)
 	simDB              *SimDB                  // SimDB for managing predefined work IDs
 	mergeInProgress    map[string]bool         // Tracks merge stations currently processing (stationID -> in progress)
+	initialWorks       map[string]InitialWorkCondition // Initial work conditions by station ID
+}
+
+// InitialWorkCondition represents a work already present at a station at simulation start
+type InitialWorkCondition struct {
+	WorkID        string
+	QualityStatus string
+	ElapsedTime   float64 // Seconds already elapsed in processing
 }
 
 // NewEngine creates a new simulation engine without initial conditions
 func NewEngine(scenario *domain.Scenario) *Engine {
-	return NewEngineWithInitialConditions(scenario, nil)
+	return NewEngineWithInitialConditions(scenario, nil, nil)
 }
 
 // NewEngineWithInitialConditions creates a new simulation engine with initial conditions
 // workIDsByStation: map of stationID -> list of predefined work IDs
-func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation map[string][]string) *Engine {
+// initialWorks: map of stationID -> initial work condition (work already at station)
+func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation map[string][]string, initialWorks map[string]InitialWorkCondition) *Engine {
 	return &Engine{
 		scenario:           scenario,
 		eventQueue:         NewPriorityQueue(),
@@ -85,6 +94,7 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 		reservedStations:   make(map[string]bool),
 		simDB:              NewSimDB(workIDsByStation),
 		mergeInProgress:    make(map[string]bool),
+		initialWorks:       initialWorks,
 	}
 }
 
@@ -110,7 +120,12 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 		}
 	}
 
-	// Step 3: Schedule FIRST WorkCreated event for each source station
+	// Step 3: Place initial works at stations (if specified)
+	if err := e.placeInitialWorks(); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("initial work placement failed: %w", err)
+	}
+
+	// Step 4: Schedule FIRST WorkCreated event for each source station
 	// Subsequent works will be created after each work departs (one at a time)
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
@@ -918,6 +933,72 @@ func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timest
 		WorkType:         workType,
 		BufferIndex:      bufferIndex,
 	})
+}
+
+// placeInitialWorks places initial works at stations and schedules appropriate events
+func (e *Engine) placeInitialWorks() error {
+	if len(e.initialWorks) == 0 {
+		return nil
+	}
+
+	for stationID, cond := range e.initialWorks {
+		station := e.scenario.GetStation(stationID)
+		if station == nil {
+			continue // skip unknown stations
+		}
+
+		// Only processing/merge/split/drain stations can have initial works
+		if station.Type == domain.StationTypeSource {
+			continue
+		}
+
+		// Create work with the specified ID
+		var workID, friendlyName string
+		if cond.WorkID != "" {
+			workID = cond.WorkID
+			friendlyName = cond.WorkID
+		} else {
+			workID, friendlyName = e.generateWorkID()
+		}
+
+		work := domain.NewWork(workID, friendlyName)
+		if cond.QualityStatus != "" {
+			work.QualityStatus = domain.QualityStatus(cond.QualityStatus)
+		}
+
+		// Place work at station
+		station.CurrentWork = work
+		station.State = domain.StateProcessing
+
+		// Update signals
+		station.SetSignal("workPresent", true)
+		setWorkTypeSignal(station.Signals, work.Type)
+
+		// Log work event
+		e.logWorkEvent(work.ID, work.FriendlyName, station.ID, 0.0, string(EventWorkArrived), work.Type, -1)
+
+		// Calculate remaining processing time
+		processingTime := station.GetFloatConfig("processingTime")
+		remaining := processingTime - cond.ElapsedTime
+		if remaining < 0 {
+			remaining = 0
+		}
+
+		if remaining == 0 {
+			// Already completed
+			station.SetSignal("processingComplete", true)
+		} else {
+			// Schedule ProcessingCompleted at time = remaining
+			e.eventQueue.Push(NewEvent(EventProcessingCompleted, remaining, station.ID, nil))
+		}
+
+		// Re-evaluate signals after placing work
+		if err := e.evaluateAndLogSignals(station); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // setWorkTypeSignal sets the workType:<type> derived signal on a station.
