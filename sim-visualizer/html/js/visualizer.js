@@ -861,6 +861,16 @@ export class Visualizer3D {
                 const fromStation = this.stations.get(workInfo.fromStation);
                 const toStation = this.stations.get(workInfo.toStation);
 
+                if (!fromStation || !toStation) {
+                    if (!this._warnedMissing) this._warnedMissing = new Set();
+                    const key = `${workInfo.fromStation}->${workInfo.toStation}`;
+                    if (!this._warnedMissing.has(key)) {
+                        console.warn('[Visualizer3D] Moving work missing station:', workId, 'from:', workInfo.fromStation, !!fromStation, 'to:', workInfo.toStation, !!toStation);
+                        console.warn('[Visualizer3D] Available stations:', [...this.stations.keys()]);
+                        this._warnedMissing.add(key);
+                    }
+                }
+
                 if (fromStation && toStation) {
                     const duration = workInfo.arriveTime - workInfo.departTime;
                     const elapsed = currentTime - workInfo.departTime;

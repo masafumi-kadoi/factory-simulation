@@ -52,7 +52,10 @@ class App {
             const container = document.getElementById('container-3d');
             container.innerHTML = '';
             this.visualizer = new Visualizer3D(container);
-            this.visualizer.loadScenario(scenario);
+            const flatScenario = this._flattenScenario(scenario);
+            console.log('[App] Flat stations:', flatScenario.stations.map(s => s.id));
+            console.log('[App] Flat connections:', flatScenario.connections.map(c => `${c.from} → ${c.to}`));
+            this.visualizer.loadScenario(flatScenario);
 
             // Setup work click handler
             this.visualizer.setOnWorkClick((workId) => this._showWorkModal(workId));
@@ -369,6 +372,128 @@ class App {
         modal.addEventListener('click', (e) => {
             if (e.target === modal) modal.remove();
         });
+    }
+
+    /**
+     * Flatten ModulerStation SubScenarios for visualization.
+     * Mirrors the Go FlattenScenario logic: expands internal stations with
+     * dot-prefixed IDs and rewrites connections.
+     */
+    _flattenScenario(scenario) {
+        const flatStations = [];
+        const flatConnections = [];
+
+        for (const station of scenario.stations) {
+            if (station.type === 'moduler') {
+                const sub = station.subScenario || station.config?.subScenario;
+                if (!sub || !sub.stations || sub.stations.length === 0) {
+                    // No SubScenario - keep moduler station as-is
+                    flatStations.push(station);
+                    continue;
+                }
+
+                const prefix = station.id;
+
+                // Add the moduler station itself (for signal evaluation / hierarchy display)
+                flatStations.push({
+                    ...station,
+                    subScenario: undefined
+                });
+
+                // Add prefixed internal stations
+                for (const inner of sub.stations) {
+                    const flatId = `${prefix}.${inner.id}`;
+                    // Recursively flatten nested moduler stations
+                    const flatInner = {
+                        ...inner,
+                        id: flatId,
+                        positionX: inner.positionX ?? inner.x ?? (station.positionX || 0),
+                        positionY: inner.positionY ?? inner.y ?? (station.positionY || 0),
+                        config: inner.config ? { ...inner.config } : {}
+                    };
+
+                    // If this inner station is also moduler, recursively flatten
+                    if (inner.type === 'moduler' && (inner.subScenario || inner.config?.subScenario)) {
+                        const innerScenario = {
+                            stations: [flatInner],
+                            connections: []
+                        };
+                        // Apply prefix to sub-scenario
+                        const innerSub = inner.subScenario || inner.config?.subScenario;
+                        if (innerSub) {
+                            flatInner.subScenario = {
+                                stations: (innerSub.stations || []).map(s => ({
+                                    ...s,
+                                    id: `${flatId}.${s.id}`
+                                })),
+                                connections: (innerSub.connections || []).map(c => ({
+                                    ...c,
+                                    from: `${flatId}.${c.from}`,
+                                    to: `${flatId}.${c.to}`
+                                }))
+                            };
+                        }
+                        const recursed = this._flattenScenario({
+                            stations: [flatInner],
+                            connections: []
+                        });
+                        flatStations.push(...recursed.stations);
+                        flatConnections.push(...recursed.connections);
+                        continue;
+                    }
+
+                    flatStations.push(flatInner);
+                }
+
+                // Add prefixed internal connections
+                for (const conn of (sub.connections || [])) {
+                    flatConnections.push({
+                        ...conn,
+                        from: `${prefix}.${conn.from}`,
+                        to: `${prefix}.${conn.to}`
+                    });
+                }
+            } else {
+                flatStations.push(station);
+            }
+        }
+
+        // Rewrite external connections that reference moduler stations
+        for (const conn of scenario.connections) {
+            const fromStation = scenario.stations.find(s => s.id === conn.from);
+            const toStation = scenario.stations.find(s => s.id === conn.to);
+
+            let newFrom = conn.from;
+            let newTo = conn.to;
+            let newFromPortIndex = conn.fromPortIndex ?? -1;
+            let newToPortIndex = conn.toPortIndex ?? -1;
+
+            // From=ModulerStation → From=prefix.exit-{fromPortIndex}
+            if (fromStation && fromStation.type === 'moduler' && newFromPortIndex >= 0) {
+                newFrom = `${conn.from}.exit-${newFromPortIndex}`;
+                newFromPortIndex = -1;
+            }
+
+            // To=ModulerStation → To=prefix.entry-{toPortIndex}
+            if (toStation && toStation.type === 'moduler' && newToPortIndex >= 0) {
+                newTo = `${conn.to}.entry-${newToPortIndex}`;
+                newToPortIndex = -1;
+            }
+
+            flatConnections.push({
+                ...conn,
+                from: newFrom,
+                to: newTo,
+                fromPortIndex: newFromPortIndex,
+                toPortIndex: newToPortIndex
+            });
+        }
+
+        return {
+            ...scenario,
+            stations: flatStations,
+            connections: flatConnections
+        };
     }
 
     _updateUI() {
