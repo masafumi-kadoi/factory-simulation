@@ -490,7 +490,7 @@ export class PropertiesPanel {
         // Build summary of current rules
         let summaryHtml = '';
         const rules = isCustom ? station.config.interlockRules.rules : (getDefaultPreset(station.type) || {}).rules || [];
-        const mainRules = rules.filter(r => r.target === 'inputReady' || r.target === 'outputReady');
+        const mainRules = rules.filter(r => r.target === 'inputReady' || r.target === 'outputReady' || r.target === 'processReady');
         if (mainRules.length > 0) {
             summaryHtml = mainRules.slice(0, 4).map(r => {
                 const abbr = SIGNAL_DISPLAY[r.target] ? SIGNAL_DISPLAY[r.target].abbr : r.target;

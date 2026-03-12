@@ -2,6 +2,8 @@
 import { INTERLOCK_PRESETS, SIGNAL_DISPLAY, getDefaultPreset, getPresetsForType, clonePreset, getSignalLabel } from './interlock-presets.js';
 
 const TAB_DEFS = [
+    { id: 'processReady-on',  label: '加工準備ON',  target: 'processReady',  value: true },
+    { id: 'processReady-off', label: '加工準備OFF', target: 'processReady',  value: false },
     { id: 'inputReady-on',  label: '搬入可ON',  target: 'inputReady',  value: true },
     { id: 'inputReady-off', label: '搬入可OFF', target: 'inputReady',  value: false },
     { id: 'outputReady-on',  label: '搬出可ON',  target: 'outputReady',  value: true },
@@ -101,24 +103,23 @@ export class InterlockModal {
         if (this._portOpts.portType === 'mergeInput') {
             return {
                 signals: [
-                    { name: 'workPresent', initial: false },
-                    { name: 'portFull', initial: false },
+                    { name: 'inputWorkPresent', initial: false },
                     { name: 'inputReady', initial: false }
                 ],
                 rules: [
-                    { id: 'R1', target: 'inputReady', value: false, conditions: [{ signal: 'portFull', value: true }] },
-                    { id: 'R2', target: 'inputReady', value: true, conditions: [{ signal: 'portFull', value: false }] }
+                    { id: 'R1', target: 'inputReady', value: true, conditions: [{ signal: 'inputWorkPresent', value: false }] },
+                    { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'inputWorkPresent', value: true }] }
                 ]
             };
         } else {
             return {
                 signals: [
-                    { name: 'workPresent', initial: false },
+                    { name: 'outputWorkPresent', initial: false },
                     { name: 'outputReady', initial: false }
                 ],
                 rules: [
-                    { id: 'R1', target: 'outputReady', value: true, conditions: [{ signal: 'workPresent', value: true }] },
-                    { id: 'R2', target: 'outputReady', value: false, conditions: [{ signal: 'workPresent', value: false }] }
+                    { id: 'R1', target: 'outputReady', value: true, conditions: [{ signal: 'outputWorkPresent', value: true }] },
+                    { id: 'R2', target: 'outputReady', value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
                 ]
             };
         }
@@ -338,7 +339,7 @@ export class InterlockModal {
         const isCustom = this._isCustom;
         // "Other" rules: rules whose target is NOT inputReady or outputReady
         const otherRules = this._editRules.filter(r =>
-            r.target !== 'inputReady' && r.target !== 'outputReady'
+            r.target !== 'inputReady' && r.target !== 'outputReady' && r.target !== 'processReady'
         );
 
         let html = '<div class="interlock-tab-header">補助ルール:</div>';
@@ -567,7 +568,7 @@ export class InterlockModal {
             rule = { target: tab.target, value: tab.value, conditions: [] };
             this._editRules.push(rule);
         }
-        rule.conditions.push({ signal: this._editSignals[0]?.name || 'workPresent', value: false });
+        rule.conditions.push({ signal: this._editSignals[0]?.name || 'inputWorkPresent', value: false });
         this._render();
     }
 
@@ -585,7 +586,7 @@ export class InterlockModal {
     _addConditionToOtherRule(ruleIdx) {
         const rule = this._editRules[ruleIdx];
         if (rule) {
-            rule.conditions.push({ signal: this._editSignals[0]?.name || 'workPresent', value: false });
+            rule.conditions.push({ signal: this._editSignals[0]?.name || 'inputWorkPresent', value: false });
             this._render();
         }
     }
@@ -593,14 +594,6 @@ export class InterlockModal {
     _removeConditionFromOtherRule(ruleIdx, condIdx) {
         const rule = this._editRules[ruleIdx];
         if (rule && rule.conditions[condIdx] !== undefined) {
-            // Check if this is the R5 processingComplete reset rule
-            if (this._station.type === 'processing' && rule.target === 'processingComplete' && rule.value === false) {
-                if (rule.conditions.length <= 1) {
-                    if (!confirm('処理完了リセットルールの最後の条件を削除すると、ステーションが正常にサイクルしなくなる可能性があります。本当に削除しますか？')) {
-                        return;
-                    }
-                }
-            }
             rule.conditions.splice(condIdx, 1);
             this._render();
         }
@@ -610,22 +603,15 @@ export class InterlockModal {
         const rule = this._editRules[ruleIdx];
         if (!rule) return;
 
-        // Warn if deleting R5 processingComplete reset rule
-        if (this._station.type === 'processing' && rule.target === 'processingComplete' && rule.value === false) {
-            if (!confirm('処理完了リセットルールを削除すると、ステーションが正常にサイクルしなくなる可能性があります。本当に削除しますか？')) {
-                return;
-            }
-        }
-
         this._editRules.splice(ruleIdx, 1);
         this._render();
     }
 
     _addOtherRule() {
         this._editRules.push({
-            target: this._editSignals[0]?.name || 'workPresent',
+            target: this._editSignals[0]?.name || 'inputWorkPresent',
             value: false,
-            conditions: [{ signal: this._editSignals[0]?.name || 'workPresent', value: false }]
+            conditions: [{ signal: this._editSignals[0]?.name || 'inputWorkPresent', value: false }]
         });
         this._render();
     }
@@ -661,7 +647,7 @@ export class InterlockModal {
 
     _syncOtherTabFromUI(content) {
         const otherRules = this._editRules.filter(r =>
-            r.target !== 'inputReady' && r.target !== 'outputReady'
+            r.target !== 'inputReady' && r.target !== 'outputReady' && r.target !== 'processReady'
         );
 
         otherRules.forEach((rule) => {
@@ -852,11 +838,11 @@ export class InterlockModal {
             }
         }
 
-        // Check for R5 (processingComplete reset) in processing stations
-        if (this._station.type === 'processing') {
-            const hasR5 = this._editRules.some(r => r.target === 'processingComplete' && r.value === false);
-            if (!hasR5) {
-                warnings.push('処理完了リセットルールがありません。ステーションが正常にサイクルしない可能性があります。');
+        // Check for processReady ON rule in processing stations
+        if (this._station.type === 'processing' || this._station.type === 'split') {
+            const hasPR = this._editRules.some(r => r.target === 'processReady' && r.value === true && (r.conditions || []).length > 0);
+            if (!hasPR) {
+                warnings.push('加工準備ON (processReady) のルールがありません。加工が開始されない可能性があります。');
             }
         }
 

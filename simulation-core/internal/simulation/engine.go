@@ -129,6 +129,10 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 		if err := e.evaluateAndLogSignals(station); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("initial rule evaluation failed: %w", err)
 		}
+		// Evaluate port-level rules (Merge input ports, Split output ports)
+		for j := 1; j < len(station.Ports); j++ {
+			e.evaluatePortRules(&station.Ports[j])
+		}
 	}
 
 	// Step 3: Place initial works at stations (if specified)
@@ -417,12 +421,13 @@ func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) err
 		e.updatePortDerivedSignals(station, i, true)
 	}
 
-	// Update station result signals: RUN=OFF, CPL=ON, OWP=ON, PWP=OFF, IWP=OFF
+	// Update station result signals: RUN=OFF, CPL=ON, OWP=ON, PWP=OFF, IWP=OFF, PR=OFF
 	station.SetSignal(domain.SignalRunning, false)
 	station.SetSignal(domain.SignalComplete, true)
 	station.SetSignal(domain.SignalOutputWorkPresent, true)
 	station.SetSignal(domain.SignalProcessingWorkPresent, false)
 	station.SetSignal(domain.SignalInputWorkPresent, false)
+	station.SetSignal(domain.SignalProcessReady, false)
 	setWorkTypeSignal(station.Signals, mergedWork.Type)
 
 	// Log events
@@ -481,6 +486,9 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 
 // handleMergeStarted handles the start of merge processing
 func (e *Engine) handleMergeStarted(station *domain.Station) error {
+	if e.mergeInProgress[station.ID] {
+		return nil // Already in progress (duplicate event)
+	}
 	e.mergeInProgress[station.ID] = true
 	station.State = domain.StateProcessing
 
@@ -618,11 +626,12 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return err
 	}
 
-	// Update result signals: IWP/PWP/OWP=OFF, CPL=OFF, clear workType
+	// Update result signals: IWP/PWP/OWP=OFF, CPL=OFF, PR=OFF, clear workType
 	station.SetSignal(domain.SignalInputWorkPresent, false)
 	station.SetSignal(domain.SignalProcessingWorkPresent, false)
 	station.SetSignal(domain.SignalOutputWorkPresent, false)
 	station.SetSignal(domain.SignalComplete, false)
+	station.SetSignal(domain.SignalProcessReady, false)
 	clearWorkTypeSignals(station.Signals)
 
 	// Timer management: cancel workFull timer, schedule workEmpty timer

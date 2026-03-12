@@ -288,11 +288,11 @@ export function validateInterlockRules(station, scenario) {
         warnings.push('搬出可がONになる条件がありません');
     }
 
-    // Check R5 for processing stations
-    if (station.type === 'processing') {
-        const hasR5 = config.rules.some(r => r.target === 'processingComplete' && r.value === false);
-        if (!hasR5) {
-            warnings.push('処理完了リセットルールがありません');
+    // Check processReady ON rule for processing/split stations
+    if (station.type === 'processing' || station.type === 'split') {
+        const hasPR = config.rules.some(r => r.target === 'processReady' && r.value === true && (r.conditions || []).length > 0);
+        if (!hasPR) {
+            warnings.push('加工準備ON (processReady) のルールがありません');
         }
     }
 

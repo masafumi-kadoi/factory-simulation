@@ -1,6 +1,7 @@
 package api
 
 import (
+	"factory-simulation/simulation-core/internal/domain"
 	"factory-simulation/simulation-core/internal/simulation"
 	"fmt"
 	"log"
@@ -129,6 +130,9 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 	// Generate friendly name: ScenarioName_RunN_Timestamp
 	timestamp := time.Now().Format("2006-01-02T15:04:05")
 	friendlyName := fmt.Sprintf("%s_実行_%s", scenario.Name, timestamp)
+
+	// Migrate old interlock rules to 10-signal model
+	domain.MigrateScenario(scenario)
 
 	// Run simulation with initial conditions
 	engine := simulation.NewEngineWithInitialConditions(scenario, workIDsByStation, initialWorks)

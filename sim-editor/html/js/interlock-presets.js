@@ -1,18 +1,18 @@
-// Interlock Presets — signal and rule definitions for each station type
+// Interlock Presets — signal and rule definitions for each station type (10-signal model)
 
 // Signal display names
 // Note: workType:<type> signals are generated dynamically and displayed as "ワーク種類: <type>"
 export const SIGNAL_DISPLAY = {
-    workPresent:        { label: 'ワーク有り (WP)',  abbr: 'WP' },
-    processingComplete: { label: '処理完了 (PC)',    abbr: 'PC' },
-    inputReady:         { label: '搬入可 (IR)',      abbr: 'IR' },
-    outputReady:        { label: '搬出可 (OR)',      abbr: 'OR' },
-    mergeReady:         { label: '結合可 (MR)',      abbr: 'MR' },
-    portFull:         { label: 'ポート満杯 (PF)', abbr: 'PF' },
-    workFull:         { label: 'ワーク満杯 (WF)', abbr: 'WF' },
-    workEmpty:        { label: 'ワーク空 (WE)', abbr: 'WE' },
-    stationStop:      { label: 'ステーション停止 (SS)', abbr: 'SS' },
-    stationProcessing:{ label: 'ステーション処理中 (SP)', abbr: 'SP' }
+    inputWorkPresent:      { label: '入力ワーク有 (IWP)',      abbr: 'IWP' },
+    processingWorkPresent: { label: '処理中ワーク有 (PWP)',    abbr: 'PWP' },
+    outputWorkPresent:     { label: '出力ワーク有 (OWP)',      abbr: 'OWP' },
+    running:               { label: '加工中 (RUN)',            abbr: 'RUN' },
+    complete:              { label: '処理完了 (CPL)',           abbr: 'CPL' },
+    processReady:          { label: '加工準備 (PR)',            abbr: 'PR' },
+    inputReady:            { label: '搬入可 (IR)',              abbr: 'IR' },
+    outputReady:           { label: '搬出可 (OR)',              abbr: 'OR' },
+    workFull:              { label: 'ワーク滞留 (WF)',         abbr: 'WF' },
+    workEmpty:             { label: 'ワーク枯渇 (WE)',         abbr: 'WE' }
 };
 
 /**
@@ -24,18 +24,31 @@ export function getSignalLabel(signalName) {
     return signalName;
 }
 
+// Standard 10 signals (all initial=false)
+function tenSignals() {
+    return [
+        { name: 'inputWorkPresent', initial: false },
+        { name: 'processingWorkPresent', initial: false },
+        { name: 'outputWorkPresent', initial: false },
+        { name: 'running', initial: false },
+        { name: 'complete', initial: false },
+        { name: 'processReady', initial: false },
+        { name: 'inputReady', initial: false },
+        { name: 'outputReady', initial: false },
+        { name: 'workFull', initial: false },
+        { name: 'workEmpty', initial: false }
+    ];
+}
+
 export const INTERLOCK_PRESETS = {
     source: {
         standard: {
             name: 'Standard Source',
             description: '通常のSourceステーション。ワーク生成時に搬出可ON、搬出後にOFF。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'outputReady', initial: false }
-            ],
+            signals: tenSignals(),
             rules: [
-                { id: 'R1', target: 'outputReady', value: true,  conditions: [{ signal: 'workPresent', value: true }] },
-                { id: 'R2', target: 'outputReady', value: false, conditions: [{ signal: 'workPresent', value: false }] }
+                { id: 'R1', target: 'outputReady', value: true,  conditions: [{ signal: 'outputWorkPresent', value: true }] },
+                { id: 'R2', target: 'outputReady', value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
             ]
         }
     },
@@ -43,53 +56,14 @@ export const INTERLOCK_PRESETS = {
         standard: {
             name: 'Standard Processing',
             description: '通常の製造ライン向け。ワークを1つずつ受け入れ、処理完了後に搬出。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'processingComplete', initial: false },
-                { name: 'inputReady', initial: false },
-                { name: 'outputReady', initial: false }
-            ],
+            signals: tenSignals(),
             rules: [
-                { id: 'R1', target: 'inputReady',        value: true,  conditions: [{ signal: 'processingComplete', value: false }, { signal: 'workPresent', value: false }] },
-                { id: 'R2', target: 'inputReady',        value: false, conditions: [{ signal: 'processingComplete', value: false }, { signal: 'workPresent', value: true }] },
-                { id: 'R3', target: 'outputReady',       value: true,  conditions: [{ signal: 'processingComplete', value: true },  { signal: 'workPresent', value: true }] },
-                { id: 'R4', target: 'outputReady',       value: false, conditions: [{ signal: 'processingComplete', value: true },  { signal: 'workPresent', value: false }] },
-                { id: 'R5', target: 'processingComplete', value: false, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: false }, { signal: 'outputReady', value: false }] }
-            ]
-        },
-        simple: {
-            name: 'Simple (現行互換)',
-            description: '現行のハードコード動作と同等。シンプルなテスト用途向け。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'processingComplete', initial: false },
-                { name: 'inputReady', initial: false },
-                { name: 'outputReady', initial: false }
-            ],
-            rules: [
-                { id: 'R1', target: 'inputReady',  value: true,  conditions: [{ signal: 'workPresent', value: false }] },
-                { id: 'R2', target: 'inputReady',  value: false, conditions: [{ signal: 'workPresent', value: true }] },
-                { id: 'R3', target: 'outputReady', value: true,  conditions: [{ signal: 'processingComplete', value: true }] },
-                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'processingComplete', value: false }] },
-                { id: 'R5', target: 'processingComplete', value: false, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: false }, { signal: 'outputReady', value: false }] }
-            ]
-        },
-        buffer: {
-            name: 'Buffer Station',
-            description: 'バッファ付きステーション。処理中でも次のワークを受け入れ可能。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'processingComplete', initial: false },
-                { name: 'inputReady', initial: false },
-                { name: 'outputReady', initial: false }
-            ],
-            rules: [
-                { id: 'R1', target: 'inputReady',  value: true,  conditions: [{ signal: 'workPresent', value: false }] },
-                { id: 'R2', target: 'inputReady',  value: true,  conditions: [{ signal: 'processingComplete', value: true }] },
-                { id: 'R3', target: 'inputReady',  value: false, conditions: [{ signal: 'workPresent', value: true }, { signal: 'processingComplete', value: false }] },
-                { id: 'R4', target: 'outputReady', value: true,  conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: true }] },
-                { id: 'R5', target: 'outputReady', value: false, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: false }] },
-                { id: 'R6', target: 'processingComplete', value: false, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: false }, { signal: 'outputReady', value: false }] }
+                { id: 'R1', target: 'inputReady',  value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }] },
+                { id: 'R2', target: 'inputReady',  value: false, conditions: [{ signal: 'inputWorkPresent', value: true }] },
+                { id: 'R3', target: 'processReady', value: true, conditions: [{ signal: 'inputWorkPresent', value: true }, { signal: 'running', value: false }, { signal: 'complete', value: false }] },
+                { id: 'R4', target: 'processReady', value: false, conditions: [{ signal: 'running', value: true }] },
+                { id: 'R5', target: 'outputReady', value: true,  conditions: [{ signal: 'complete', value: true }, { signal: 'outputWorkPresent', value: true }] },
+                { id: 'R6', target: 'outputReady', value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
             ]
         }
     },
@@ -97,20 +71,12 @@ export const INTERLOCK_PRESETS = {
         standard: {
             name: 'Standard Merge',
             description: '結合ステーション。複数のワークを受け入れ、条件充足後に1つの結合ワークを生成。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'processingComplete', initial: false },
-                { name: 'mergeReady', initial: false },
-                { name: 'inputReady', initial: false },
-                { name: 'outputReady', initial: false }
-            ],
+            signals: tenSignals(),
             rules: [
-                { id: 'R1', target: 'inputReady', value: false, conditions: [{ signal: 'mergeReady', value: true }] },
-                { id: 'R2', target: 'outputReady', value: true, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: true }] },
-                { id: 'R3', target: 'outputReady', value: false, conditions: [{ signal: 'workPresent', value: false }] },
-                { id: 'R4', target: 'inputReady', value: true, conditions: [{ signal: 'workPresent', value: false }, { signal: 'processingComplete', value: false }, { signal: 'mergeReady', value: false }] },
-                { id: 'R5', target: 'processingComplete', value: false, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: false }, { signal: 'outputReady', value: false }] },
-                { id: 'R6', target: 'mergeReady', value: false, conditions: [{ signal: 'mergeReady', value: true }, { signal: 'workPresent', value: false }, { signal: 'processingComplete', value: false }] }
+                { id: 'R1', target: 'inputReady',  value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }, { signal: 'complete', value: false }] },
+                { id: 'R2', target: 'inputReady',  value: false, conditions: [{ signal: 'processReady', value: true }] },
+                { id: 'R3', target: 'outputReady', value: true,  conditions: [{ signal: 'complete', value: true }, { signal: 'outputWorkPresent', value: true }] },
+                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
             ]
         }
     },
@@ -118,18 +84,14 @@ export const INTERLOCK_PRESETS = {
         standard: {
             name: 'Standard Split',
             description: '分割ステーション。結合ワークを受け入れ、元の構成要素に分割して順次搬出。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'processingComplete', initial: false },
-                { name: 'inputReady', initial: false },
-                { name: 'outputReady', initial: false }
-            ],
+            signals: tenSignals(),
             rules: [
-                { id: 'R1', target: 'inputReady', value: true, conditions: [{ signal: 'processingComplete', value: false }, { signal: 'workPresent', value: false }] },
-                { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'workPresent', value: true }] },
-                { id: 'R3', target: 'outputReady', value: true, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: true }] },
-                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: false }] },
-                { id: 'R5', target: 'processingComplete', value: false, conditions: [{ signal: 'processingComplete', value: true }, { signal: 'workPresent', value: false }, { signal: 'outputReady', value: false }] }
+                { id: 'R1', target: 'inputReady',   value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }, { signal: 'complete', value: false }] },
+                { id: 'R2', target: 'inputReady',   value: false, conditions: [{ signal: 'inputWorkPresent', value: true }] },
+                { id: 'R3', target: 'processReady', value: true,  conditions: [{ signal: 'inputWorkPresent', value: true }, { signal: 'running', value: false }, { signal: 'complete', value: false }] },
+                { id: 'R4', target: 'processReady', value: false, conditions: [{ signal: 'running', value: true }] },
+                { id: 'R5', target: 'outputReady',  value: true,  conditions: [{ signal: 'complete', value: true }, { signal: 'outputWorkPresent', value: true }] },
+                { id: 'R6', target: 'outputReady',  value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
             ]
         }
     },
@@ -137,13 +99,10 @@ export const INTERLOCK_PRESETS = {
         standard: {
             name: 'Standard Drain',
             description: '通常のDrainステーション。空き状態で搬入可ON、ワーク消費後にOFF。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'inputReady', initial: false }
-            ],
+            signals: tenSignals(),
             rules: [
-                { id: 'R1', target: 'inputReady', value: true,  conditions: [{ signal: 'workPresent', value: false }] },
-                { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'workPresent', value: true }] }
+                { id: 'R1', target: 'inputReady', value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }] },
+                { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'inputWorkPresent', value: true }] }
             ]
         }
     },
@@ -151,16 +110,12 @@ export const INTERLOCK_PRESETS = {
         standard: {
             name: 'Standard Entry',
             description: 'ModulerStation入口。ワーク到着後すぐに通過。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'inputReady', initial: true },
-                { name: 'outputReady', initial: false }
-            ],
+            signals: tenSignals(),
             rules: [
-                { id: 'R1', target: 'inputReady', value: true,  conditions: [{ signal: 'workPresent', value: false }] },
-                { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'workPresent', value: true }] },
-                { id: 'R3', target: 'outputReady', value: true, conditions: [{ signal: 'workPresent', value: true }] },
-                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'workPresent', value: false }] }
+                { id: 'R1', target: 'outputReady', value: true,  conditions: [{ signal: 'outputWorkPresent', value: true }] },
+                { id: 'R2', target: 'outputReady', value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] },
+                { id: 'R3', target: 'inputReady',  value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }] },
+                { id: 'R4', target: 'inputReady',  value: false, conditions: [{ signal: 'inputWorkPresent', value: true }] }
             ]
         }
     },
@@ -168,32 +123,26 @@ export const INTERLOCK_PRESETS = {
         standard: {
             name: 'Standard Exit',
             description: 'ModulerStation出口。ワーク到着後すぐに通過。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'inputReady', initial: true },
-                { name: 'outputReady', initial: false }
-            ],
+            signals: tenSignals(),
             rules: [
-                { id: 'R1', target: 'inputReady', value: true,  conditions: [{ signal: 'workPresent', value: false }] },
-                { id: 'R2', target: 'inputReady', value: false, conditions: [{ signal: 'workPresent', value: true }] },
-                { id: 'R3', target: 'outputReady', value: true, conditions: [{ signal: 'workPresent', value: true }] },
-                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'workPresent', value: false }] }
+                { id: 'R1', target: 'outputReady', value: true,  conditions: [{ signal: 'outputWorkPresent', value: true }] },
+                { id: 'R2', target: 'outputReady', value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] },
+                { id: 'R3', target: 'inputReady',  value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }] },
+                { id: 'R4', target: 'inputReady',  value: false, conditions: [{ signal: 'inputWorkPresent', value: true }] }
             ]
         }
     },
     moduler: {
         standard: {
             name: 'Standard Moduler',
-            description: 'Modulerステーション。信号評価用。内部のEntry/Exitがワーク搬送を制御。',
-            signals: [
-                { name: 'workPresent', initial: false },
-                { name: 'workFull', initial: false },
-                { name: 'workEmpty', initial: true },
-                { name: 'stationStop', initial: false },
-                { name: 'stationProcessing', initial: false },
-                { name: 'processingComplete', initial: false }
-            ],
-            rules: []
+            description: 'Modulerステーション。内部ステーション信号の集約。搬入可/搬出可をルールで制御。',
+            signals: tenSignals(),
+            rules: [
+                { id: 'R1', target: 'inputReady',  value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }] },
+                { id: 'R2', target: 'inputReady',  value: false, conditions: [{ signal: 'inputWorkPresent', value: true }] },
+                { id: 'R3', target: 'outputReady', value: true,  conditions: [{ signal: 'complete', value: true }, { signal: 'outputWorkPresent', value: true }] },
+                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
+            ]
         }
     }
 };
