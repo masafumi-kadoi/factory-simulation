@@ -62,6 +62,7 @@ type Engine struct {
 	simDB              *SimDB                  // SimDB for managing predefined work IDs
 	mergeInProgress    map[string]bool         // Tracks merge stations currently processing (stationID -> in progress)
 	initialWorks       map[string]InitialWorkCondition // Initial work conditions by station ID
+	pendingTimers      map[string]float64     // Timer tracking: key="stationID:timerType" → scheduledTime
 }
 
 // InitialWorkCondition represents a work already present at a station at simulation start
@@ -96,6 +97,7 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 		simDB:              NewSimDB(workIDsByStation),
 		mergeInProgress:    make(map[string]bool),
 		initialWorks:       initialWorks,
+		pendingTimers:      make(map[string]float64),
 	}
 }
 
@@ -117,6 +119,9 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 		station.InitializeSignals()
 		station.InitializePorts()
 	}
+
+	// Step 1.5: Initialize timer defaults (stayTime/noWorkTimeout) for stations without user-specified values
+	e.initializeTimerDefaults()
 
 	// Step 2: Evaluate rules to set initial control signals
 	for i := range e.scenario.Stations {
@@ -176,26 +181,44 @@ func (e *Engine) processEvent(event *Event, simulation *domain.Simulation) error
 		return fmt.Errorf("station not found: %s", event.StationID)
 	}
 
+	var err error
 	switch event.Type {
 	case EventWorkCreated:
-		return e.handleWorkCreated(event, station)
+		err = e.handleWorkCreated(event, station)
 	case EventWorkArrived:
-		return e.handleWorkArrived(event, station)
+		err = e.handleWorkArrived(event, station)
 	case EventProcessingStarted:
-		return e.handleProcessingStarted(event, station)
+		err = e.handleProcessingStarted(event, station)
 	case EventProcessingCompleted:
-		return e.handleProcessingCompleted(event, station)
+		err = e.handleProcessingCompleted(event, station)
 	case EventWorkDeparted:
-		return e.handleWorkDeparted(event, station)
+		err = e.handleWorkDeparted(event, station)
 	case EventWorkDestroyed:
-		return e.handleWorkDestroyed(event, station)
+		err = e.handleWorkDestroyed(event, station)
 	case EventMergeCompleted:
-		return e.handleMergeCompleted(event, station)
+		err = e.handleMergeCompleted(event, station)
 	case EventSplitCompleted:
-		return e.handleSplitCompleted(event, station)
+		err = e.handleSplitCompleted(event, station)
+	case EventCheckWorkFull:
+		err = e.handleCheckWorkFull(event, station)
+	case EventCheckWorkEmpty:
+		err = e.handleCheckWorkEmpty(event, station)
 	default:
 		return fmt.Errorf("unknown event type: %s", event.Type)
 	}
+
+	if err != nil {
+		return err
+	}
+
+	// After processing an internal station's event, re-derive parent Moduler signals
+	if isInternalStation(station.ID) {
+		if err := e.triggerModulerDerivation(station); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // handleWorkCreated handles the WorkCreated event
@@ -300,6 +323,10 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	// Log work event
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type, -1)
 	e.logStationStatus(station, "ワーク到着")
+
+	// Timer management: cancel workEmpty timer, schedule workFull timer
+	e.cancelWorkEmptyTimer(station)
+	e.scheduleWorkFullTimer(station)
 
 	// Evaluate interlock rules after signal change
 	// processReady trigger (if PR=ON after evaluation) is handled inside evaluateAndLogSignals
@@ -418,6 +445,10 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 	}
 
 	// Processing/Split: delegate to station logic
+	// If already processing (e.g. duplicate event from timer + rule evaluation at same tick), skip
+	if station.State == domain.StateProcessing || station.State == domain.StateCompleted {
+		return nil
+	}
 	if err := station.StartProcessing(); err != nil {
 		return err
 	}
@@ -593,6 +624,10 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	station.SetSignal(domain.SignalOutputWorkPresent, false)
 	station.SetSignal(domain.SignalComplete, false)
 	clearWorkTypeSignals(station.Signals)
+
+	// Timer management: cancel workFull timer, schedule workEmpty timer
+	e.cancelWorkFullTimer(station)
+	e.scheduleWorkEmptyTimer(station)
 
 	// Log work event
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, -1)
@@ -1076,6 +1111,19 @@ func (e *Engine) logStationStatus(station *domain.Station, statusType string) {
 		Timestamp:  e.currentTime,
 		StatusType: statusType,
 		Value:      value,
+	})
+}
+
+// logSignalChange logs an explicit signal change (for timer-driven signals not covered by rules).
+func (e *Engine) logSignalChange(station *domain.Station, signalName string, oldValue, newValue bool, ruleID string) {
+	e.statusLogs = append(e.statusLogs, StationStatusLog{
+		StationID:  station.ID,
+		Timestamp:  e.currentTime,
+		StatusType: "signal_change",
+		Value:      newValue,
+		SignalName: signalName,
+		OldValue:   oldValue,
+		RuleID:     ruleID,
 	})
 }
 

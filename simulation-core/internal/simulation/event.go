@@ -20,6 +20,10 @@ const (
 
 	// Split events
 	EventSplitCompleted EventType = "SplitCompleted"
+
+	// Timer events (workFull/workEmpty)
+	EventCheckWorkFull  EventType = "CheckWorkFull"
+	EventCheckWorkEmpty EventType = "CheckWorkEmpty"
 )
 
 // Event represents a simulation event

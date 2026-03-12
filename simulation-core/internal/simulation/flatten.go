@@ -76,6 +76,18 @@ func flattenStationsAndConnections(stations []domain.Station, connections []doma
 
 		// Recursively flatten (handles nested ModulerStations)
 		nestedStations, nestedConnections := flattenStationsAndConnections(internalStations, internalConnections, modulerPrefix)
+
+		// Set InternalStationIDs on the Moduler station (last added to flatStations)
+		modulerIdx := len(flatStations) - 1
+		var internalIDs []string
+		for _, ns := range nestedStations {
+			internalIDs = append(internalIDs, ns.ID)
+		}
+		flatStations[modulerIdx].InternalStationIDs = internalIDs
+
+		// Convert inputMonitorStationIds/outputMonitorStationIds to prefixed IDs
+		prefixMonitorStationIDs(&flatStations[modulerIdx], modulerPrefix)
+
 		flatStations = append(flatStations, nestedStations...)
 		flatConnections = append(flatConnections, nestedConnections...)
 	}
@@ -187,6 +199,30 @@ func prefixInterlockRulesRaw(raw interface{}, prefix string) interface{} {
 		newM["rules"] = newRules
 	}
 	return newM
+}
+
+// prefixMonitorStationIDs converts inputMonitorStationIds/outputMonitorStationIds
+// in the Moduler station's config from relative IDs to prefixed IDs.
+func prefixMonitorStationIDs(station *domain.Station, prefix string) {
+	if station.Config == nil {
+		return
+	}
+	station.Config = copyConfig(station.Config)
+	for _, key := range []string{"inputMonitorStationIds", "outputMonitorStationIds"} {
+		if raw, ok := station.Config[key]; ok {
+			if arr, ok := raw.([]interface{}); ok {
+				newArr := make([]interface{}, len(arr))
+				for i, item := range arr {
+					if id, ok := item.(string); ok {
+						newArr[i] = prefix + id
+					} else {
+						newArr[i] = item
+					}
+				}
+				station.Config[key] = newArr
+			}
+		}
+	}
 }
 
 // copyConfig creates a shallow copy of a config map.
