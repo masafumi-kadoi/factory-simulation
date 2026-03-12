@@ -6,24 +6,24 @@ import "fmt"
 type StationType string
 
 const (
-	StationTypeSource     StationType = "source"     // Simplified: Source only generates works
-	StationTypeProcessing StationType = "processing" // Base class: handles one work at a time
-	StationTypeDrain      StationType = "drain"      // Simplified: Drain only destroys works
-	StationTypeMerge      StationType = "merge"      // Merge: combines multiple works into one
-	StationTypeSplit      StationType = "split"       // Split: separates combined work into components
-	StationTypeModuler    StationType = "moduler"    // Moduler: contains sub-stations (entry/exit interface)
-	StationTypeEntry      StationType = "entry"      // Entry: transparent input gateway for ModulerStation
-	StationTypeExit       StationType = "exit"       // Exit: transparent output gateway for ModulerStation
+	StationTypeSource     StationType = "source"
+	StationTypeProcessing StationType = "processing"
+	StationTypeDrain      StationType = "drain"
+	StationTypeMerge      StationType = "merge"
+	StationTypeSplit      StationType = "split"
+	StationTypeModuler    StationType = "moduler"
+	StationTypeEntry      StationType = "entry"
+	StationTypeExit       StationType = "exit"
 )
 
 // StationState represents the state of a station in the state machine
 type StationState string
 
 const (
-	StateIdle       StationState = "idle"       // Waiting (no work) - 搬入可=ON, 搬出可=OFF
-	StateReceiving  StationState = "receiving"  // Work arriving (transition) - 搬入可=OFF, 搬出可=OFF
-	StateProcessing StationState = "processing" // Processing work - 搬入可=OFF, 搬出可=OFF
-	StateCompleted  StationState = "completed"  // Processing completed (ready to depart) - 搬入可=OFF, 搬出可=ON
+	StateIdle       StationState = "idle"
+	StateReceiving  StationState = "receiving"
+	StateProcessing StationState = "processing"
+	StateCompleted  StationState = "completed"
 )
 
 // StateTransition represents a state transition rule (for future JSON-based configuration)
@@ -31,19 +31,20 @@ type StateTransition struct {
 	From       StationState `json:"from"`
 	To         StationState `json:"to"`
 	Trigger    string       `json:"trigger"`
-	Conditions []string     `json:"conditions,omitempty"` // Future: condition expressions
+	Conditions []string     `json:"conditions,omitempty"`
 }
 
-// PortSlot represents a single port slot for Merge/Split stations.
-// Each port is 1:1 mapped to a connection and has its own interlock signals.
-type PortSlot struct {
-	Capacity       int              // Max works this port can hold
-	Works          []*Work          // Current works in this slot
-	Signals        map[string]bool  // Per-port signal values (inputReady, outputReady, etc.)
+// Port represents a unified port for all station types.
+// Port[0] = station body (main flow), Port[1+] = Merge input / Split output ports.
+type Port struct {
+	Work           *Work            // Single work (used by Port[0] for main flow)
+	Works          []*Work          // Multiple works (used by Port[1+] for Merge/Split)
+	Capacity       int              // Max works this port can hold (Port[0] always 1)
+	Signals        map[string]bool  // Per-port signal values
 	InterlockRules *InterlockConfig // Per-port interlock rules (nil = use default)
 }
 
-// Station represents a station in the factory simulation (Processing base class)
+// Station represents a station in the factory simulation
 type Station struct {
 	ID         string
 	Name       string
@@ -53,22 +54,14 @@ type Station struct {
 	PositionX  *float64
 	PositionY  *float64
 
-	// Work management: Only ONE work at a time (interlock mechanism)
-	CurrentWork *Work // The work currently at this station (nil if idle)
-
-	// Merge/Split port slots (1:1 mapped to connections)
-	InputPortSlots  []PortSlot // Merge: input port slots (one per incoming connection)
-	OutputPortSlots []PortSlot // Split: output port slots (one per outgoing connection)
+	// Port unified model: Port[0]=body, Port[1+]=Merge input / Split output
+	Ports []Port
 
 	// State machine
 	State StationState
 
-	// Interlock signals (derived from state)
-	// 搬入可 (InputReady): true when station can accept a new work
-	// 搬出可 (OutputReady): true when station has completed work and ready to send
-
 	// Timestamps (for logging)
-	StateChangedAt         *float64 // State change timestamp
+	StateChangedAt         *float64
 	WorkArrivalTime        *float64
 	WorkDepartureTime      *float64
 	ProcessingStartTime    *float64
@@ -78,25 +71,75 @@ type Station struct {
 	Config map[string]interface{}
 
 	// Signal-based interlock
-	Signals        map[string]bool  // Current signal values
+	Signals        map[string]bool  // Shortcut to Ports[0].Signals
 	InterlockRules *InterlockConfig // Rule definitions (nil = use type default)
 
 	// ModulerStation fields
-	SubScenario *SubScenario // Internal stations and connections (moduler type only)
-	EntryCount  int          // Number of Entry stations (moduler type only)
-	ExitCount   int          // Number of Exit stations (moduler type only)
+	SubScenario        *SubScenario // Internal stations and connections (moduler type only)
+	EntryCount         int          // Number of Entry stations (moduler type only)
+	ExitCount          int          // Number of Exit stations (moduler type only)
+	InternalStationIDs []string     // Flattened internal station IDs (set by flatten)
 }
 
 // NewStation creates a new station
 func NewStation(id string, stationType StationType, config map[string]interface{}) *Station {
 	return &Station{
-		ID:          id,
-		Type:        stationType,
-		ParentID:    nil,
-		CurrentWork: nil, // No work initially
-		State:       StateIdle,
-		Config:      config,
+		ID:     id,
+		Type:   stationType,
+		Ports:  []Port{{Capacity: 1}},
+		State:  StateIdle,
+		Config: config,
 	}
+}
+
+// GetWork returns the work at Port[0] (station body)
+func (s *Station) GetWork() *Work {
+	if len(s.Ports) == 0 {
+		return nil
+	}
+	return s.Ports[0].Work
+}
+
+// SetWork sets the work at Port[0] (station body)
+func (s *Station) SetWork(w *Work) {
+	if len(s.Ports) == 0 {
+		s.Ports = []Port{{Capacity: 1}}
+	}
+	s.Ports[0].Work = w
+}
+
+// GetInputPort returns the Merge input port at index (maps to Ports[portIndex+1])
+func (s *Station) GetInputPort(portIndex int) *Port {
+	idx := portIndex + 1
+	if idx <= 0 || idx >= len(s.Ports) {
+		return nil
+	}
+	return &s.Ports[idx]
+}
+
+// GetOutputPort returns the Split output port at index (maps to Ports[portIndex+1])
+func (s *Station) GetOutputPort(portIndex int) *Port {
+	idx := portIndex + 1
+	if idx <= 0 || idx >= len(s.Ports) {
+		return nil
+	}
+	return &s.Ports[idx]
+}
+
+// InputPortCount returns the number of Merge input ports (Ports[1+])
+func (s *Station) InputPortCount() int {
+	if s.Type != StationTypeMerge || len(s.Ports) <= 1 {
+		return 0
+	}
+	return len(s.Ports) - 1
+}
+
+// OutputPortCount returns the number of Split output ports (Ports[1+])
+func (s *Station) OutputPortCount() int {
+	if s.Type != StationTypeSplit || len(s.Ports) <= 1 {
+		return 0
+	}
+	return len(s.Ports) - 1
 }
 
 // GetFloatConfig retrieves a float64 configuration value
@@ -139,22 +182,20 @@ func (s *Station) GetStringConfig(key string) string {
 	return ""
 }
 
-// IsInputReady returns true if station can accept a new work (搬入可 signal)
+// IsInputReady returns true if station can accept a new work (inputReady signal on Port[0])
 func (s *Station) IsInputReady() bool {
 	if s.Signals != nil {
 		return s.Signals["inputReady"]
 	}
-	// Fallback: legacy behavior
-	return s.State == StateIdle && s.CurrentWork == nil
+	return s.State == StateIdle && s.GetWork() == nil
 }
 
-// IsOutputReady returns true if station has completed work and ready to send (搬出可 signal)
+// IsOutputReady returns true if station has completed work and ready to send (outputReady signal on Port[0])
 func (s *Station) IsOutputReady() bool {
 	if s.Signals != nil {
 		return s.Signals["outputReady"]
 	}
-	// Fallback: legacy behavior
-	return s.State == StateCompleted && s.CurrentWork != nil
+	return s.State == StateCompleted && s.GetWork() != nil
 }
 
 // InitializeSignals sets all signals to their initial values from the interlock config
@@ -162,27 +203,27 @@ func (s *Station) InitializeSignals() {
 	if s.InterlockRules == nil {
 		return
 	}
-	s.Signals = make(map[string]bool)
-	for _, sig := range s.InterlockRules.Signals {
-		s.Signals[sig.Name] = sig.Initial
+	if len(s.Ports) == 0 {
+		s.Ports = []Port{{Capacity: 1}}
 	}
+	s.Ports[0].Signals = make(map[string]bool)
+	for _, sig := range s.InterlockRules.Signals {
+		s.Ports[0].Signals[sig.Name] = sig.Initial
+	}
+	// Station.Signals is a shortcut to Ports[0].Signals
+	s.Signals = s.Ports[0].Signals
 
-	// Auto-correct control signal initial values
 	autoCorrectControlSignals(s.Signals, s.InterlockRules)
 }
 
-// autoCorrectControlSignals fixes control signal initial values:
-// If a control signal (inputReady/outputReady) has initial=true but no rule
-// can ever set it to true, force initial to false to prevent stuck-on state.
-// This handles cases where the user removes the ON rule in the editor but
-// the signal's initial value was inherited from the default preset as true.
+// autoCorrectControlSignals fixes control signal initial values
 func autoCorrectControlSignals(signals map[string]bool, rules *InterlockConfig) {
 	if signals == nil || rules == nil {
 		return
 	}
 	for _, controlSig := range []string{"inputReady", "outputReady"} {
 		if !signals[controlSig] {
-			continue // already false, no issue
+			continue
 		}
 		hasOnRule := false
 		for _, rule := range rules.Rules {
@@ -213,14 +254,9 @@ func (s *Station) GetSignal(name string) bool {
 }
 
 // CanAcceptWork checks if the station can accept a new work
-// This is the interlock mechanism: only accept when InputReady is ON
 func (s *Station) CanAcceptWork() bool {
 	if s.Type == StationTypeSource || s.Type == StationTypeModuler {
-		return false // Source and Moduler do not accept external works directly
-	}
-	if s.Type == StationTypeMerge {
-		// Merge accepts works into InputPort; inputReady is managed per-connection
-		return s.IsInputReady()
+		return false
 	}
 	return s.IsInputReady()
 }
@@ -230,17 +266,12 @@ func (s *Station) AddWork(work *Work) error {
 	if !s.CanAcceptWork() {
 		return fmt.Errorf("station %s cannot accept work (InputReady=OFF, state=%s)", s.ID, s.State)
 	}
-
-	// Accept the work (turn OFF InputReady signal)
-	s.CurrentWork = work
+	s.SetWork(work)
 	s.State = StateReceiving
-
 	return nil
 }
 
 // InitializeInterlockRulesFromConfig loads custom interlock rules from the station's config map.
-// This bridges the gap between the JSON config (where editor saves interlockRules)
-// and the Station.InterlockRules field (used by the engine).
 func (s *Station) InitializeInterlockRulesFromConfig() {
 	if ilRaw, ok := s.Config["interlockRules"]; ok {
 		parsed := parseInterlockConfig(ilRaw)
@@ -250,63 +281,48 @@ func (s *Station) InitializeInterlockRulesFromConfig() {
 	}
 }
 
-// InitializePortSlots initializes port slots from the station config.
-// Each port gets its own signals and interlock rules.
-// Called during simulation startup.
-func (s *Station) InitializePortSlots() {
-	ports := s.getPortsConfig()
+// InitializePorts initializes Port[1+] from the station config.
+// Port[0] is the station body (initialized by InitializeSignals).
+// Port[1+] are Merge input ports or Split output ports.
+func (s *Station) InitializePorts() {
+	portsConfig := s.getPortsConfig()
+	if len(portsConfig) == 0 {
+		return
+	}
+	if len(s.Ports) == 0 {
+		s.Ports = []Port{{Capacity: 1}}
+	}
+
+	var getDefaultConfig func() *InterlockConfig
 	if s.Type == StationTypeMerge {
-		s.InputPortSlots = make([]PortSlot, len(ports))
-		for i, b := range ports {
-			capacity := 1
-			if c, ok := b["capacity"].(float64); ok && c >= 1 {
-				capacity = int(c)
-			}
-			slot := PortSlot{Capacity: capacity}
-
-			// Load per-port interlock rules or use default
-			if ilRaw, ok := b["interlockRules"]; ok {
-				slot.InterlockRules = parseInterlockConfig(ilRaw)
-			}
-			if slot.InterlockRules == nil {
-				slot.InterlockRules = GetDefaultMergePortInterlockConfig()
-			}
-
-			// Initialize signals from interlock rules
-			slot.Signals = make(map[string]bool)
-			for _, sig := range slot.InterlockRules.Signals {
-				slot.Signals[sig.Name] = sig.Initial
-			}
-			autoCorrectControlSignals(slot.Signals, slot.InterlockRules)
-
-			s.InputPortSlots[i] = slot
-		}
+		getDefaultConfig = GetDefaultMergePortInterlockConfig
 	} else if s.Type == StationTypeSplit {
-		s.OutputPortSlots = make([]PortSlot, len(ports))
-		for i, b := range ports {
-			capacity := 1
-			if c, ok := b["capacity"].(float64); ok && c >= 1 {
-				capacity = int(c)
-			}
-			slot := PortSlot{Capacity: capacity}
+		getDefaultConfig = GetDefaultSplitPortInterlockConfig
+	} else {
+		return
+	}
 
-			// Load per-port interlock rules or use default
-			if ilRaw, ok := b["interlockRules"]; ok {
-				slot.InterlockRules = parseInterlockConfig(ilRaw)
-			}
-			if slot.InterlockRules == nil {
-				slot.InterlockRules = GetDefaultSplitPortInterlockConfig()
-			}
-
-			// Initialize signals from interlock rules
-			slot.Signals = make(map[string]bool)
-			for _, sig := range slot.InterlockRules.Signals {
-				slot.Signals[sig.Name] = sig.Initial
-			}
-			autoCorrectControlSignals(slot.Signals, slot.InterlockRules)
-
-			s.OutputPortSlots[i] = slot
+	for _, b := range portsConfig {
+		capacity := 1
+		if c, ok := b["capacity"].(float64); ok && c >= 1 {
+			capacity = int(c)
 		}
+		port := Port{Capacity: capacity}
+
+		if ilRaw, ok := b["interlockRules"]; ok {
+			port.InterlockRules = parseInterlockConfig(ilRaw)
+		}
+		if port.InterlockRules == nil {
+			port.InterlockRules = getDefaultConfig()
+		}
+
+		port.Signals = make(map[string]bool)
+		for _, sig := range port.InterlockRules.Signals {
+			port.Signals[sig.Name] = sig.Initial
+		}
+		autoCorrectControlSignals(port.Signals, port.InterlockRules)
+
+		s.Ports = append(s.Ports, port)
 	}
 }
 
@@ -319,7 +335,6 @@ func parseInterlockConfig(raw interface{}) *InterlockConfig {
 
 	config := &InterlockConfig{}
 
-	// Parse signals
 	if sigs, ok := m["signals"].([]interface{}); ok {
 		for _, s := range sigs {
 			if sm, ok := s.(map[string]interface{}); ok {
@@ -330,7 +345,6 @@ func parseInterlockConfig(raw interface{}) *InterlockConfig {
 		}
 	}
 
-	// Parse rules
 	if rules, ok := m["rules"].([]interface{}); ok {
 		for _, r := range rules {
 			if rm, ok := r.(map[string]interface{}); ok {
@@ -376,37 +390,38 @@ func (s *Station) getPortsConfig() []map[string]interface{} {
 	return nil
 }
 
-// AddWorkToPort adds a work to the specified InputPortSlot by index
+// AddWorkToPort adds a work to the specified input port (Ports[portIndex+1])
 func (s *Station) AddWorkToPort(work *Work, portIndex int) error {
 	if s.Type != StationTypeMerge {
 		return fmt.Errorf("station %s is not a merge station", s.ID)
 	}
-	if portIndex < 0 || portIndex >= len(s.InputPortSlots) {
-		return fmt.Errorf("port index %d out of range for station %s (has %d ports)", portIndex, s.ID, len(s.InputPortSlots))
+	port := s.GetInputPort(portIndex)
+	if port == nil {
+		return fmt.Errorf("port index %d out of range for station %s (has %d ports)", portIndex, s.ID, s.InputPortCount())
 	}
-	slot := &s.InputPortSlots[portIndex]
-	if len(slot.Works) >= slot.Capacity {
-		return fmt.Errorf("port %d at station %s is full (capacity=%d)", portIndex, s.ID, slot.Capacity)
+	if len(port.Works) >= port.Capacity {
+		return fmt.Errorf("port %d at station %s is full (capacity=%d)", portIndex, s.ID, port.Capacity)
 	}
-	slot.Works = append(slot.Works, work)
+	port.Works = append(port.Works, work)
 	return nil
 }
 
-// CheckMergeCondition checks if all input port slots are full
+// CheckMergeCondition checks if all input ports (Ports[1+]) are full
 func (s *Station) CheckMergeCondition() bool {
-	if s.Type != StationTypeMerge || len(s.InputPortSlots) == 0 {
+	portCount := s.InputPortCount()
+	if portCount == 0 {
 		return false
 	}
-	for _, slot := range s.InputPortSlots {
-		if len(slot.Works) < slot.Capacity {
+	for i := 0; i < portCount; i++ {
+		port := s.GetInputPort(i)
+		if len(port.Works) < port.Capacity {
 			return false
 		}
 	}
 	return true
 }
 
-// ExecuteMerge consumes all works from all input port slots and creates a merged work.
-// Returns: (mergedWork, consumedWorks, error)
+// ExecuteMerge consumes all works from all input ports and creates a merged work at Port[0].
 func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []*Work, error) {
 	if s.Type != StationTypeMerge {
 		return nil, nil, fmt.Errorf("station %s is not a merge station", s.ID)
@@ -414,23 +429,20 @@ func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []
 
 	outputWorkType := s.GetStringConfig("outputWorkType")
 
-	// Consume all works from all slots
 	var consumedWorks []*Work
-	for i := range s.InputPortSlots {
-		slot := &s.InputPortSlots[i]
-		consumedWorks = append(consumedWorks, slot.Works...)
-		slot.Works = nil
+	for i := 0; i < s.InputPortCount(); i++ {
+		port := s.GetInputPort(i)
+		consumedWorks = append(consumedWorks, port.Works...)
+		port.Works = nil
 	}
 
 	if len(consumedWorks) == 0 {
 		return nil, nil, fmt.Errorf("merge at station %s: no works to consume", s.ID)
 	}
 
-	// Generate new merged work
 	workID, friendlyName := newWorkIDFunc()
 	mergedWork := NewWorkWithType(workID, friendlyName, outputWorkType)
 
-	// Set mergedFrom metadata
 	mergedFromList := make([]interface{}, len(consumedWorks))
 	for i, w := range consumedWorks {
 		mergedFromList[i] = map[string]interface{}{
@@ -442,29 +454,26 @@ func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []
 		"mergedFrom": mergedFromList,
 	}
 
-	// Set as current work
-	s.CurrentWork = mergedWork
+	s.SetWork(mergedWork)
 	s.State = StateCompleted
 
 	return mergedWork, consumedWorks, nil
 }
 
-// ExecuteSplit splits a merged work into component works and places them into OutputPortSlots.
-// Works are placed into output ports sequentially by index (1:1 mapping with connections).
-// Returns: (splitWorks, error)
+// ExecuteSplit splits a merged work into component works and places them into output ports (Ports[1+]).
 func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, error) {
 	if s.Type != StationTypeSplit {
 		return nil, fmt.Errorf("station %s is not a split station", s.ID)
 	}
 
-	if s.CurrentWork == nil {
+	work := s.GetWork()
+	if work == nil {
 		return nil, fmt.Errorf("station %s has no work to split", s.ID)
 	}
 
-	// Get mergedFrom metadata
-	mergedFrom, ok := s.CurrentWork.Metadata["mergedFrom"]
+	mergedFrom, ok := work.Metadata["mergedFrom"]
 	if !ok {
-		return nil, fmt.Errorf("station %s: work %s has no mergedFrom metadata (not a merged work)", s.ID, s.CurrentWork.ID)
+		return nil, fmt.Errorf("station %s: work %s has no mergedFrom metadata (not a merged work)", s.ID, work.ID)
 	}
 
 	mergedFromList, ok := mergedFrom.([]interface{})
@@ -472,10 +481,9 @@ func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, 
 		return nil, fmt.Errorf("station %s: invalid mergedFrom format", s.ID)
 	}
 
-	// Create split works and place into output port slots by index
 	var splitWorks []*Work
-	sourceWorkID := s.CurrentWork.ID
-	sourceWorkType := s.CurrentWork.Type
+	sourceWorkID := work.ID
+	sourceWorkType := work.Type
 
 	for i, item := range mergedFromList {
 		itemMap, ok := item.(map[string]interface{})
@@ -484,8 +492,8 @@ func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, 
 		}
 		origType, _ := itemMap["type"].(string)
 
-		workID, friendlyName := newWorkIDFunc()
-		splitWork := NewWorkWithType(workID, friendlyName, origType)
+		wID, fName := newWorkIDFunc()
+		splitWork := NewWorkWithType(wID, fName, origType)
 		splitWork.Metadata = map[string]interface{}{
 			"splitFrom": map[string]interface{}{
 				"workId": sourceWorkID,
@@ -494,101 +502,89 @@ func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, 
 		}
 		splitWorks = append(splitWorks, splitWork)
 
-		// Place into output port slot by index (1:1 mapping)
-		if i < len(s.OutputPortSlots) {
-			slot := &s.OutputPortSlots[i]
-			slot.Works = append(slot.Works, splitWork)
+		port := s.GetOutputPort(i)
+		if port != nil {
+			port.Works = append(port.Works, splitWork)
 		}
 	}
 
-	// Clear current work (split station body is now empty)
-	s.CurrentWork = nil
+	s.SetWork(nil)
 	s.State = StateIdle
 
 	return splitWorks, nil
 }
 
-// GetOutputPortWorkByIndex gets the next work from a specific OutputPortSlot
+// GetOutputPortWorkByIndex gets the next work from a specific output port (Ports[portIndex+1])
 func (s *Station) GetOutputPortWorkByIndex(portIndex int) *Work {
-	if portIndex < 0 || portIndex >= len(s.OutputPortSlots) {
+	port := s.GetOutputPort(portIndex)
+	if port == nil {
 		return nil
 	}
-	slot := &s.OutputPortSlots[portIndex]
-	if len(slot.Works) > 0 {
-		work := slot.Works[0]
-		slot.Works = slot.Works[1:]
+	if len(port.Works) > 0 {
+		work := port.Works[0]
+		port.Works = port.Works[1:]
 		return work
 	}
 	return nil
 }
 
-// HasOutputPortWorks returns true if any OutputPortSlot has remaining works
+// HasOutputPortWorks returns true if any output port (Ports[1+]) has remaining works
 func (s *Station) HasOutputPortWorks() bool {
-	for _, slot := range s.OutputPortSlots {
-		if len(slot.Works) > 0 {
+	for i := 0; i < s.OutputPortCount(); i++ {
+		port := s.GetOutputPort(i)
+		if len(port.Works) > 0 {
 			return true
 		}
 	}
 	return false
 }
 
-// GetPortSignal gets a signal value from a specific port slot
-func (s *Station) GetPortSignal(isInput bool, portIndex int, signalName string) bool {
-	var slots []PortSlot
-	if isInput {
-		slots = s.InputPortSlots
-	} else {
-		slots = s.OutputPortSlots
-	}
-	if portIndex < 0 || portIndex >= len(slots) {
+// GetPortSignal gets a signal value from a specific port (Ports[portIndex+1])
+func (s *Station) GetPortSignal(portIndex int, signalName string) bool {
+	idx := portIndex + 1
+	if idx <= 0 || idx >= len(s.Ports) {
 		return false
 	}
-	if slots[portIndex].Signals == nil {
+	if s.Ports[idx].Signals == nil {
 		return false
 	}
-	return slots[portIndex].Signals[signalName]
+	return s.Ports[idx].Signals[signalName]
 }
 
-// SetPortSignal sets a signal value on a specific port slot
-func (s *Station) SetPortSignal(isInput bool, portIndex int, signalName string, value bool) {
-	var slots []PortSlot
-	if isInput {
-		slots = s.InputPortSlots
-	} else {
-		slots = s.OutputPortSlots
-	}
-	if portIndex < 0 || portIndex >= len(slots) {
+// SetPortSignal sets a signal value on a specific port (Ports[portIndex+1])
+func (s *Station) SetPortSignal(portIndex int, signalName string, value bool) {
+	idx := portIndex + 1
+	if idx <= 0 || idx >= len(s.Ports) {
 		return
 	}
-	if slots[portIndex].Signals == nil {
-		slots[portIndex].Signals = make(map[string]bool)
+	if s.Ports[idx].Signals == nil {
+		s.Ports[idx].Signals = make(map[string]bool)
 	}
-	slots[portIndex].Signals[signalName] = value
+	s.Ports[idx].Signals[signalName] = value
 }
 
 // IsPortInputReady checks if a specific input port's inputReady signal is ON
 func (s *Station) IsPortInputReady(portIndex int) bool {
-	return s.GetPortSignal(true, portIndex, "inputReady")
+	return s.GetPortSignal(portIndex, "inputReady")
 }
 
 // IsPortOutputReady checks if a specific output port's outputReady signal is ON
 func (s *Station) IsPortOutputReady(portIndex int) bool {
-	return s.GetPortSignal(false, portIndex, "outputReady")
+	return s.GetPortSignal(portIndex, "outputReady")
 }
 
 // CanStartProcessing checks if the station can start processing
 func (s *Station) CanStartProcessing() bool {
 	if s.Type == StationTypeSource || s.Type == StationTypeDrain {
-		return false // Source and Drain have no processing
+		return false
 	}
 	if s.Type == StationTypeMerge {
-		return false // Merge has its own processing flow via EventMergeCompleted
+		return false
 	}
 	if s.Type == StationTypeEntry || s.Type == StationTypeExit || s.Type == StationTypeModuler {
-		return false // Entry/Exit are transparent, Moduler is a container
+		return false
 	}
-	// Processing and Split station can start when work has arrived
-	return s.CurrentWork != nil && s.State == StateReceiving
+	return s.GetWork() != nil && s.State == StateReceiving
 }
 
 // StartProcessing starts processing (transition to Processing state)
@@ -596,45 +592,32 @@ func (s *Station) StartProcessing() error {
 	if !s.CanStartProcessing() {
 		return fmt.Errorf("station %s cannot start processing (no work or wrong state)", s.ID)
 	}
-
 	s.State = StateProcessing
 	return nil
 }
 
 // CompleteProcessing completes processing (transition to Completed state)
-// For base Processing station: work passes through as-is
 func (s *Station) CompleteProcessing(newWorkIDFunc func() (string, string)) error {
 	if s.State != StateProcessing {
 		return fmt.Errorf("station %s is not processing (state=%s)", s.ID, s.State)
 	}
-
-	if s.CurrentWork == nil {
+	if s.GetWork() == nil {
 		return fmt.Errorf("station %s has no work to complete", s.ID)
 	}
-
-	// Processing Station: work passes through as-is
-	// Turn ON OutputReady signal
 	s.State = StateCompleted
-
 	return nil
 }
 
-// GetOutputWork retrieves the output work and resets station to idle
-// This is called when OutputReady signal is ON (handshake verified)
+// GetOutputWork retrieves the output work from Port[0] and resets station to idle
 func (s *Station) GetOutputWork() (*Work, error) {
 	if !s.IsOutputReady() {
 		return nil, fmt.Errorf("station %s is not ready to output (OutputReady=OFF, state=%s)", s.ID, s.State)
 	}
-
-	// Check if there's a work to output
-	if s.CurrentWork == nil {
+	work := s.GetWork()
+	if work == nil {
 		return nil, fmt.Errorf("station %s has no work to output", s.ID)
 	}
-
-	// Get the work and clear station (turn ON InputReady signal)
-	work := s.CurrentWork
-	s.CurrentWork = nil
+	s.SetWork(nil)
 	s.State = StateIdle
-
 	return work, nil
 }

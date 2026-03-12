@@ -115,7 +115,7 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 			station.InterlockRules = domain.GetDefaultInterlockConfig(station.Type)
 		}
 		station.InitializeSignals()
-		station.InitializePortSlots()
+		station.InitializePorts()
 	}
 
 	// Step 2: Evaluate rules to set initial control signals
@@ -189,14 +189,10 @@ func (e *Engine) processEvent(event *Event, simulation *domain.Simulation) error
 		return e.handleWorkDeparted(event, station)
 	case EventWorkDestroyed:
 		return e.handleWorkDestroyed(event, station)
-	case EventWorkPortEntered:
-		return e.handleWorkPortEntered(event, station)
 	case EventMergeCompleted:
 		return e.handleMergeCompleted(event, station)
 	case EventSplitCompleted:
 		return e.handleSplitCompleted(event, station)
-	case EventPortWorkDeparted:
-		return e.handlePortWorkDeparted(event, station)
 	default:
 		return fmt.Errorf("unknown event type: %s", event.Type)
 	}
@@ -241,11 +237,11 @@ func (e *Engine) handleWorkCreated(event *Event, station *domain.Station) error 
 	}
 
 	// Add to station (Source stations keep work internally)
-	station.CurrentWork = work
+	station.SetWork(work)
 	station.State = domain.StateCompleted
 
-	// Update signal: workPresent=ON, workType:<type>=ON
-	station.SetSignal("workPresent", true)
+	// Update result signals: OWP=ON, workType:<type>=ON
+	station.SetSignal(domain.SignalOutputWorkPresent, true)
 	setWorkTypeSignal(station.Signals, work.Type)
 
 	// Log work event
@@ -295,8 +291,10 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return err
 	}
 
-	// Update signal: workPresent=ON, workType:<type>=ON
-	station.SetSignal("workPresent", true)
+	// Update result signals: IWP/PWP/OWP=ON, workType:<type>=ON
+	station.SetSignal(domain.SignalInputWorkPresent, true)
+	station.SetSignal(domain.SignalProcessingWorkPresent, true)
+	station.SetSignal(domain.SignalOutputWorkPresent, true)
 	setWorkTypeSignal(station.Signals, work.Type)
 
 	// Log work event
@@ -304,6 +302,7 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	e.logStationStatus(station, "ワーク到着")
 
 	// Evaluate interlock rules after signal change
+	// processReady trigger (if PR=ON after evaluation) is handled inside evaluateAndLogSignals
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
 	}
@@ -314,12 +313,6 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return nil
 	}
 
-	// For Processing/Split station, schedule processing start after arrival time
-	if station.CanStartProcessing() {
-		arrivalTime := station.GetFloatConfig("arrivalTime")
-		e.eventQueue.Push(NewEvent(EventProcessingStarted, e.currentTime+arrivalTime, station.ID, nil))
-	}
-
 	return nil
 }
 
@@ -328,11 +321,12 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 // No ProcessingStarted/ProcessingCompleted events are generated.
 func (e *Engine) handleEntryExitWorkArrived(work *domain.Work, station *domain.Station) error {
 	// Set work directly (bypass AddWork which sets state to Receiving)
-	station.CurrentWork = work
+	station.SetWork(work)
 	station.State = domain.StateCompleted
 
-	// Update signals
-	station.SetSignal("workPresent", true)
+	// Update result signals: IWP/OWP=ON, workType:<type>=ON
+	station.SetSignal(domain.SignalInputWorkPresent, true)
+	station.SetSignal(domain.SignalOutputWorkPresent, true)
 	setWorkTypeSignal(station.Signals, work.Type)
 
 	// Log work event
@@ -349,33 +343,28 @@ func (e *Engine) handleEntryExitWorkArrived(work *domain.Work, station *domain.S
 
 // handleMergeWorkArrived handles work arrival at a Merge station's input port
 func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Station, portIndex int) error {
-	// Add work to the specified InputPort slot
+	// Add work to the specified input port (Ports[portIndex+1])
 	if err := station.AddWorkToPort(work, portIndex); err != nil {
 		return err
 	}
 
-	// Log work event with port index
-	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkPortEntered), work.Type, portIndex)
+	// Log work event with port index (unified as WorkArrived)
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type, portIndex)
 	e.logStationStatus(station, "ワークバッファ追加")
 
-	// Update derived signals for this port (workPresent, portFull)
+	// Update port-level derived signals
 	e.updatePortDerivedSignals(station, portIndex, true)
 
-	// Check merge condition (all ports have required works)
+	// Set station-level IWP=ON (any port has work)
+	station.SetSignal(domain.SignalInputWorkPresent, true)
+
+	// Check merge condition → set processReady=ON
 	if station.CheckMergeCondition() && !e.mergeInProgress[station.ID] {
-		e.mergeInProgress[station.ID] = true
-
-		// Set mergeReady signal on the station
-		station.SetSignal("mergeReady", true)
-
-		// Schedule merge completion after processing time
-		processingTime := station.GetFloatConfig("processingTime")
-		e.eventQueue.Push(NewEvent(EventMergeCompleted, e.currentTime+processingTime, station.ID, nil))
-
-		e.logStationStatus(station, "結合処理開始")
+		station.SetSignal(domain.SignalProcessReady, true)
 	}
 
 	// Evaluate station-level interlock rules
+	// processReady trigger is handled inside evaluateAndLogSignals
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
 	}
@@ -383,17 +372,11 @@ func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Stati
 	return nil
 }
 
-// handleWorkPortEntered handles the WorkPortEntered event (for logging/tracking)
-func (e *Engine) handleWorkPortEntered(event *Event, station *domain.Station) error {
-	// This event is used for logging. Actual port logic is in handleMergeWorkArrived.
-	return nil
-}
-
 // handleMergeCompleted handles the MergeCompleted event
 func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) error {
 	delete(e.mergeInProgress, station.ID)
 
-	// Execute merge
+	// Execute merge (consumes all port works, creates merged work at Port[0])
 	mergedWork, consumedWorks, err := station.ExecuteMerge(e.generateWorkID)
 	if err != nil {
 		return err
@@ -403,14 +386,17 @@ func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) err
 	e.recordWorkLineage(mergedWork.ID, mergedWork.FriendlyName, consumedWorks, "merge", station.ID)
 
 	// Update port derived signals (ports are now empty)
-	for i := range station.InputPortSlots {
+	for i := 0; i < station.InputPortCount(); i++ {
 		e.updatePortDerivedSignals(station, i, true)
 	}
 
-	// Update station signals
-	station.SetSignal("workPresent", true)
+	// Update station result signals: RUN=OFF, CPL=ON, OWP=ON, PWP=OFF, IWP=OFF
+	station.SetSignal(domain.SignalRunning, false)
+	station.SetSignal(domain.SignalComplete, true)
+	station.SetSignal(domain.SignalOutputWorkPresent, true)
+	station.SetSignal(domain.SignalProcessingWorkPresent, false)
+	station.SetSignal(domain.SignalInputWorkPresent, false)
 	setWorkTypeSignal(station.Signals, mergedWork.Type)
-	station.SetSignal("processingComplete", true)
 
 	// Log events
 	e.logWorkEvent(mergedWork.ID, mergedWork.FriendlyName, station.ID, e.currentTime, string(EventWorkMerged), mergedWork.Type, -1)
@@ -426,27 +412,61 @@ func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) err
 
 // handleProcessingStarted handles the ProcessingStarted event
 func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) error {
-	// Delegate to station logic
+	// Merge station: handle merge start separately
+	if station.Type == domain.StationTypeMerge {
+		return e.handleMergeStarted(station)
+	}
+
+	// Processing/Split: delegate to station logic
 	if err := station.StartProcessing(); err != nil {
 		return err
 	}
 
+	// Set result signal: RUN=ON
+	station.SetSignal(domain.SignalRunning, true)
+
 	// Log work event
-	var workID, workFriendlyName string
-	if station.CurrentWork != nil {
-		workID = station.CurrentWork.ID
-		workFriendlyName = station.CurrentWork.FriendlyName
-	}
-	workType := ""
-	if station.CurrentWork != nil {
-		workType = station.CurrentWork.Type
+	work := station.GetWork()
+	var workID, workFriendlyName, workType string
+	if work != nil {
+		workID = work.ID
+		workFriendlyName = work.FriendlyName
+		workType = work.Type
 	}
 	e.logWorkEvent(workID, workFriendlyName, station.ID, e.currentTime, string(EventProcessingStarted), workType, -1)
 	e.logStationStatus(station, "処理開始")
 
+	// Evaluate rules (R4: RUN=ON → PR=OFF)
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
+	}
+
 	// Schedule ProcessingCompleted event
 	processingTime := station.GetFloatConfig("processingTime")
 	e.eventQueue.Push(NewEvent(EventProcessingCompleted, e.currentTime+processingTime, station.ID, nil))
+
+	return nil
+}
+
+// handleMergeStarted handles the start of merge processing
+func (e *Engine) handleMergeStarted(station *domain.Station) error {
+	e.mergeInProgress[station.ID] = true
+	station.State = domain.StateProcessing
+
+	// Set result signals: RUN=ON, PWP=ON
+	station.SetSignal(domain.SignalRunning, true)
+	station.SetSignal(domain.SignalProcessingWorkPresent, true)
+
+	e.logStationStatus(station, "結合処理開始")
+
+	// Evaluate rules (PR→OFF via R2: PR=ON → IR=OFF, and R4-like if exists)
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
+	}
+
+	// Schedule MergeCompleted
+	processingTime := station.GetFloatConfig("processingTime")
+	e.eventQueue.Push(NewEvent(EventMergeCompleted, e.currentTime+processingTime, station.ID, nil))
 
 	return nil
 }
@@ -463,12 +483,14 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 		return err
 	}
 
-	// Update signal: processingComplete=ON
-	station.SetSignal("processingComplete", true)
+	// Update result signals: RUN=OFF, CPL=ON
+	station.SetSignal(domain.SignalRunning, false)
+	station.SetSignal(domain.SignalComplete, true)
 
 	// Log work event (Processing: normal completion)
-	if station.CurrentWork != nil {
-		e.logWorkEvent(station.CurrentWork.ID, station.CurrentWork.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted), station.CurrentWork.Type, -1)
+	work := station.GetWork()
+	if work != nil {
+		e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted), work.Type, -1)
 	}
 
 	e.logStationStatus(station, "処理完了")
@@ -487,7 +509,7 @@ func (e *Engine) handleSplitProcessingCompleted(station *domain.Station) error {
 	// Mark as processing complete first
 	station.State = domain.StateCompleted
 
-	// Execute split (places works into OutputPortSlots by index, clears CurrentWork)
+	// Execute split (places works into output ports Ports[1+], clears Port[0].Work)
 	splitWorks, err := station.ExecuteSplit(e.generateWorkID)
 	if err != nil {
 		return err
@@ -498,14 +520,17 @@ func (e *Engine) handleSplitProcessingCompleted(station *domain.Station) error {
 		e.logWorkEvent(splitWork.ID, splitWork.FriendlyName, station.ID, e.currentTime, string(EventWorkSplit), splitWork.Type, i)
 	}
 
-	// Update derived signals for each output port (workPresent, then evaluate outputReady)
-	for i := range station.OutputPortSlots {
+	// Update derived signals for each output port
+	for i := 0; i < station.OutputPortCount(); i++ {
 		e.updatePortDerivedSignals(station, i, false)
 	}
 
-	// Update station-level signals: processingComplete=ON, workPresent=OFF (body is empty after split)
-	station.SetSignal("processingComplete", true)
-	station.SetSignal("workPresent", false)
+	// Update station result signals: RUN=OFF, CPL=ON, IWP=OFF, PWP=OFF, OWP=ON
+	station.SetSignal(domain.SignalRunning, false)
+	station.SetSignal(domain.SignalComplete, true)
+	station.SetSignal(domain.SignalInputWorkPresent, false)
+	station.SetSignal(domain.SignalProcessingWorkPresent, false)
+	station.SetSignal(domain.SignalOutputWorkPresent, true)
 	clearWorkTypeSignals(station.Signals)
 
 	e.logStationStatus(station, "分割処理完了")
@@ -524,18 +549,24 @@ func (e *Engine) handleSplitCompleted(event *Event, station *domain.Station) err
 }
 
 // handleWorkDeparted handles the WorkDeparted event
-// This event is triggered by checkHandshakes when upstream.outputReady=ON AND downstream.inputReady=ON
+// This event is triggered by checkHandshakes when upstream.outputReady=ON AND downstream.inputReady=ON.
+// For Split port departures, event.PortIndex >= 0.
 func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error {
+	// Dispatch port-level departures (Split output ports)
+	if event.PortIndex >= 0 {
+		return e.handlePortWorkDeparted(event, station)
+	}
+
 	// Clear pending departure flag
 	delete(e.pendingDepartures, station.ID)
 
 	// Re-verify handshake: conditions may have changed since scheduling
-	if !station.IsOutputReady() || station.CurrentWork == nil {
+	if !station.IsOutputReady() || station.GetWork() == nil {
 		return nil // Conditions changed, skip departure
 	}
 
 	// Verify downstream inputReady and not already reserved
-	nextStation, conn, err := e.getNextStationWithConn(station, station.CurrentWork)
+	nextStation, conn, err := e.getNextStationWithConn(station, station.GetWork())
 	if err != nil {
 		return err
 	}
@@ -556,15 +587,18 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return err
 	}
 
-	// Update signal: workPresent=OFF, clear workType
-	station.SetSignal("workPresent", false)
+	// Update result signals: IWP/PWP/OWP=OFF, CPL=OFF, clear workType
+	station.SetSignal(domain.SignalInputWorkPresent, false)
+	station.SetSignal(domain.SignalProcessingWorkPresent, false)
+	station.SetSignal(domain.SignalOutputWorkPresent, false)
+	station.SetSignal(domain.SignalComplete, false)
 	clearWorkTypeSignals(station.Signals)
 
 	// Log work event
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, -1)
 	e.logStationStatus(station, "ワーク出発")
 
-	// Evaluate interlock rules after signal change (cascading: OR=OFF → PC=OFF → IR=ON)
+	// Evaluate interlock rules after signal change
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
 	}
@@ -606,14 +640,9 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	return nil
 }
 
-// handlePortWorkDeparted handles the PortWorkDeparted event (for Split OutputPort)
-// event.WorkID contains a key like "port:N" encoded in the work ID field
+// handlePortWorkDeparted handles the WorkDeparted event for a Split output port (event.PortIndex >= 0)
 func (e *Engine) handlePortWorkDeparted(event *Event, station *domain.Station) error {
-	// Clear pending departure flag
-	portIndex := e.findPortDepartureIndex(event)
-	if portIndex < 0 {
-		return nil
-	}
+	portIndex := event.PortIndex
 	depKey := e.portDepartureKey(station.ID, portIndex)
 	delete(e.pendingDepartures, depKey)
 
@@ -644,7 +673,7 @@ func (e *Engine) handlePortWorkDeparted(event *Event, station *domain.Station) e
 		}
 	}
 
-	// Get work from the port
+	// Get work from the output port (Ports[portIndex+1])
 	work := station.GetOutputPortWorkByIndex(portIndex)
 	if work == nil {
 		return nil
@@ -655,7 +684,8 @@ func (e *Engine) handlePortWorkDeparted(event *Event, station *domain.Station) e
 
 	// Check if all output ports are empty → reset station for next input
 	if !station.HasOutputPortWorks() {
-		station.SetSignal("processingComplete", false)
+		station.SetSignal(domain.SignalComplete, false)
+		station.SetSignal(domain.SignalOutputWorkPresent, false)
 		// Evaluate station-level rules to re-enable inputReady
 		if err := e.evaluateAndLogSignals(station); err != nil {
 			return err
@@ -696,11 +726,11 @@ func (e *Engine) handleWorkDestroyed(event *Event, station *domain.Station) erro
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDestroyed), work.Type, -1)
 
 	// Clear station
-	station.CurrentWork = nil
+	station.SetWork(nil)
 	station.State = domain.StateIdle
 
-	// Update signal: workPresent=OFF, clear workType
-	station.SetSignal("workPresent", false)
+	// Update result signals: IWP=OFF, clear workType
+	station.SetSignal(domain.SignalInputWorkPresent, false)
 	clearWorkTypeSignals(station.Signals)
 
 	e.logStationStatus(station, "ワーク破棄")
@@ -801,78 +831,45 @@ func (e *Engine) portDepartureKey(stationID string, portIndex int) string {
 	return fmt.Sprintf("%s:portdep:%d", stationID, portIndex)
 }
 
-// findPortDepartureIndex extracts the port index from a PortWorkDeparted event
-func (e *Engine) findPortDepartureIndex(event *Event) int {
-	if event.WorkID == nil {
-		return -1
-	}
-	// WorkID is encoded as "port:N" for port departures
-	var idx int
-	if _, err := fmt.Sscanf(*event.WorkID, "port:%d", &idx); err == nil {
-		return idx
-	}
-	return -1
-}
-
-// updatePortDerivedSignals updates workPresent and portFull signals for a port, then evaluates port rules
+// updatePortDerivedSignals updates derived signals for a port (Ports[portIndex+1]), then evaluates port rules
 func (e *Engine) updatePortDerivedSignals(station *domain.Station, portIndex int, isInput bool) {
-	var slots []domain.PortSlot
+	var port *domain.Port
 	if isInput {
-		slots = station.InputPortSlots
+		port = station.GetInputPort(portIndex)
 	} else {
-		slots = station.OutputPortSlots
+		port = station.GetOutputPort(portIndex)
 	}
-	if portIndex < 0 || portIndex >= len(slots) {
+	if port == nil {
 		return
 	}
-	slot := &slots[portIndex]
 
 	// Update derived signals
-	hasWorks := len(slot.Works) > 0
-	isFull := len(slot.Works) >= slot.Capacity
+	hasWorks := len(port.Works) > 0
 
-	if slot.Signals == nil {
-		slot.Signals = make(map[string]bool)
+	if port.Signals == nil {
+		port.Signals = make(map[string]bool)
 	}
-	slot.Signals["workPresent"] = hasWorks
-	if _, exists := slot.Signals["portFull"]; exists || isInput {
-		slot.Signals["portFull"] = isFull
+
+	if isInput {
+		port.Signals[domain.SignalInputWorkPresent] = hasWorks
+	} else {
+		port.Signals[domain.SignalOutputWorkPresent] = hasWorks
 	}
 
 	// Update workType derived signal for port
 	if hasWorks {
-		setWorkTypeSignal(slot.Signals, slot.Works[0].Type)
+		setWorkTypeSignal(port.Signals, port.Works[0].Type)
 	} else {
-		clearWorkTypeSignals(slot.Signals)
+		clearWorkTypeSignals(port.Signals)
 	}
 
 	// Evaluate per-port interlock rules
-	e.evaluatePortRules(station, portIndex, isInput)
-
-	// Write back (slices are reference types but we took a pointer)
-	if isInput {
-		station.InputPortSlots[portIndex] = *slot
-	} else {
-		station.OutputPortSlots[portIndex] = *slot
-	}
+	e.evaluatePortRules(port)
 }
 
-// evaluatePortRules evaluates interlock rules for a specific port slot
-func (e *Engine) evaluatePortRules(station *domain.Station, portIndex int, isInput bool) {
-	var slot *domain.PortSlot
-	if isInput {
-		if portIndex < 0 || portIndex >= len(station.InputPortSlots) {
-			return
-		}
-		slot = &station.InputPortSlots[portIndex]
-	} else {
-		if portIndex < 0 || portIndex >= len(station.OutputPortSlots) {
-			return
-		}
-		slot = &station.OutputPortSlots[portIndex]
-	}
-
-	if slot.InterlockRules == nil || slot.Signals == nil {
+// evaluatePortRules evaluates interlock rules for a specific port
+func (e *Engine) evaluatePortRules(port *domain.Port) {
+	if port == nil || port.InterlockRules == nil || port.Signals == nil {
 		return
 	}
 
@@ -882,10 +879,10 @@ func (e *Engine) evaluatePortRules(station *domain.Station, portIndex int, isInp
 	for changed && iterations < maxRuleIterations {
 		changed = false
 		iterations++
-		for _, rule := range slot.InterlockRules.Rules {
-			if allPortConditionsMet(rule.Conditions, slot.Signals) {
-				if slot.Signals[rule.Target] != rule.Value {
-					slot.Signals[rule.Target] = rule.Value
+		for _, rule := range port.InterlockRules.Rules {
+			if allPortConditionsMet(rule.Conditions, port.Signals) {
+				if port.Signals[rule.Target] != rule.Value {
+					port.Signals[rule.Target] = rule.Value
 					changed = true
 				}
 			}
@@ -934,20 +931,13 @@ func (e *Engine) generateWorkID() (string, string) {
 func (e *Engine) findWorkByID(workID string) *domain.Work {
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]
-		if station.CurrentWork != nil && station.CurrentWork.ID == workID {
-			return station.CurrentWork
+		// Check Port[0] (station body)
+		if w := station.GetWork(); w != nil && w.ID == workID {
+			return w
 		}
-		// Check InputPortSlots
-		for _, slot := range station.InputPortSlots {
-			for _, work := range slot.Works {
-				if work.ID == workID {
-					return work
-				}
-			}
-		}
-		// Check OutputPortSlots
-		for _, slot := range station.OutputPortSlots {
-			for _, work := range slot.Works {
+		// Check Port[1+] (Merge input / Split output ports)
+		for j := 1; j < len(station.Ports); j++ {
+			for _, work := range station.Ports[j].Works {
 				if work.ID == workID {
 					return work
 				}
@@ -1009,11 +999,14 @@ func (e *Engine) placeInitialWorks() error {
 		}
 
 		// Place work at station
-		station.CurrentWork = work
+		station.SetWork(work)
 		station.State = domain.StateProcessing
 
-		// Update signals
-		station.SetSignal("workPresent", true)
+		// Update result signals
+		station.SetSignal(domain.SignalInputWorkPresent, true)
+		station.SetSignal(domain.SignalProcessingWorkPresent, true)
+		station.SetSignal(domain.SignalOutputWorkPresent, true)
+		station.SetSignal(domain.SignalRunning, true)
 		setWorkTypeSignal(station.Signals, work.Type)
 
 		// Log work event
@@ -1028,7 +1021,8 @@ func (e *Engine) placeInitialWorks() error {
 
 		if remaining == 0 {
 			// Already completed
-			station.SetSignal("processingComplete", true)
+			station.SetSignal(domain.SignalRunning, false)
+			station.SetSignal(domain.SignalComplete, true)
 		} else {
 			// Schedule ProcessingCompleted at time = remaining
 			e.eventQueue.Push(NewEvent(EventProcessingCompleted, remaining, station.ID, nil))
@@ -1085,7 +1079,8 @@ func (e *Engine) logStationStatus(station *domain.Station, statusType string) {
 	})
 }
 
-// evaluateAndLogSignals evaluates interlock rules, logs signal changes, and checks handshakes
+// evaluateAndLogSignals evaluates interlock rules, logs signal changes, checks handshakes,
+// and triggers processing start when processReady=ON
 func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 	changes, err := evaluateRules(station, e.scenario, e.currentTime)
 	if err != nil {
@@ -1106,7 +1101,34 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 	}
 
 	// After signal changes, check if any transfer handshakes are newly satisfied
-	return e.checkHandshakes(station)
+	if err := e.checkHandshakes(station); err != nil {
+		return err
+	}
+
+	// Check if processReady=ON → schedule processing start
+	e.triggerProcessReady(station)
+
+	return nil
+}
+
+// triggerProcessReady checks if processReady=ON and schedules the appropriate processing event.
+// For Processing/Split: schedules ProcessingStarted immediately.
+// For Merge: schedules ProcessingStarted immediately (which triggers merge start).
+func (e *Engine) triggerProcessReady(station *domain.Station) {
+	if !station.GetSignal(domain.SignalProcessReady) {
+		return
+	}
+	switch station.Type {
+	case domain.StationTypeProcessing, domain.StationTypeSplit:
+		if station.State == domain.StateReceiving {
+			e.eventQueue.Push(NewEvent(EventProcessingStarted, e.currentTime, station.ID, nil))
+		}
+	case domain.StationTypeMerge:
+		if e.mergeInProgress[station.ID] {
+			return
+		}
+		e.eventQueue.Push(NewEvent(EventProcessingStarted, e.currentTime, station.ID, nil))
+	}
 }
 
 // checkHandshakes checks if transfer handshakes are satisfied after signal changes.
@@ -1114,7 +1136,7 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 // For Merge: uses per-port inputReady. For Split: uses per-port outputReady.
 func (e *Engine) checkHandshakes(station *domain.Station) error {
 	// Case 1: This station is upstream (non-Split) — its outputReady may have just turned ON
-	if station.Type != domain.StationTypeSplit && station.IsOutputReady() && station.CurrentWork != nil && !e.pendingDepartures[station.ID] {
+	if station.Type != domain.StationTypeSplit && station.IsOutputReady() && station.GetWork() != nil && !e.pendingDepartures[station.ID] {
 		for _, conn := range e.scenario.Connections {
 			if conn.From != station.ID {
 				continue
@@ -1146,7 +1168,7 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 
 	// Case 1b: This station is Split — check each output port's outputReady
 	if station.Type == domain.StationTypeSplit {
-		for bufIdx := range station.OutputPortSlots {
+		for bufIdx := 0; bufIdx < station.OutputPortCount(); bufIdx++ {
 			if !station.IsPortOutputReady(bufIdx) {
 				continue
 			}
@@ -1174,8 +1196,7 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 
 			if ready {
 				e.pendingDepartures[depKey] = true
-				bufIdxStr := fmt.Sprintf("port:%d", bufIdx)
-				e.eventQueue.Push(NewEvent(EventPortWorkDeparted, e.currentTime, station.ID, &bufIdxStr))
+				e.eventQueue.Push(NewPortEvent(EventWorkDeparted, e.currentTime, station.ID, nil, bufIdx))
 			}
 		}
 	}
@@ -1197,12 +1218,11 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 				depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
 				if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
 					e.pendingDepartures[depKey] = true
-					bufIdxStr := fmt.Sprintf("port:%d", conn.FromPortIndex)
-					e.eventQueue.Push(NewEvent(EventPortWorkDeparted, e.currentTime, fromStation.ID, &bufIdxStr))
+					e.eventQueue.Push(NewPortEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil, conn.FromPortIndex))
 				}
 			} else {
 				// Normal upstream: check station-level outputReady
-				if fromStation.IsOutputReady() && fromStation.CurrentWork != nil && !e.pendingDepartures[fromStation.ID] {
+				if fromStation.IsOutputReady() && fromStation.GetWork() != nil && !e.pendingDepartures[fromStation.ID] {
 					e.pendingDepartures[fromStation.ID] = true
 					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil))
 				}
@@ -1212,7 +1232,7 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 
 	// Case 2b: This station is Merge — check each input port's inputReady
 	if station.Type == domain.StationTypeMerge {
-		for bufIdx := range station.InputPortSlots {
+		for bufIdx := 0; bufIdx < station.InputPortCount(); bufIdx++ {
 			resKey := e.portReservationKey(station.ID, bufIdx)
 			if !station.IsPortInputReady(bufIdx) || e.reservedStations[resKey] {
 				continue
@@ -1230,11 +1250,10 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 				depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
 				if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
 					e.pendingDepartures[depKey] = true
-					bufIdxStr := fmt.Sprintf("port:%d", conn.FromPortIndex)
-					e.eventQueue.Push(NewEvent(EventPortWorkDeparted, e.currentTime, fromStation.ID, &bufIdxStr))
+					e.eventQueue.Push(NewPortEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil, conn.FromPortIndex))
 				}
 			} else {
-				if fromStation.IsOutputReady() && fromStation.CurrentWork != nil && !e.pendingDepartures[fromStation.ID] {
+				if fromStation.IsOutputReady() && fromStation.GetWork() != nil && !e.pendingDepartures[fromStation.ID] {
 					e.pendingDepartures[fromStation.ID] = true
 					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil))
 				}

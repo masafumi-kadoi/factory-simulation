@@ -8,16 +8,16 @@ func TestGetDefaultInterlockConfig_Source(t *testing.T) {
 	if config == nil {
 		t.Fatal("expected non-nil config for source")
 	}
-	if len(config.Signals) != 2 {
-		t.Errorf("expected 2 signals for source, got %d", len(config.Signals))
+	if len(config.Signals) != 10 {
+		t.Errorf("expected 10 signals for source, got %d", len(config.Signals))
 	}
 	if len(config.Rules) != 2 {
 		t.Errorf("expected 2 rules for source, got %d", len(config.Rules))
 	}
-	if !config.HasSignal("workPresent") {
-		t.Error("expected workPresent signal")
+	if !config.HasSignal(SignalOutputWorkPresent) {
+		t.Error("expected outputWorkPresent signal")
 	}
-	if !config.HasSignal("outputReady") {
+	if !config.HasSignal(SignalOutputReady) {
 		t.Error("expected outputReady signal")
 	}
 }
@@ -28,14 +28,18 @@ func TestGetDefaultInterlockConfig_Processing(t *testing.T) {
 	if config == nil {
 		t.Fatal("expected non-nil config for processing")
 	}
-	if len(config.Signals) != 4 {
-		t.Errorf("expected 4 signals for processing, got %d", len(config.Signals))
+	if len(config.Signals) != 10 {
+		t.Errorf("expected 10 signals for processing, got %d", len(config.Signals))
 	}
-	if len(config.Rules) != 5 {
-		t.Errorf("expected 5 rules for processing, got %d", len(config.Rules))
+	if len(config.Rules) != 6 {
+		t.Errorf("expected 6 rules for processing, got %d", len(config.Rules))
 	}
 
-	expectedSignals := []string{"workPresent", "processingComplete", "inputReady", "outputReady"}
+	expectedSignals := []string{
+		SignalInputWorkPresent, SignalProcessingWorkPresent, SignalOutputWorkPresent,
+		SignalRunning, SignalComplete, SignalProcessReady,
+		SignalInputReady, SignalOutputReady, SignalWorkFull, SignalWorkEmpty,
+	}
 	for _, name := range expectedSignals {
 		if !config.HasSignal(name) {
 			t.Errorf("expected signal %s", name)
@@ -49,16 +53,16 @@ func TestGetDefaultInterlockConfig_Drain(t *testing.T) {
 	if config == nil {
 		t.Fatal("expected non-nil config for drain")
 	}
-	if len(config.Signals) != 2 {
-		t.Errorf("expected 2 signals for drain, got %d", len(config.Signals))
+	if len(config.Signals) != 10 {
+		t.Errorf("expected 10 signals for drain, got %d", len(config.Signals))
 	}
 	if len(config.Rules) != 2 {
 		t.Errorf("expected 2 rules for drain, got %d", len(config.Rules))
 	}
-	if !config.HasSignal("workPresent") {
-		t.Error("expected workPresent signal")
+	if !config.HasSignal(SignalInputWorkPresent) {
+		t.Error("expected inputWorkPresent signal")
 	}
-	if !config.HasSignal("inputReady") {
+	if !config.HasSignal(SignalInputReady) {
 		t.Error("expected inputReady signal")
 	}
 }
@@ -72,9 +76,9 @@ func TestInterlockRule_Validate(t *testing.T) {
 		{
 			name: "valid rule",
 			rule: InterlockRule{
-				Target:     "inputReady",
+				Target:     SignalInputReady,
 				Value:      true,
-				Conditions: []RuleCondition{{Signal: "workPresent", Value: false}},
+				Conditions: []RuleCondition{{Signal: SignalInputWorkPresent, Value: false}},
 			},
 			wantErr: false,
 		},
@@ -83,14 +87,14 @@ func TestInterlockRule_Validate(t *testing.T) {
 			rule: InterlockRule{
 				Target:     "",
 				Value:      true,
-				Conditions: []RuleCondition{{Signal: "workPresent", Value: false}},
+				Conditions: []RuleCondition{{Signal: SignalInputWorkPresent, Value: false}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "no conditions",
 			rule: InterlockRule{
-				Target:     "inputReady",
+				Target:     SignalInputReady,
 				Value:      true,
 				Conditions: nil,
 			},
@@ -111,15 +115,15 @@ func TestInterlockRule_Validate(t *testing.T) {
 func TestInterlockConfig_HasSignal(t *testing.T) {
 	config := &InterlockConfig{
 		Signals: []SignalDef{
-			{Name: "workPresent", Initial: false},
-			{Name: "inputReady", Initial: false},
+			{Name: SignalInputWorkPresent, Initial: false},
+			{Name: SignalInputReady, Initial: false},
 		},
 	}
 
-	if !config.HasSignal("workPresent") {
-		t.Error("expected HasSignal to return true for workPresent")
+	if !config.HasSignal(SignalInputWorkPresent) {
+		t.Error("expected HasSignal to return true for inputWorkPresent")
 	}
-	if config.HasSignal("outputReady") {
+	if config.HasSignal(SignalOutputReady) {
 		t.Error("expected HasSignal to return false for outputReady")
 	}
 }

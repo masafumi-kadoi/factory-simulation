@@ -16,12 +16,10 @@ const (
 	EventWorkRouted          EventType = "WorkRouted"
 
 	// Merge events
-	EventWorkPortEntered   EventType = "WorkPortEntered"   // Work added to Merge InputPort
-	EventMergeCompleted EventType = "MergeCompleted"  // Merge processing completed
+	EventMergeCompleted EventType = "MergeCompleted"
 
 	// Split events
-	EventSplitCompleted        EventType = "SplitCompleted"        // Split processing completed
-	EventPortWorkDeparted  EventType = "PortWorkDeparted"  // Work departed from Split OutputPort
+	EventSplitCompleted EventType = "SplitCompleted"
 )
 
 // Event represents a simulation event
@@ -30,14 +28,27 @@ type Event struct {
 	Time      float64
 	StationID string
 	WorkID    *string
+	PortIndex int // Port index for port-level events (-1 = no port)
 }
 
-// NewEvent creates a new event
+// NewEvent creates a new event (PortIndex = -1)
 func NewEvent(eventType EventType, time float64, stationID string, workID *string) *Event {
 	return &Event{
 		Type:      eventType,
 		Time:      time,
 		StationID: stationID,
 		WorkID:    workID,
+		PortIndex: -1,
+	}
+}
+
+// NewPortEvent creates a new event with a port index
+func NewPortEvent(eventType EventType, time float64, stationID string, workID *string, portIndex int) *Event {
+	return &Event{
+		Type:      eventType,
+		Time:      time,
+		StationID: stationID,
+		WorkID:    workID,
+		PortIndex: portIndex,
 	}
 }
