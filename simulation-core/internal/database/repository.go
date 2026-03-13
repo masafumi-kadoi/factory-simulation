@@ -416,7 +416,24 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 
 	// Insert stations
 	for _, station := range scenario.Stations {
-		configJSON, err := json.Marshal(station.Config)
+		// Embed SubScenario, EntryCount, ExitCount into config for DB storage
+		configToSave := station.Config
+		if station.SubScenario != nil || station.EntryCount > 0 || station.ExitCount > 0 {
+			configToSave = make(map[string]interface{}, len(station.Config)+3)
+			for k, v := range station.Config {
+				configToSave[k] = v
+			}
+			if station.SubScenario != nil {
+				configToSave["_subScenario"] = station.SubScenario
+			}
+			if station.EntryCount > 0 {
+				configToSave["_entryCount"] = station.EntryCount
+			}
+			if station.ExitCount > 0 {
+				configToSave["_exitCount"] = station.ExitCount
+			}
+		}
+		configJSON, err := json.Marshal(configToSave)
 		if err != nil {
 			return fmt.Errorf("failed to marshal station config: %w", err)
 		}
@@ -528,6 +545,30 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 		}
 
+		// Extract embedded SubScenario, EntryCount, ExitCount from config
+		var subScenario *domain.SubScenario
+		var entryCount, exitCount int
+		if raw, ok := config["_subScenario"]; ok {
+			subBytes, _ := json.Marshal(raw)
+			subScenario = &domain.SubScenario{}
+			if err := json.Unmarshal(subBytes, subScenario); err != nil {
+				subScenario = nil
+			}
+			delete(config, "_subScenario")
+		}
+		if raw, ok := config["_entryCount"]; ok {
+			if f, ok := raw.(float64); ok {
+				entryCount = int(f)
+			}
+			delete(config, "_entryCount")
+		}
+		if raw, ok := config["_exitCount"]; ok {
+			if f, ok := raw.(float64); ok {
+				exitCount = int(f)
+			}
+			delete(config, "_exitCount")
+		}
+
 		station := domain.NewStation(stationID, domain.StationType(stationType), config)
 		if stationName != nil {
 			station.Name = *stationName
@@ -536,6 +577,9 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 		station.LocationID = locationID
 		station.PositionX = positionX
 		station.PositionY = positionY
+		station.SubScenario = subScenario
+		station.EntryCount = entryCount
+		station.ExitCount = exitCount
 		stations = append(stations, *station)
 	}
 
