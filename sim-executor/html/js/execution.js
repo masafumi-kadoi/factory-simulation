@@ -388,7 +388,7 @@ async function executeSimulation() {
                     <span class="info-value"><span class="status-badge status-${result.status}">${result.status}</span></span>
                 </div>
                 <div style="margin-top: 1rem; display: flex; gap: 0.5rem">
-                    <a href="http://localhost:8081/?simulationId=${encodeURIComponent(result.simulationId)}" target="_blank" class="btn btn-primary btn-sm">View in sim-visualizer</a>
+                    <a href="/visualizer/?simulationId=${encodeURIComponent(result.simulationId)}" target="_blank" class="btn btn-primary btn-sm">View in sim-visualizer</a>
                     <a href="scenario.html?id=${encodeURIComponent(currentScenarioId)}" class="btn btn-outline btn-sm">Back to Scenario</a>
                 </div>
             </div>

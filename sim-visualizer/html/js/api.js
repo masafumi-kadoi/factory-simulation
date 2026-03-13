@@ -1,7 +1,7 @@
 // API client for factory simulation backend
 
 // Use API server on port 8080
-const API_BASE = 'http://localhost:8080/api';
+const API_BASE = '/api';
 
 export async function fetchSimulation(simulationId) {
     const response = await fetch(`${API_BASE}/simulations/${simulationId}`);

@@ -40,8 +40,8 @@ services:
       DB_PASSWORD: postgres
       DB_NAME: factory_simulation
       PORT: 8080
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,8 +58,8 @@ services:
       context: ./sim-visualizer
       dockerfile: Dockerfile
     container_name: factory-sim-visualizer
-    ports:
-      - "8081:80"
+    expose:
+      - "80"
     depends_on:
       simulation-core:
         condition: service_healthy
@@ -76,8 +76,8 @@ services:
       context: ./sim-editor
       dockerfile: Dockerfile
     container_name: factory-sim-editor
-    ports:
-      - "8082:80"
+    expose:
+      - "80"
     depends_on:
       simulation-core:
         condition: service_healthy
@@ -94,8 +94,8 @@ services:
       context: ./sim-executor
       dockerfile: Dockerfile
     container_name: factory-sim-executor
-    ports:
-      - "8083:80"
+    expose:
+      - "80"
     depends_on:
       sim-executor-backend:
         condition: service_healthy
@@ -120,8 +120,8 @@ services:
       DB_NAME: factory_simulation
       PORT: 8084
       SIMULATION_CORE_URL: http://simulation-core:8080
-    ports:
-      - "8084:8084"
+    expose:
+      - "8084"
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,10 +143,18 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/ssl:ro
     depends_on:
       simulation-core:
         condition: service_healthy
       sim-executor-backend:
+        condition: service_healthy
+      sim-visualizer:
+        condition: service_healthy
+      sim-editor:
+        condition: service_healthy
+      sim-executor:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]

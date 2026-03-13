@@ -63,7 +63,7 @@ async function loadScenarioInfo() {
                 <span class="info-value">${escapeHtml(simdbInfo)}</span>
             </div>
             <div style="margin-top: 1rem">
-                <a href="http://localhost:8082/editor.html?scenarioId=${encodeURIComponent(currentScenarioId)}" target="_blank" class="btn btn-outline btn-sm">Edit in Scenario Editor</a>
+                <a href="/editor/editor.html?scenarioId=${encodeURIComponent(currentScenarioId)}" target="_blank" class="btn btn-outline btn-sm">Edit in Scenario Editor</a>
             </div>
         `;
 
@@ -159,7 +159,7 @@ function renderExecutionItem(exec, number) {
     let actions = '';
     if (exec.status === 'completed' && exec.simulationId) {
         actions = `
-            <a href="http://localhost:8081/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">View in sim-visualizer</a>
+            <a href="/visualizer/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">View in sim-visualizer</a>
             <a href="execution.html?scenarioId=${encodeURIComponent(currentScenarioId)}&rerun=${encodeURIComponent(exec.id)}" class="btn btn-outline btn-sm">Re-run</a>
         `;
     } else if (exec.status === 'error') {

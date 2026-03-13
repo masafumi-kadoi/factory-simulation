@@ -1,7 +1,7 @@
 // sim-executor API client
 
-const API_BASE = 'http://localhost:8084/api/executor';
-const CORE_API_BASE = 'http://localhost:8080/api';
+const API_BASE = '/api/executor';
+const CORE_API_BASE = '/api';
 
 const ExecutorAPI = {
     // Get scenario detail (stations, connections) from simulation-core

@@ -1,6 +1,6 @@
 // API Client
-const API_BASE = 'http://localhost:8080/api';
-const EXECUTOR_API_BASE = 'http://localhost:8084/api/executor';
+const API_BASE = '/api';
+const EXECUTOR_API_BASE = '/api/executor';
 
 export class APIClient {
     constructor() {

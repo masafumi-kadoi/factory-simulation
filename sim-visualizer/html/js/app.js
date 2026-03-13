@@ -545,7 +545,7 @@ class App {
 
             // Fetch simulations list
             console.log('[App] Fetching simulations from API...');
-            const response = await fetch('http://localhost:8080/api/simulations');
+            const response = await fetch('/api/simulations');
             console.log('[App] API response status:', response.status);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);

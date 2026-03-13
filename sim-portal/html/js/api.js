@@ -1,14 +1,13 @@
 // Portal API Client
-// Dynamically resolve base hostname from current page location
-const _BASE_HOST = window.location.hostname;
+// All API calls go through the reverse proxy (same origin)
 
-const SIMULATION_CORE_URL = `http://${_BASE_HOST}:8080/api`;
-const EXECUTOR_API_URL = `http://${_BASE_HOST}:8084/api/executor`;
+const SIMULATION_CORE_URL = '/api';
+const EXECUTOR_API_URL = '/api/executor';
 
 const SERVICE_URLS = {
-    'sim-editor': `http://${_BASE_HOST}:8082`,
-    'sim-executor': `http://${_BASE_HOST}:8083`,
-    'sim-visualizer': `http://${_BASE_HOST}:8081`,
+    'sim-editor': '/editor',
+    'sim-executor': '/executor',
+    'sim-visualizer': '/visualizer',
 };
 
 const HEALTH_CHECK_TIMEOUT = 3000;
@@ -43,10 +42,9 @@ const PortalAPI = {
         const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
 
         try {
-            const response = await fetch(url, { signal: controller.signal, mode: 'no-cors' });
+            const response = await fetch(url, { signal: controller.signal });
             clearTimeout(timeoutId);
-            // mode: 'no-cors' returns opaque response (status 0), but no error means reachable
-            return { status: 'up' };
+            return { status: response.ok ? 'up' : 'down' };
         } catch (err) {
             clearTimeout(timeoutId);
             if (err.name === 'AbortError') {
@@ -58,11 +56,11 @@ const PortalAPI = {
 
     async checkAllServices() {
         const services = [
-            { name: 'simulation-core', url: `http://${_BASE_HOST}:8080/api/scenarios`, port: 8080 },
-            { name: 'sim-executor-backend', url: `http://${_BASE_HOST}:8084/api/executor/scenarios`, port: 8084 },
-            { name: 'sim-editor', url: `http://${_BASE_HOST}:8082/`, port: 8082 },
-            { name: 'sim-executor', url: `http://${_BASE_HOST}:8083/`, port: 8083 },
-            { name: 'sim-visualizer', url: `http://${_BASE_HOST}:8081/`, port: 8081 },
+            { name: 'simulation-core', url: '/api/scenarios', port: null },
+            { name: 'sim-executor-backend', url: '/api/executor/scenarios', port: null },
+            { name: 'sim-editor', url: '/editor/', port: null },
+            { name: 'sim-executor', url: '/executor/', port: null },
+            { name: 'sim-visualizer', url: '/visualizer/', port: null },
             { name: 'PostgreSQL', url: null, port: 5432 }
         ];
 

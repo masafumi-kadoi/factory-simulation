@@ -94,7 +94,7 @@ function renderScenarioCard(scenario) {
                 <a href="scenario.html?id=${encodeURIComponent(scenario.scenarioId)}" class="btn btn-primary btn-sm">
                     Execution History (${scenario.executionCount})
                 </a>
-                <a href="http://localhost:8082/editor.html?scenarioId=${encodeURIComponent(scenario.scenarioId)}" target="_blank" class="btn btn-outline btn-sm">
+                <a href="/editor/editor.html?scenarioId=${encodeURIComponent(scenario.scenarioId)}" target="_blank" class="btn btn-outline btn-sm">
                     Edit in sim-editor
                 </a>
             </div>
