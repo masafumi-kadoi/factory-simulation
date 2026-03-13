@@ -82,6 +82,11 @@ export class Visualizer3D {
         this.controls.minDistance = 200;
         this.controls.maxDistance = 2000;
         this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
+        this.controls.mouseButtons = {
+            LEFT: THREE.MOUSE.PAN,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.ROTATE
+        };
 
         window.addEventListener('resize', () => this._onResize());
 
