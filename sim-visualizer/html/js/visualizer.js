@@ -318,6 +318,32 @@ export class Visualizer3D {
         });
     }
 
+    // Get the parent moduler station ID for a child station, or null if not a child
+    _getParentModulerId(stationId) {
+        const dotIdx = stationId.indexOf('.');
+        if (dotIdx === -1) return null;
+        const parentId = stationId.substring(0, dotIdx);
+        return this.modulerHierarchy.has(parentId) ? parentId : null;
+    }
+
+    // Check if a station is inside a collapsed moduler
+    _isInsideCollapsedModuler(stationId) {
+        const parentId = this._getParentModulerId(stationId);
+        if (!parentId) return false;
+        return this.modulerCollapseState.get(parentId) !== false;
+    }
+
+    // Get display position for a station, redirecting to parent moduler if collapsed
+    _getDisplayPosition(stationId) {
+        const parentId = this._getParentModulerId(stationId);
+        if (parentId && this.modulerCollapseState.get(parentId) !== false) {
+            const parentStation = this.stations.get(parentId);
+            if (parentStation) return parentStation.position;
+        }
+        const station = this.stations.get(stationId);
+        return station ? station.position : null;
+    }
+
     toggleModulerCollapse(parentStationId) {
         const current = this.modulerCollapseState.get(parentStationId);
         if (current === undefined) return;
@@ -839,14 +865,17 @@ export class Visualizer3D {
             const work = this.works.get(workId);
 
             if (workInfo.state === 'at_station') {
+                // If inside a collapsed moduler, show at parent moduler position
+                const displayPos = this._getDisplayPosition(workInfo.stationId);
                 const station = this.stations.get(workInfo.stationId);
-                if (station) {
-                    let x = station.position.x;
-                    let z = station.position.z;
+                if (displayPos) {
+                    let x = displayPos.x;
+                    let z = displayPos.z;
                     const y = 40;
 
                     // For port works (merge input / split output), position at port slot
-                    if (workInfo.isInPort && workInfo.portIndex >= 0) {
+                    // (only when not redirected to parent moduler)
+                    if (!this._isInsideCollapsedModuler(workInfo.stationId) && station && workInfo.isInPort && workInfo.portIndex >= 0) {
                         const slotPos = this._getPortSlotPosition(station, workInfo.portIndex);
                         if (slotPos) {
                             x = slotPos.x;
@@ -877,17 +906,20 @@ export class Visualizer3D {
                     const progress = Math.max(0, Math.min(1, elapsed / duration));
 
                     // Determine start/end positions (may be port slots)
-                    let startX = fromStation.position.x, startZ = fromStation.position.z;
-                    let endX = toStation.position.x, endZ = toStation.position.z;
+                    // Use display position (redirects to parent moduler if collapsed)
+                    const fromPos = this._getDisplayPosition(workInfo.fromStation) || fromStation.position;
+                    const toPos = this._getDisplayPosition(workInfo.toStation) || toStation.position;
+                    let startX = fromPos.x, startZ = fromPos.z;
+                    let endX = toPos.x, endZ = toPos.z;
 
-                    // If departing from split/moduler station, use port slot position
-                    if ((fromStation.stationType === 'split' || fromStation.stationType === 'moduler') && workInfo.fromPortIndex >= 0) {
+                    // If departing from split/moduler station, use port slot position (only if not collapsed)
+                    if (!this._isInsideCollapsedModuler(workInfo.fromStation) && (fromStation.stationType === 'split' || fromStation.stationType === 'moduler') && workInfo.fromPortIndex >= 0) {
                         const slot = this._findPortSlot(fromStation, workInfo.fromPortIndex, 'exit');
                         if (slot) { startX = slot.position.x; startZ = slot.position.z; }
                     }
 
-                    // If arriving at merge/moduler station, use port slot position
-                    if ((toStation.stationType === 'merge' || toStation.stationType === 'moduler') && workInfo.toPortIndex >= 0) {
+                    // If arriving at merge/moduler station, use port slot position (only if not collapsed)
+                    if (!this._isInsideCollapsedModuler(workInfo.toStation) && (toStation.stationType === 'merge' || toStation.stationType === 'moduler') && workInfo.toPortIndex >= 0) {
                         const slot = this._findPortSlot(toStation, workInfo.toPortIndex, 'entry');
                         if (slot) { endX = slot.position.x; endZ = slot.position.z; }
                     }

@@ -401,14 +401,20 @@ class App {
                 });
 
                 // Add prefixed internal stations
+                // Calculate offset so internal stations are positioned relative to the moduler
+                const parentX = station.positionX || 0;
+                const parentY = station.positionY || 0;
+
                 for (const inner of sub.stations) {
                     const flatId = `${prefix}.${inner.id}`;
-                    // Recursively flatten nested moduler stations
+                    // Position internal stations relative to parent moduler position
+                    const innerX = inner.positionX ?? inner.x ?? 0;
+                    const innerY = inner.positionY ?? inner.y ?? 0;
                     const flatInner = {
                         ...inner,
                         id: flatId,
-                        positionX: inner.positionX ?? inner.x ?? (station.positionX || 0),
-                        positionY: inner.positionY ?? inner.y ?? (station.positionY || 0),
+                        positionX: parentX + innerX,
+                        positionY: parentY + innerY,
                         config: inner.config ? { ...inner.config } : {}
                     };
 
@@ -468,15 +474,31 @@ class App {
             let newFromPortIndex = conn.fromPortIndex ?? -1;
             let newToPortIndex = conn.toPortIndex ?? -1;
 
-            // From=ModulerStation → From=prefix.exit-{fromPortIndex}
-            if (fromStation && fromStation.type === 'moduler' && newFromPortIndex >= 0) {
-                newFrom = `${conn.from}.exit-${newFromPortIndex}`;
+            // From=ModulerStation → From=prefix.{exit station id}
+            if (fromStation && fromStation.type === 'moduler') {
+                const sub = fromStation.subScenario || fromStation.config?.subScenario;
+                const exits = sub ? sub.stations.filter(s => s.type === 'exit') : [];
+                const exitIdx = Math.max(0, newFromPortIndex);
+                if (exits.length > 0) {
+                    const exitSt = exits[exitIdx < exits.length ? exitIdx : 0];
+                    newFrom = `${conn.from}.${exitSt.id}`;
+                } else {
+                    newFrom = `${conn.from}.exit-${exitIdx}`;
+                }
                 newFromPortIndex = -1;
             }
 
-            // To=ModulerStation → To=prefix.entry-{toPortIndex}
-            if (toStation && toStation.type === 'moduler' && newToPortIndex >= 0) {
-                newTo = `${conn.to}.entry-${newToPortIndex}`;
+            // To=ModulerStation → To=prefix.{entry station id}
+            if (toStation && toStation.type === 'moduler') {
+                const sub = toStation.subScenario || toStation.config?.subScenario;
+                const entries = sub ? sub.stations.filter(s => s.type === 'entry') : [];
+                const entryIdx = Math.max(0, newToPortIndex);
+                if (entries.length > 0) {
+                    const entrySt = entries[entryIdx < entries.length ? entryIdx : 0];
+                    newTo = `${conn.to}.${entrySt.id}`;
+                } else {
+                    newTo = `${conn.to}.entry-${entryIdx}`;
+                }
                 newToPortIndex = -1;
             }
 

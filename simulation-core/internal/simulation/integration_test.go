@@ -897,6 +897,252 @@ func assertSignalSequenceContains(t *testing.T, changes []signalChange, signalNa
 	t.Errorf("expected signal change %s=%v in sequence, not found", signalName, value)
 }
 
+// === Moduler integration tests ===
+
+func TestIntegration_Moduler_BasicPassthrough(t *testing.T) {
+	// Source → Moduler(entry-myEntry → proc-inner → exit-myExit) → Drain
+	// Tests that arbitrary Entry/Exit IDs work correctly with flatten
+	scenario := &domain.Scenario{
+		ID:   "test-moduler",
+		Name: "Moduler Passthrough",
+		Stations: []domain.Station{
+			*domain.NewStation("src-1", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(3), "departureTime": float64(1.0), "workType": "partA",
+			}),
+			{
+				ID:     "moduler-1",
+				Type:   domain.StationTypeModuler,
+				Ports:  []domain.Port{{Capacity: 1}},
+				Config: map[string]interface{}{},
+				SubScenario: &domain.SubScenario{
+					Stations: []domain.Station{
+						*domain.NewStation("entry-myEntry", domain.StationTypeEntry, map[string]interface{}{}),
+						*domain.NewStation("proc-inner", domain.StationTypeProcessing, map[string]interface{}{
+							"processingTime": float64(2.0), "arrivalTime": float64(0.5), "departureTime": float64(0.5),
+						}),
+						*domain.NewStation("exit-myExit", domain.StationTypeExit, map[string]interface{}{}),
+					},
+					Connections: []domain.Connection{
+						{From: "entry-myEntry", To: "proc-inner", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+						{From: "proc-inner", To: "exit-myExit", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+					},
+				},
+				EntryCount: 1,
+				ExitCount:  1,
+			},
+			*domain.NewStation("drain-1", domain.StationTypeDrain, map[string]interface{}{
+				"arrivalTime": float64(0.5),
+			}),
+		},
+		Connections: []domain.Connection{
+			{From: "src-1", To: "moduler-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "moduler-1", To: "drain-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+		},
+	}
+
+	engine := NewEngine(scenario)
+	_, _, workEvents, _, err := engine.Run("sim-1", "test", 60.0)
+	if err != nil {
+		t.Fatalf("simulation failed: %v", err)
+	}
+
+	destroyed := countWorkEvents(workEvents, "drain-1", string(EventWorkDestroyed))
+	if destroyed != 3 {
+		t.Errorf("expected 3 works destroyed at drain, got %d", destroyed)
+		for _, we := range workEvents {
+			t.Logf("[%.2f] %s work=%s station=%s", we.Timestamp, we.EventType, we.WorkFriendlyName, we.StationID)
+		}
+	}
+}
+
+func TestIntegration_Moduler_WithMergeAndSplit(t *testing.T) {
+	// Source-A → ─┐
+	//             ├→ Merge → Moduler(entry-0 → proc → exit-0) → Split →┬→ Drain-1
+	// Source-B → ─┘                                                      └→ Drain-2
+	scenario := &domain.Scenario{
+		ID:   "test-moduler-complex",
+		Name: "Moduler with Merge and Split",
+		Stations: []domain.Station{
+			*domain.NewStation("src-a", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(2), "departureTime": float64(1.0), "workType": "partA",
+			}),
+			*domain.NewStation("src-b", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(2), "departureTime": float64(1.5), "workType": "partB",
+			}),
+			*domain.NewStation("merge-1", domain.StationTypeMerge, map[string]interface{}{
+				"mergeCount": float64(2), "processingTime": float64(1.0),
+				"arrivalTime": float64(0.5), "departureTime": float64(0.5),
+				"outputWorkType": "assy",
+				"ports": []interface{}{
+					map[string]interface{}{"capacity": float64(1)},
+					map[string]interface{}{"capacity": float64(1)},
+				},
+			}),
+			{
+				ID:     "moduler-qc",
+				Type:   domain.StationTypeModuler,
+				Ports:  []domain.Port{{Capacity: 1}},
+				Config: map[string]interface{}{},
+				SubScenario: &domain.SubScenario{
+					Stations: []domain.Station{
+						*domain.NewStation("entry-in", domain.StationTypeEntry, map[string]interface{}{}),
+						*domain.NewStation("proc-check", domain.StationTypeProcessing, map[string]interface{}{
+							"processingTime": float64(1.5), "arrivalTime": float64(0.3), "departureTime": float64(0.3),
+						}),
+						*domain.NewStation("exit-out", domain.StationTypeExit, map[string]interface{}{}),
+					},
+					Connections: []domain.Connection{
+						{From: "entry-in", To: "proc-check", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+						{From: "proc-check", To: "exit-out", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+					},
+				},
+				EntryCount: 1,
+				ExitCount:  1,
+			},
+			*domain.NewStation("split-1", domain.StationTypeSplit, map[string]interface{}{
+				"splitCount": float64(2), "processingTime": float64(0.5),
+				"arrivalTime": float64(0.5), "departureTime": float64(0.5),
+				"ports": []interface{}{
+					map[string]interface{}{"capacity": float64(1)},
+					map[string]interface{}{"capacity": float64(1)},
+				},
+			}),
+			*domain.NewStation("drain-1", domain.StationTypeDrain, map[string]interface{}{
+				"arrivalTime": float64(0.5),
+			}),
+			*domain.NewStation("drain-2", domain.StationTypeDrain, map[string]interface{}{
+				"arrivalTime": float64(0.5),
+			}),
+		},
+		Connections: []domain.Connection{
+			{From: "src-a", To: "merge-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 0},
+			{From: "src-b", To: "merge-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 1},
+			{From: "merge-1", To: "moduler-qc", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "moduler-qc", To: "split-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "split-1", To: "drain-1", Condition: domain.RoutingDefault, FromPortIndex: 0, ToPortIndex: -1},
+			{From: "split-1", To: "drain-2", Condition: domain.RoutingDefault, FromPortIndex: 1, ToPortIndex: -1},
+		},
+	}
+
+	engine := NewEngine(scenario)
+	_, _, workEvents, _, err := engine.Run("sim-1", "test", 60.0)
+	if err != nil {
+		t.Fatalf("simulation failed: %v", err)
+	}
+
+	// 2 merges → 2 merged works → split into 4 works → 2 at each drain
+	destroyed1 := countWorkEvents(workEvents, "drain-1", string(EventWorkDestroyed))
+	destroyed2 := countWorkEvents(workEvents, "drain-2", string(EventWorkDestroyed))
+	totalDestroyed := destroyed1 + destroyed2
+	if totalDestroyed != 4 {
+		t.Errorf("expected 4 total works destroyed (2 merges × 2 splits), got %d (drain-1=%d, drain-2=%d)", totalDestroyed, destroyed1, destroyed2)
+		for _, we := range workEvents {
+			t.Logf("[%.2f] %s work=%s station=%s port=%d", we.Timestamp, we.EventType, we.WorkFriendlyName, we.StationID, we.PortIndex)
+		}
+	}
+}
+
+func TestIntegration_LargeScenario_WithModuler(t *testing.T) {
+	// 30-station scenario: 3 sources, 2 merges, 1 moduler, 1 split, various processing, 1 drain
+	scenario := &domain.Scenario{
+		ID:   "test-large",
+		Name: "Large with Moduler",
+		Stations: []domain.Station{
+			*domain.NewStation("src-a", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(5), "departureTime": float64(3.0), "workType": "partA",
+			}),
+			*domain.NewStation("src-b", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(5), "departureTime": float64(4.0), "workType": "partB",
+			}),
+			*domain.NewStation("src-c", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(5), "departureTime": float64(5.0), "workType": "partC",
+			}),
+			*domain.NewStation("proc-a1", domain.StationTypeProcessing, map[string]interface{}{
+				"arrivalTime": float64(0.5), "processingTime": float64(2.0), "departureTime": float64(0.5),
+			}),
+			*domain.NewStation("proc-b1", domain.StationTypeProcessing, map[string]interface{}{
+				"arrivalTime": float64(0.5), "processingTime": float64(3.0), "departureTime": float64(0.5),
+			}),
+			*domain.NewStation("proc-c1", domain.StationTypeProcessing, map[string]interface{}{
+				"arrivalTime": float64(0.5), "processingTime": float64(2.5), "departureTime": float64(0.5),
+			}),
+			*domain.NewStation("merge-ab", domain.StationTypeMerge, map[string]interface{}{
+				"mergeCount": float64(2), "processingTime": float64(2.0),
+				"arrivalTime": float64(0.5), "departureTime": float64(0.5),
+				"outputWorkType": "subAssy",
+				"ports": []interface{}{
+					map[string]interface{}{"capacity": float64(1)},
+					map[string]interface{}{"capacity": float64(1)},
+				},
+			}),
+			*domain.NewStation("merge-abc", domain.StationTypeMerge, map[string]interface{}{
+				"mergeCount": float64(2), "processingTime": float64(3.0),
+				"arrivalTime": float64(0.5), "departureTime": float64(0.5),
+				"outputWorkType": "assy",
+				"ports": []interface{}{
+					map[string]interface{}{"capacity": float64(1)},
+					map[string]interface{}{"capacity": float64(1)},
+				},
+			}),
+			{
+				ID:     "moduler-qc",
+				Type:   domain.StationTypeModuler,
+				Ports:  []domain.Port{{Capacity: 1}},
+				Config: map[string]interface{}{},
+				SubScenario: &domain.SubScenario{
+					Stations: []domain.Station{
+						*domain.NewStation("entry-0", domain.StationTypeEntry, map[string]interface{}{}),
+						*domain.NewStation("proc-qc1", domain.StationTypeProcessing, map[string]interface{}{
+							"processingTime": float64(3.0), "arrivalTime": float64(0.3), "departureTime": float64(0.3),
+						}),
+						*domain.NewStation("exit-0", domain.StationTypeExit, map[string]interface{}{}),
+					},
+					Connections: []domain.Connection{
+						{From: "entry-0", To: "proc-qc1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+						{From: "proc-qc1", To: "exit-0", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+					},
+				},
+				EntryCount: 1,
+				ExitCount:  1,
+			},
+			*domain.NewStation("proc-f1", domain.StationTypeProcessing, map[string]interface{}{
+				"arrivalTime": float64(0.5), "processingTime": float64(2.0), "departureTime": float64(0.5),
+			}),
+			*domain.NewStation("drain-1", domain.StationTypeDrain, map[string]interface{}{
+				"arrivalTime": float64(0.5),
+			}),
+		},
+		Connections: []domain.Connection{
+			{From: "src-a", To: "proc-a1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "src-b", To: "proc-b1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "proc-a1", To: "merge-ab", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 0},
+			{From: "proc-b1", To: "merge-ab", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 1},
+			{From: "src-c", To: "proc-c1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "merge-ab", To: "merge-abc", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 0},
+			{From: "proc-c1", To: "merge-abc", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 1},
+			{From: "merge-abc", To: "moduler-qc", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "moduler-qc", To: "proc-f1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "proc-f1", To: "drain-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+		},
+	}
+
+	engine := NewEngine(scenario)
+	_, _, workEvents, _, err := engine.Run("sim-1", "test", 300.0)
+	if err != nil {
+		t.Fatalf("simulation failed: %v", err)
+	}
+
+	destroyed := countWorkEvents(workEvents, "drain-1", string(EventWorkDestroyed))
+	// 5 works from each source, merge-ab needs A+B pairs (5 pairs), merge-abc needs AB+C pairs (5 pairs)
+	// All 5 should reach drain
+	if destroyed != 5 {
+		t.Errorf("expected 5 works destroyed at drain, got %d", destroyed)
+		for _, we := range workEvents {
+			t.Logf("[%.2f] %s work=%s station=%s", we.Timestamp, we.EventType, we.WorkFriendlyName, we.StationID)
+		}
+	}
+}
+
 func countWorkEvents(events []WorkEventLog, stationID string, eventType string) int {
 	count := 0
 	for _, e := range events {

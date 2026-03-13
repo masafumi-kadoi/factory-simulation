@@ -234,9 +234,24 @@ func copyConfig(config map[string]interface{}) map[string]interface{} {
 	return newConfig
 }
 
+// findStationsByType finds internal stations of a given type within a ModulerStation's SubScenario.
+// Returns them in order of appearance.
+func findStationsByType(ms *domain.Station, stationType domain.StationType) []string {
+	if ms.SubScenario == nil {
+		return nil
+	}
+	var ids []string
+	for _, st := range ms.SubScenario.Stations {
+		if st.Type == stationType {
+			ids = append(ids, st.ID)
+		}
+	}
+	return ids
+}
+
 // rewriteConnection rewrites a connection that may reference a ModulerStation.
-// - If To is a ModulerStation: rewrite to prefix.entry-{toPortIndex}, set ToPortIndex=-1
-// - If From is a ModulerStation: rewrite to prefix.exit-{fromPortIndex}, set FromPortIndex=-1
+// - If To is a ModulerStation: rewrite to the N-th Entry station (by type lookup), set ToPortIndex=-1
+// - If From is a ModulerStation: rewrite to the N-th Exit station (by type lookup), set FromPortIndex=-1
 // - If neither: return as-is
 func rewriteConnection(conn domain.Connection, modulerStations map[string]*domain.Station) []domain.Connection {
 	newConn := conn
@@ -246,10 +261,16 @@ func rewriteConnection(conn domain.Connection, modulerStations map[string]*domai
 		if entryIndex < 0 {
 			entryIndex = 0
 		}
-		if ms.EntryCount > 0 && entryIndex >= ms.EntryCount {
-			entryIndex = 0 // fallback
+		entries := findStationsByType(ms, domain.StationTypeEntry)
+		if len(entries) > 0 {
+			if entryIndex >= len(entries) {
+				entryIndex = 0
+			}
+			newConn.To = fmt.Sprintf("%s.%s", conn.To, entries[entryIndex])
+		} else {
+			// Fallback: no SubScenario, use naming convention
+			newConn.To = fmt.Sprintf("%s.entry-%d", conn.To, entryIndex)
 		}
-		newConn.To = fmt.Sprintf("%s.entry-%d", conn.To, entryIndex)
 		newConn.ToPortIndex = -1
 	}
 
@@ -258,10 +279,16 @@ func rewriteConnection(conn domain.Connection, modulerStations map[string]*domai
 		if exitIndex < 0 {
 			exitIndex = 0
 		}
-		if ms.ExitCount > 0 && exitIndex >= ms.ExitCount {
-			exitIndex = 0 // fallback
+		exits := findStationsByType(ms, domain.StationTypeExit)
+		if len(exits) > 0 {
+			if exitIndex >= len(exits) {
+				exitIndex = 0
+			}
+			newConn.From = fmt.Sprintf("%s.%s", conn.From, exits[exitIndex])
+		} else {
+			// Fallback: no SubScenario, use naming convention
+			newConn.From = fmt.Sprintf("%s.exit-%d", conn.From, exitIndex)
 		}
-		newConn.From = fmt.Sprintf("%s.exit-%d", conn.From, exitIndex)
 		newConn.FromPortIndex = -1
 	}
 
