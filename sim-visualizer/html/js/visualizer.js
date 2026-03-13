@@ -239,13 +239,18 @@ export class Visualizer3D {
 
         this._adjustSceneToPositions(positions);
 
+        // Build port→connected station direction map before creating port slots
+        const stationTypes = new Map();
+        scenario.stations.forEach(s => stationTypes.set(s.id, s.type));
+        const portTargets = this._buildPortTargetMap(scenario.connections, stationTypes, positions);
+
         // Create stations with port slots
         scenario.stations.forEach(station => {
             const pos = positions.get(station.id);
             if (!pos) return;
 
             const { mesh, label } = this._createStation(station, pos);
-            const portSlots = this._createPortSlots(station, pos);
+            const portSlots = this._createPortSlots(station, pos, portTargets.get(station.id) || []);
 
             this.stations.set(station.id, {
                 mesh, position: pos, label,
@@ -398,10 +403,10 @@ export class Visualizer3D {
         // The actual signal values are shown through the interlock indicators
     }
 
-    _createPortSlots(station, stationPos) {
+    _createPortSlots(station, stationPos, portTargets) {
         // Moduler stations: create entry/exit port slots
         if (station.type === 'moduler') {
-            return this._createModulerPortSlots(station, stationPos);
+            return this._createModulerPortSlots(station, stationPos, portTargets);
         }
 
         const ports = station.config?.ports || [];
@@ -412,14 +417,14 @@ export class Visualizer3D {
         const portHeight = 3;
         const spacing = 35;
         const count = ports.length;
+        const offset = 60;
 
-        // Merge: slots on upstream side (Z-), Split: slots on downstream side (Z+)
-        const zOffset = station.type === 'merge' ? -60 : (station.type === 'split' ? 60 : 0);
-        if (zOffset === 0) return [];
+        // Determine port type for target lookup
+        const portType = station.type === 'merge' ? 'entry' : (station.type === 'split' ? 'exit' : null);
+        if (!portType) return [];
 
         return ports.map((port, i) => {
-            const x = stationPos.x + (i - (count - 1) / 2) * spacing;
-            const z = stationPos.z + zOffset;
+            const { x, z } = this._calcPortPosition(stationPos, i, count, spacing, offset, portType, portTargets);
             const position = { x, y: 0, z };
 
             // Create small disc mesh
@@ -457,19 +462,19 @@ export class Visualizer3D {
         });
     }
 
-    _createModulerPortSlots(station, stationPos) {
+    _createModulerPortSlots(station, stationPos, portTargets) {
         const entryCount = station.config?.entryCount || station.entryCount || 1;
         const exitCount = station.config?.exitCount || station.exitCount || 1;
         const portRadius = 12;
         const portHeight = 3;
         const spacing = 30;
+        const offset = 70;
         const slots = [];
 
-        // Entry ports on upstream side (Z-)
+        // Entry ports - direction based on connected station
         const entryColor = STATION_COLORS['entry'];
         for (let i = 0; i < entryCount; i++) {
-            const x = stationPos.x + (i - (entryCount - 1) / 2) * spacing;
-            const z = stationPos.z - 70;
+            const { x, z } = this._calcPortPosition(stationPos, i, entryCount, spacing, offset, 'entry', portTargets);
             const position = { x, y: 0, z };
 
             const discGeo = new THREE.CylinderGeometry(portRadius, portRadius, portHeight, 24);
@@ -499,11 +504,10 @@ export class Visualizer3D {
             slots.push({ mesh: group, label, position, connLine, portType: 'entry', portIndex: i });
         }
 
-        // Exit ports on downstream side (Z+)
+        // Exit ports - direction based on connected station
         const exitColor = STATION_COLORS['exit'];
         for (let i = 0; i < exitCount; i++) {
-            const x = stationPos.x + (i - (exitCount - 1) / 2) * spacing;
-            const z = stationPos.z + 70;
+            const { x, z } = this._calcPortPosition(stationPos, i, exitCount, spacing, offset, 'exit', portTargets);
             const position = { x, y: 0, z };
 
             const discGeo = new THREE.CylinderGeometry(portRadius, portRadius, portHeight, 24);
@@ -853,6 +857,77 @@ export class Visualizer3D {
         // For merge/split, use index directly
         if (portIndex < 0 || portIndex >= stationData.portSlots.length) return null;
         return stationData.portSlots[portIndex];
+    }
+
+    // Calculate port position on the straight line toward the connected station
+    _calcPortPosition(stationPos, portIndex, totalCount, spacing, offset, portType, portTargets) {
+        // Find target for this specific port
+        const target = portTargets.find(t => t.portIndex === portIndex && t.portType === portType);
+
+        if (target && target.targetPos) {
+            const dx = target.targetPos.x - stationPos.x;
+            const dz = target.targetPos.z - stationPos.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+
+            if (dist > 0.01) {
+                // Place port on the straight line from station center toward target
+                const dirX = dx / dist;
+                const dirZ = dz / dist;
+                return {
+                    x: stationPos.x + dirX * offset,
+                    z: stationPos.z + dirZ * offset
+                };
+            }
+        }
+
+        // Fallback: fixed Z offset (merge/entry → Z-, split/exit → Z+)
+        const zSign = portType === 'entry' ? -1 : 1;
+        return {
+            x: stationPos.x + (portIndex - (totalCount - 1) / 2) * spacing,
+            z: stationPos.z + zSign * offset
+        };
+    }
+
+    // Build mapping: stationId → [{ portIndex, portType, targetPos }]
+    _buildPortTargetMap(connections, stationTypes, positions) {
+        const map = new Map();
+        // Track auto-assigned indices for moduler ports (portIndex=-1)
+        const modulerEntryCounters = new Map();
+        const modulerExitCounters = new Map();
+
+        connections.forEach(conn => {
+            const fromPos = positions.get(conn.from);
+            const toPos = positions.get(conn.to);
+            if (!fromPos || !toPos) return;
+
+            // "to" station entry port
+            const toType = stationTypes.get(conn.to);
+            if (toType === 'merge' && conn.toPortIndex >= 0) {
+                if (!map.has(conn.to)) map.set(conn.to, []);
+                map.get(conn.to).push({ portIndex: conn.toPortIndex, portType: 'entry', targetPos: fromPos });
+            } else if (toType === 'moduler') {
+                // Moduler entry: auto-assign sequential port index
+                const idx = modulerEntryCounters.get(conn.to) || 0;
+                modulerEntryCounters.set(conn.to, idx + 1);
+                if (!map.has(conn.to)) map.set(conn.to, []);
+                map.get(conn.to).push({ portIndex: idx, portType: 'entry', targetPos: fromPos });
+            }
+
+            // "from" station exit port
+            const fromType = stationTypes.get(conn.from);
+            if (fromType === 'split' && conn.fromPortIndex >= 0) {
+                if (!map.has(conn.from)) map.set(conn.from, []);
+                map.get(conn.from).push({ portIndex: conn.fromPortIndex, portType: 'exit', targetPos: toPos });
+            } else if (fromType === 'moduler') {
+                // Moduler exit: auto-assign sequential port index
+                const idx = modulerExitCounters.get(conn.from) || 0;
+                modulerExitCounters.set(conn.from, idx + 1);
+                if (!map.has(conn.from)) map.set(conn.from, []);
+                map.get(conn.from).push({ portIndex: idx, portType: 'exit', targetPos: toPos });
+            }
+        });
+
+        return map;
     }
 
     updateWorks(activeWorks, currentTime) {
