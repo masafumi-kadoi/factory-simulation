@@ -67,6 +67,16 @@ func flattenStationsAndConnections(stations []domain.Station, connections []doma
 		flatStations = append(flatStations, modulerCopy)
 
 		if st.SubScenario == nil {
+			// Auto-generate stub Entry/Exit stations for Moduler without SubScenario
+			stubStations, stubConnections := generateModulerStubs(st)
+			modulerIdx := len(flatStations) - 1
+			var internalIDs []string
+			for _, ns := range stubStations {
+				internalIDs = append(internalIDs, ns.ID)
+			}
+			flatStations[modulerIdx].InternalStationIDs = internalIDs
+			flatStations = append(flatStations, stubStations...)
+			flatConnections = append(flatConnections, stubConnections...)
 			continue
 		}
 
@@ -232,6 +242,54 @@ func copyConfig(config map[string]interface{}) map[string]interface{} {
 		newConfig[k] = v
 	}
 	return newConfig
+}
+
+// generateModulerStubs creates Entry/Exit stub stations and internal connections
+// for a Moduler station that has no SubScenario.
+func generateModulerStubs(st domain.Station) ([]domain.Station, []domain.Connection) {
+	entryCount := st.EntryCount
+	if entryCount <= 0 {
+		entryCount = 1
+	}
+	exitCount := st.ExitCount
+	if exitCount <= 0 {
+		exitCount = 1
+	}
+
+	prefix := st.ID + "."
+	var stations []domain.Station
+	var connections []domain.Connection
+
+	// Create Entry stations
+	for i := 0; i < entryCount; i++ {
+		id := fmt.Sprintf("%sentry-%d", prefix, i)
+		s := domain.NewStation(id, domain.StationTypeEntry, map[string]interface{}{})
+		stations = append(stations, *s)
+	}
+
+	// Create Exit stations
+	for i := 0; i < exitCount; i++ {
+		id := fmt.Sprintf("%sexit-%d", prefix, i)
+		s := domain.NewStation(id, domain.StationTypeExit, map[string]interface{}{})
+		stations = append(stations, *s)
+	}
+
+	// Connect entry-i → exit-i (pair them up; extras connect to last available)
+	for i := 0; i < entryCount; i++ {
+		exitIdx := i
+		if exitIdx >= exitCount {
+			exitIdx = exitCount - 1
+		}
+		connections = append(connections, domain.Connection{
+			From:          fmt.Sprintf("%sentry-%d", prefix, i),
+			To:            fmt.Sprintf("%sexit-%d", prefix, exitIdx),
+			Condition:     "default",
+			FromPortIndex: -1,
+			ToPortIndex:   -1,
+		})
+	}
+
+	return stations, connections
 }
 
 // findStationsByType finds internal stations of a given type within a ModulerStation's SubScenario.

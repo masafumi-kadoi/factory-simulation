@@ -605,15 +605,45 @@ func TestFlattenScenario_EmptySubScenario(t *testing.T) {
 
 	result := FlattenScenario(scenario)
 
-	// Should have 3 stations (no internal stations extracted)
-	if len(result.Stations) != 3 {
-		t.Errorf("expected 3 stations, got %d", len(result.Stations))
+	// Should have 5 stations: source-1, moduler-1, moduler-1.entry-0, moduler-1.exit-0, drain-1
+	if len(result.Stations) != 5 {
+		t.Errorf("expected 5 stations, got %d", len(result.Stations))
+		for _, s := range result.Stations {
+			t.Logf("  station: %s (type=%s)", s.ID, s.Type)
+		}
 	}
 
-	// Connections should still be rewritten to entry/exit format
+	// Stub entry/exit stations should exist
+	if s := findStation(result.Stations, "moduler-1.entry-0"); s == nil {
+		t.Error("missing stub station moduler-1.entry-0")
+	} else if s.Type != domain.StationTypeEntry {
+		t.Errorf("moduler-1.entry-0 type = %s, want entry", s.Type)
+	}
+	if s := findStation(result.Stations, "moduler-1.exit-0"); s == nil {
+		t.Error("missing stub station moduler-1.exit-0")
+	} else if s.Type != domain.StationTypeExit {
+		t.Errorf("moduler-1.exit-0 type = %s, want exit", s.Type)
+	}
+
+	// Connections should be rewritten to entry/exit format
 	s1Conns := findConnectionsFrom(result.Connections, "source-1")
 	if len(s1Conns) != 1 || s1Conns[0].To != "moduler-1.entry-0" {
 		t.Errorf("connection rewrite unexpected: %v", s1Conns)
+	}
+
+	// Internal connection entry→exit should exist
+	entryConns := findConnectionsFrom(result.Connections, "moduler-1.entry-0")
+	if len(entryConns) != 1 || entryConns[0].To != "moduler-1.exit-0" {
+		t.Errorf("expected internal connection entry-0→exit-0, got: %v", entryConns)
+	}
+
+	// InternalStationIDs should be set
+	moduler := findStation(result.Stations, "moduler-1")
+	if moduler == nil {
+		t.Fatal("missing moduler-1")
+	}
+	if len(moduler.InternalStationIDs) != 2 {
+		t.Errorf("expected 2 InternalStationIDs, got %d: %v", len(moduler.InternalStationIDs), moduler.InternalStationIDs)
 	}
 }
 
