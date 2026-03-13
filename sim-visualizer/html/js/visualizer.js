@@ -408,7 +408,8 @@ export class Visualizer3D {
         if (ports.length === 0) return [];
 
         const color = STATION_COLORS[station.type] || 0x6c757d;
-        const slotSize = 25;
+        const portRadius = 14;
+        const portHeight = 3;
         const spacing = 35;
         const count = ports.length;
 
@@ -421,27 +422,31 @@ export class Visualizer3D {
             const z = stationPos.z + zOffset;
             const position = { x, y: 0, z };
 
-            // Create small box mesh
-            const geometry = new THREE.BoxGeometry(slotSize, slotSize, slotSize);
-            const fillMaterial = new THREE.MeshStandardMaterial({
-                color, transparent: true, opacity: 0.15,
-                emissive: color, emissiveIntensity: 0.1
+            // Create small disc mesh
+            const discGeo = new THREE.CylinderGeometry(portRadius, portRadius, portHeight, 24);
+            const discMat = new THREE.MeshStandardMaterial({
+                color, transparent: true, opacity: 0.3,
+                emissive: color, emissiveIntensity: 0.3
             });
-            const fillMesh = new THREE.Mesh(geometry, fillMaterial);
-            const wireGeom = new THREE.EdgesGeometry(geometry);
-            const wireMat = new THREE.LineBasicMaterial({ color, linewidth: 1, transparent: true, opacity: 0.5 });
-            const wireMesh = new THREE.LineSegments(wireGeom, wireMat);
+            const discMesh = new THREE.Mesh(discGeo, discMat);
+
+            const ringGeo = new THREE.RingGeometry(portRadius - 1.5, portRadius, 32);
+            const ringMat = new THREE.MeshBasicMaterial({
+                color, transparent: true, opacity: 0.7, side: THREE.DoubleSide
+            });
+            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+            ringMesh.rotation.x = -Math.PI / 2;
+            ringMesh.position.y = portHeight / 2 + 0.1;
+
             const group = new THREE.Group();
-            group.add(fillMesh);
-            group.add(wireMesh);
-            group.position.set(x, slotSize / 2, z);
+            group.add(discMesh);
+            group.add(ringMesh);
+            group.position.set(x, portHeight / 2, z);
             this.scene.add(group);
 
-            // Create label for port index
             const labelText = `B${i}`;
-            const label = this._createLabel(labelText, x, slotSize + 10, z);
+            const label = this._createLabel(labelText, x, 12, z);
 
-            // Create connector line from slot to station body
             const connLine = this._createSlotConnectorLine(
                 { x, z },
                 stationPos,
@@ -455,7 +460,8 @@ export class Visualizer3D {
     _createModulerPortSlots(station, stationPos) {
         const entryCount = station.config?.entryCount || station.entryCount || 1;
         const exitCount = station.config?.exitCount || station.exitCount || 1;
-        const slotSize = 20;
+        const portRadius = 12;
+        const portHeight = 3;
         const spacing = 30;
         const slots = [];
 
@@ -466,22 +472,28 @@ export class Visualizer3D {
             const z = stationPos.z - 70;
             const position = { x, y: 0, z };
 
-            const geometry = new THREE.BoxGeometry(slotSize, slotSize, slotSize);
-            const fillMaterial = new THREE.MeshStandardMaterial({
-                color: entryColor, transparent: true, opacity: 0.15,
-                emissive: entryColor, emissiveIntensity: 0.1
+            const discGeo = new THREE.CylinderGeometry(portRadius, portRadius, portHeight, 24);
+            const discMat = new THREE.MeshStandardMaterial({
+                color: entryColor, transparent: true, opacity: 0.3,
+                emissive: entryColor, emissiveIntensity: 0.3
             });
-            const fillMesh = new THREE.Mesh(geometry, fillMaterial);
-            const wireGeom = new THREE.EdgesGeometry(geometry);
-            const wireMat = new THREE.LineBasicMaterial({ color: entryColor, linewidth: 1, transparent: true, opacity: 0.5 });
-            const wireMesh = new THREE.LineSegments(wireGeom, wireMat);
+            const discMesh = new THREE.Mesh(discGeo, discMat);
+
+            const ringGeo = new THREE.RingGeometry(portRadius - 1.5, portRadius, 32);
+            const ringMat = new THREE.MeshBasicMaterial({
+                color: entryColor, transparent: true, opacity: 0.7, side: THREE.DoubleSide
+            });
+            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+            ringMesh.rotation.x = -Math.PI / 2;
+            ringMesh.position.y = portHeight / 2 + 0.1;
+
             const group = new THREE.Group();
-            group.add(fillMesh);
-            group.add(wireMesh);
-            group.position.set(x, slotSize / 2, z);
+            group.add(discMesh);
+            group.add(ringMesh);
+            group.position.set(x, portHeight / 2, z);
             this.scene.add(group);
 
-            const label = this._createLabel(`E${i}`, x, slotSize + 10, z);
+            const label = this._createLabel(`E${i}`, x, 12, z);
             const connLine = this._createSlotConnectorLine({ x, z }, stationPos, entryColor);
 
             slots.push({ mesh: group, label, position, connLine, portType: 'entry', portIndex: i });
@@ -494,22 +506,28 @@ export class Visualizer3D {
             const z = stationPos.z + 70;
             const position = { x, y: 0, z };
 
-            const geometry = new THREE.BoxGeometry(slotSize, slotSize, slotSize);
-            const fillMaterial = new THREE.MeshStandardMaterial({
-                color: exitColor, transparent: true, opacity: 0.15,
-                emissive: exitColor, emissiveIntensity: 0.1
+            const discGeo = new THREE.CylinderGeometry(portRadius, portRadius, portHeight, 24);
+            const discMat = new THREE.MeshStandardMaterial({
+                color: exitColor, transparent: true, opacity: 0.3,
+                emissive: exitColor, emissiveIntensity: 0.3
             });
-            const fillMesh = new THREE.Mesh(geometry, fillMaterial);
-            const wireGeom = new THREE.EdgesGeometry(geometry);
-            const wireMat = new THREE.LineBasicMaterial({ color: exitColor, linewidth: 1, transparent: true, opacity: 0.5 });
-            const wireMesh = new THREE.LineSegments(wireGeom, wireMat);
+            const discMesh = new THREE.Mesh(discGeo, discMat);
+
+            const ringGeo = new THREE.RingGeometry(portRadius - 1.5, portRadius, 32);
+            const ringMat = new THREE.MeshBasicMaterial({
+                color: exitColor, transparent: true, opacity: 0.7, side: THREE.DoubleSide
+            });
+            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+            ringMesh.rotation.x = -Math.PI / 2;
+            ringMesh.position.y = portHeight / 2 + 0.1;
+
             const group = new THREE.Group();
-            group.add(fillMesh);
-            group.add(wireMesh);
-            group.position.set(x, slotSize / 2, z);
+            group.add(discMesh);
+            group.add(ringMesh);
+            group.position.set(x, portHeight / 2, z);
             this.scene.add(group);
 
-            const label = this._createLabel(`X${i}`, x, slotSize + 10, z);
+            const label = this._createLabel(`X${i}`, x, 12, z);
             const connLine = this._createSlotConnectorLine({ x, z }, stationPos, exitColor);
 
             slots.push({ mesh: group, label, position, connLine, portType: 'exit', portIndex: i });
@@ -520,8 +538,8 @@ export class Visualizer3D {
 
     _createSlotConnectorLine(slotPos, stationPos, color) {
         const points = [
-            new THREE.Vector3(slotPos.x, 12, slotPos.z),
-            new THREE.Vector3(stationPos.x, 12, stationPos.z)
+            new THREE.Vector3(slotPos.x, 4, slotPos.z),
+            new THREE.Vector3(stationPos.x, 4, stationPos.z)
         ];
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const material = new THREE.LineBasicMaterial({
@@ -600,41 +618,51 @@ export class Visualizer3D {
     _createStation(station, position) {
         const color = STATION_COLORS[station.type] || 0x6c757d;
 
-        // Moduler stations are larger
         const isModuler = station.type === 'moduler';
-        const boxSize = isModuler ? 80 : 50;
+        const radius = isModuler ? 45 : 30;
+        const discHeight = 4;
 
-        const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
-        const fillMaterial = new THREE.MeshStandardMaterial({
-            color, transparent: true, opacity: isModuler ? 0.2 : 0.3,
-            emissive: color, emissiveIntensity: 0.2
+        // Disc (thin cylinder)
+        const discGeo = new THREE.CylinderGeometry(radius, radius, discHeight, 32);
+        const discMat = new THREE.MeshStandardMaterial({
+            color, transparent: true, opacity: isModuler ? 0.3 : 0.4,
+            emissive: color, emissiveIntensity: 0.4,
+            roughness: 0.4, metalness: 0.1
         });
-        const fillMesh = new THREE.Mesh(geometry, fillMaterial);
+        const discMesh = new THREE.Mesh(discGeo, discMat);
 
-        const wireframeGeometry = new THREE.EdgesGeometry(geometry);
-        const wireframeMaterial = new THREE.LineBasicMaterial({ color, linewidth: 2 });
-        const wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        // Outer ring (edge glow)
+        const ringGeo = new THREE.RingGeometry(radius - 2, radius, 48);
+        const ringMat = new THREE.MeshBasicMaterial({
+            color, transparent: true, opacity: 0.8, side: THREE.DoubleSide
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = -Math.PI / 2;
+        ringMesh.position.y = discHeight / 2 + 0.1;
 
         const group = new THREE.Group();
-        group.add(fillMesh);
-        group.add(wireframeMesh);
+        group.add(discMesh);
+        group.add(ringMesh);
 
-        // Moduler: add inner wireframe for double-border effect
+        // Moduler: add inner ring for double-border effect
         if (isModuler) {
-            const innerGeo = new THREE.BoxGeometry(boxSize - 10, boxSize - 10, boxSize - 10);
-            const innerWireGeo = new THREE.EdgesGeometry(innerGeo);
-            const innerWireMat = new THREE.LineBasicMaterial({ color, linewidth: 1, transparent: true, opacity: 0.5 });
-            const innerWire = new THREE.LineSegments(innerWireGeo, innerWireMat);
-            group.add(innerWire);
+            const innerRingGeo = new THREE.RingGeometry(radius - 8, radius - 6, 48);
+            const innerRingMat = new THREE.MeshBasicMaterial({
+                color, transparent: true, opacity: 0.5, side: THREE.DoubleSide
+            });
+            const innerRingMesh = new THREE.Mesh(innerRingGeo, innerRingMat);
+            innerRingMesh.rotation.x = -Math.PI / 2;
+            innerRingMesh.position.y = discHeight / 2 + 0.2;
+            group.add(innerRingMesh);
         }
 
-        group.position.set(position.x, boxSize / 2, position.z);
+        group.position.set(position.x, discHeight / 2, position.z);
         group.userData = { stationId: station.id, type: station.type };
 
         this.scene.add(group);
 
         const labelText = station.name || station.id;
-        const labelY = isModuler ? boxSize + 15 : 65;
+        const labelY = isModuler ? 25 : 20;
         const label = this._createLabel(labelText, position.x, labelY, position.z);
 
         return { mesh: group, label };
