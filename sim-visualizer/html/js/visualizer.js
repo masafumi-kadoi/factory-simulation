@@ -260,23 +260,60 @@ export class Visualizer3D {
             });
         });
 
+        // Helper: resolve "parentId.entry-N" / "parentId.exit-N" to parent station + port slot
+        const resolveModulerChild = (id) => {
+            const dotIdx = id.lastIndexOf('.');
+            if (dotIdx === -1) return null;
+            const parentId = id.substring(0, dotIdx);
+            const suffix = id.substring(dotIdx + 1);
+            const entryMatch = suffix.match(/^entry-(\d+)$/);
+            if (entryMatch) return { parentId, portType: 'entry', portIndex: parseInt(entryMatch[1]) };
+            const exitMatch = suffix.match(/^exit-(\d+)$/);
+            if (exitMatch) return { parentId, portType: 'exit', portIndex: parseInt(exitMatch[1]) };
+            return null;
+        };
+
         // Create connections (route to port slots when applicable)
         scenario.connections.forEach(conn => {
-            const from = this.stations.get(conn.from);
-            const to = this.stations.get(conn.to);
+            let from = this.stations.get(conn.from);
+            let to = this.stations.get(conn.to);
+            let fromPos, toPos;
+
+            // Resolve moduler child references (e.g. "moduler-qc.exit-0" → parent's exit port slot)
+            if (!from) {
+                const child = resolveModulerChild(conn.from);
+                if (child) {
+                    from = this.stations.get(child.parentId);
+                    if (from) {
+                        const slot = this._findPortSlot(from, child.portIndex, child.portType);
+                        fromPos = slot ? slot.position : from.position;
+                    }
+                }
+            }
+            if (!to) {
+                const child = resolveModulerChild(conn.to);
+                if (child) {
+                    to = this.stations.get(child.parentId);
+                    if (to) {
+                        const slot = this._findPortSlot(to, child.portIndex, child.portType);
+                        toPos = slot ? slot.position : to.position;
+                    }
+                }
+            }
+
             if (!from || !to) return;
 
-            let fromPos = from.position;
-            let toPos = to.position;
+            if (!fromPos) fromPos = from.position;
+            if (!toPos) toPos = to.position;
 
-            // Split/Moduler: connect from port slot by index
-            if ((from.stationType === 'split' || from.stationType === 'moduler') && from.portSlots.length > 0 && conn.fromPortIndex >= 0) {
+            // Split: connect from port slot by index
+            if (from.stationType === 'split' && from.portSlots.length > 0 && conn.fromPortIndex >= 0) {
                 const slot = this._findPortSlot(from, conn.fromPortIndex, 'exit');
                 if (slot) fromPos = slot.position;
             }
 
-            // Merge/Moduler: connect to port slot by index
-            if ((to.stationType === 'merge' || to.stationType === 'moduler') && to.portSlots.length > 0 && conn.toPortIndex >= 0) {
+            // Merge: connect to port slot by index
+            if (to.stationType === 'merge' && to.portSlots.length > 0 && conn.toPortIndex >= 0) {
                 const slot = this._findPortSlot(to, conn.toPortIndex, 'entry');
                 if (slot) toPos = slot.position;
             }
@@ -891,39 +928,60 @@ export class Visualizer3D {
     // Build mapping: stationId → [{ portIndex, portType, targetPos }]
     _buildPortTargetMap(connections, stationTypes, positions) {
         const map = new Map();
-        // Track auto-assigned indices for moduler ports (portIndex=-1)
-        const modulerEntryCounters = new Map();
-        const modulerExitCounters = new Map();
+
+        // Helper: parse "parentId.entry-N" or "parentId.exit-N" pattern
+        const parseModulerChild = (id) => {
+            const dotIdx = id.lastIndexOf('.');
+            if (dotIdx === -1) return null;
+            const parentId = id.substring(0, dotIdx);
+            const suffix = id.substring(dotIdx + 1);
+            const entryMatch = suffix.match(/^entry-(\d+)$/);
+            if (entryMatch) return { parentId, portType: 'entry', portIndex: parseInt(entryMatch[1]) };
+            const exitMatch = suffix.match(/^exit-(\d+)$/);
+            if (exitMatch) return { parentId, portType: 'exit', portIndex: parseInt(exitMatch[1]) };
+            return null;
+        };
+
+        // Helper: resolve position, falling back to parent moduler position for child stations
+        const resolvePos = (id) => {
+            const pos = positions.get(id);
+            if (pos) return pos;
+            const child = parseModulerChild(id);
+            if (child) return positions.get(child.parentId) || null;
+            return null;
+        };
 
         connections.forEach(conn => {
-            const fromPos = positions.get(conn.from);
-            const toPos = positions.get(conn.to);
+            const fromPos = resolvePos(conn.from);
+            const toPos = resolvePos(conn.to);
+
+            // Moduler port targets: detect "parentId.entry-N" / "parentId.exit-N"
+            const toChild = parseModulerChild(conn.to);
+            if (toChild && fromPos && stationTypes.get(toChild.parentId) === 'moduler') {
+                if (!map.has(toChild.parentId)) map.set(toChild.parentId, []);
+                map.get(toChild.parentId).push({ portIndex: toChild.portIndex, portType: 'entry', targetPos: fromPos });
+            }
+
+            const fromChild = parseModulerChild(conn.from);
+            if (fromChild && toPos && stationTypes.get(fromChild.parentId) === 'moduler') {
+                if (!map.has(fromChild.parentId)) map.set(fromChild.parentId, []);
+                map.get(fromChild.parentId).push({ portIndex: fromChild.portIndex, portType: 'exit', targetPos: toPos });
+            }
+
             if (!fromPos || !toPos) return;
 
-            // "to" station entry port
+            // Merge: "to" station with toPortIndex >= 0
             const toType = stationTypes.get(conn.to);
             if (toType === 'merge' && conn.toPortIndex >= 0) {
                 if (!map.has(conn.to)) map.set(conn.to, []);
                 map.get(conn.to).push({ portIndex: conn.toPortIndex, portType: 'entry', targetPos: fromPos });
-            } else if (toType === 'moduler') {
-                // Moduler entry: auto-assign sequential port index
-                const idx = modulerEntryCounters.get(conn.to) || 0;
-                modulerEntryCounters.set(conn.to, idx + 1);
-                if (!map.has(conn.to)) map.set(conn.to, []);
-                map.get(conn.to).push({ portIndex: idx, portType: 'entry', targetPos: fromPos });
             }
 
-            // "from" station exit port
+            // Split: "from" station with fromPortIndex >= 0
             const fromType = stationTypes.get(conn.from);
             if (fromType === 'split' && conn.fromPortIndex >= 0) {
                 if (!map.has(conn.from)) map.set(conn.from, []);
                 map.get(conn.from).push({ portIndex: conn.fromPortIndex, portType: 'exit', targetPos: toPos });
-            } else if (fromType === 'moduler') {
-                // Moduler exit: auto-assign sequential port index
-                const idx = modulerExitCounters.get(conn.from) || 0;
-                modulerExitCounters.set(conn.from, idx + 1);
-                if (!map.has(conn.from)) map.set(conn.from, []);
-                map.get(conn.from).push({ portIndex: idx, portType: 'exit', targetPos: toPos });
             }
         });
 
