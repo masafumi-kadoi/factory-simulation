@@ -440,6 +440,20 @@ class ScenarioEditor {
             inDegree.set(c.to, (inDegree.get(c.to) || 0) + 1);
         });
 
+        // Build port-ordered adjacency (for fan-out/fan-in ordering)
+        const portOutEdges = new Map(); // stationId -> [{to, portIndex}]
+        const portInEdges = new Map();  // stationId -> [{from, portIndex}]
+        stations.forEach(s => {
+            portOutEdges.set(s.id, []);
+            portInEdges.set(s.id, []);
+        });
+        connections.forEach(c => {
+            portOutEdges.get(c.from)?.push({to: c.to, portIndex: c.fromPortIndex ?? -1});
+            portInEdges.get(c.to)?.push({from: c.from, portIndex: c.toPortIndex ?? -1});
+        });
+        portOutEdges.forEach(arr => arr.sort((a, b) => a.portIndex - b.portIndex));
+        portInEdges.forEach(arr => arr.sort((a, b) => a.portIndex - b.portIndex));
+
         // Topological sort (BFS / Kahn's algorithm) to assign layers
         const queue = [];
         stations.forEach(s => {
@@ -466,28 +480,177 @@ class ScenarioEditor {
             if (!layer.has(s.id)) layer.set(s.id, 0);
         });
 
-        // Group stations by layer
-        const layers = [];
-        for (let i = 0; i <= maxLayer; i++) layers.push([]);
-        stations.forEach(s => {
-            layers[layer.get(s.id)].push(s);
+        // ALAP (As Late As Possible) scheduling:
+        // Shift each node as far right as possible (to successor layer - 1).
+        // This keeps critical paths unchanged but moves shorter branches closer
+        // to their junction, so e.g. all moduler inputs are in adjacent columns.
+        // Process right-to-left: sort stations by layer descending, then adjust.
+        const stationsByLayerDesc = [...stations].sort(
+            (a, b) => (layer.get(b.id) || 0) - (layer.get(a.id) || 0)
+        );
+        for (const s of stationsByLayerDesc) {
+            const succs = outEdges.get(s.id) || [];
+            if (succs.length === 0) continue;
+            const minSuccLayer = Math.min(...succs.map(t => layer.get(t) ?? maxLayer));
+            const alapLayer = minSuccLayer - 1;
+            if (alapLayer > (layer.get(s.id) || 0)) {
+                layer.set(s.id, alapLayer);
+            }
+        }
+
+        // Recalculate maxLayer and rebuild layer groups
+        maxLayer = 0;
+        stations.forEach(s => { maxLayer = Math.max(maxLayer, layer.get(s.id) || 0); });
+
+        // Build reverse adjacency (predecessors)
+        const inEdges = new Map();
+        stations.forEach(s => inEdges.set(s.id, []));
+        connections.forEach(c => {
+            inEdges.get(c.to)?.push(c.from);
         });
+
+        // Group stations by layer
+        const layerGroups = [];
+        for (let i = 0; i <= maxLayer; i++) layerGroups.push([]);
+        stations.forEach(s => layerGroups[layer.get(s.id)].push(s));
+
+        // Reverse-junction Y-ordering: process junctions from right to left,
+        // spreading branches by port order. This ensures all port orderings
+        // are globally consistent and lines don't cross.
+        const yOrder = new Map();
+
+        // Trace backward along chain (single-pred, pred has single-succ) and assign Y
+        const traceBackAssign = (startId, y) => {
+            let cur = startId;
+            for (let i = 0; i < 1000; i++) {
+                if (yOrder.has(cur)) break;
+                yOrder.set(cur, y);
+                const preds = inEdges.get(cur) || [];
+                if (preds.length !== 1) break;
+                const prev = preds[0];
+                if ((outEdges.get(prev) || []).length !== 1) break;
+                cur = prev;
+            }
+        };
+
+        // Trace forward along chain (single-succ, succ has single-pred) and assign Y
+        const traceFwdAssign = (startId, y) => {
+            let cur = startId;
+            for (let i = 0; i < 1000; i++) {
+                if (yOrder.has(cur)) break;
+                yOrder.set(cur, y);
+                const succs = outEdges.get(cur) || [];
+                if (succs.length !== 1) break;
+                const next = succs[0];
+                if ((inEdges.get(next) || []).length !== 1) break;
+                cur = next;
+            }
+        };
+
+        // Find junctions (multi-input or multi-output) sorted by layer descending
+        const junctions = stations.filter(s => {
+            const inCount = (inEdges.get(s.id) || []).length;
+            const outCount = (outEdges.get(s.id) || []).length;
+            return inCount > 1 || outCount > 1;
+        });
+        junctions.sort((a, b) => (layer.get(b.id) || 0) - (layer.get(a.id) || 0));
+
+        // Process each junction: determine its Y, spread its branches
+        junctions.forEach(j => {
+            const jId = j.id;
+            const pIn = [...(portInEdges.get(jId) || [])].sort((a, b) => a.portIndex - b.portIndex);
+            const pOut = [...(portOutEdges.get(jId) || [])].sort((a, b) => a.portIndex - b.portIndex);
+            let jY = yOrder.get(jId);
+
+            if (jY === undefined) {
+                // Try Y from assigned successors (set by earlier/rightward junction)
+                const succYs = (outEdges.get(jId) || []).filter(s => yOrder.has(s)).map(s => yOrder.get(s));
+                if (succYs.length > 0) {
+                    jY = succYs.reduce((a, b) => a + b, 0) / succYs.length;
+                }
+            }
+            if (jY === undefined) {
+                // Try Y from assigned predecessors
+                const predYs = (inEdges.get(jId) || []).filter(p => yOrder.has(p)).map(p => yOrder.get(p));
+                if (predYs.length > 0) {
+                    predYs.sort((a, b) => a - b);
+                    jY = predYs[Math.floor(predYs.length / 2)];
+                }
+            }
+            if (jY === undefined) {
+                // First junction processed (rightmost): center based on input count
+                jY = (Math.max(pIn.length, pOut.length) - 1) / 2;
+            }
+            yOrder.set(jId, jY);
+
+            // Spread fan-in inputs by toPortIndex order
+            if (pIn.length > 1) {
+                const half = (pIn.length - 1) / 2;
+                pIn.forEach((e, i) => {
+                    const inputY = jY + (i - half);
+                    if (!yOrder.has(e.from)) traceBackAssign(e.from, inputY);
+                });
+            } else if (pIn.length === 1 && !yOrder.has(pIn[0].from)) {
+                traceBackAssign(pIn[0].from, jY);
+            }
+
+            // Spread fan-out outputs by fromPortIndex order
+            if (pOut.length > 1) {
+                const half = (pOut.length - 1) / 2;
+                pOut.forEach((e, i) => {
+                    const outputY = jY + (i - half);
+                    if (!yOrder.has(e.to)) traceFwdAssign(e.to, outputY);
+                });
+            } else if (pOut.length === 1 && !yOrder.has(pOut[0].to)) {
+                traceFwdAssign(pOut[0].to, jY);
+            }
+        });
+
+        // Assign any remaining unvisited stations (no junction in path)
+        // Process left-to-right, inheriting predecessor Y or assigning new row
+        let nextRow = Math.max(0, ...Array.from(yOrder.values()).map(v => Math.ceil(v))) + 1;
+        for (let li = 0; li <= maxLayer; li++) {
+            for (const s of layerGroups[li]) {
+                if (yOrder.has(s.id)) continue;
+                const preds = (inEdges.get(s.id) || []).filter(p => yOrder.has(p));
+                if (preds.length > 0) {
+                    yOrder.set(s.id, yOrder.get(preds[0]));
+                } else {
+                    yOrder.set(s.id, nextRow++);
+                }
+            }
+        }
+
+        // Within each layer: resolve collisions while preserving cross-layer alignment
+        for (let li = 0; li <= maxLayer; li++) {
+            const group = layerGroups[li];
+            group.sort((a, b) => (yOrder.get(a.id) || 0) - (yOrder.get(b.id) || 0));
+            // Round to integers and push down only when overlapping
+            for (let i = 0; i < group.length; i++) {
+                let y = Math.round(yOrder.get(group[i].id) || 0);
+                if (i > 0) {
+                    const prevY = yOrder.get(group[i - 1].id);
+                    if (y <= prevY) y = prevY + 1;
+                }
+                yOrder.set(group[i].id, y);
+            }
+        }
+
+        // Normalize: shift so minimum Y = 0
+        let minY = Infinity;
+        stations.forEach(s => { minY = Math.min(minY, yOrder.get(s.id) ?? 0); });
 
         // Layout parameters
         const xStart = 200;
-        const xGap = 200;   // horizontal gap between layers
+        const xGap = 200;
         const yStart = 150;
-        const yGap = 120;   // vertical gap between stations in same layer
+        const yGap = 120;
 
-        // Position each station
-        layers.forEach((layerStations, layerIdx) => {
-            const totalHeight = (layerStations.length - 1) * yGap;
-            const baseY = yStart + (600 - totalHeight) / 2; // center vertically in ~600px area
-
-            layerStations.forEach((station, i) => {
-                station.x = this.canvas._snapToGrid(xStart + layerIdx * xGap);
-                station.y = this.canvas._snapToGrid(baseY + i * yGap);
-            });
+        stations.forEach(station => {
+            const li = layer.get(station.id);
+            const yi = (yOrder.get(station.id) || 0) - minY;
+            station.x = this.canvas._snapToGrid(xStart + li * xGap);
+            station.y = this.canvas._snapToGrid(yStart + yi * yGap);
         });
 
         this._markDirty();
