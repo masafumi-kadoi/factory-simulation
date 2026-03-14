@@ -547,13 +547,21 @@ class ScenarioEditor {
             }
         };
 
-        // Find junctions (multi-input or multi-output) sorted by layer descending
+        // Find junctions (multi-input or multi-output) sorted by:
+        // 1. Layer descending (rightmost first)
+        // 2. At same layer: more connections first (larger junction gets priority)
         const junctions = stations.filter(s => {
             const inCount = (inEdges.get(s.id) || []).length;
             const outCount = (outEdges.get(s.id) || []).length;
             return inCount > 1 || outCount > 1;
         });
-        junctions.sort((a, b) => (layer.get(b.id) || 0) - (layer.get(a.id) || 0));
+        junctions.sort((a, b) => {
+            const layerDiff = (layer.get(b.id) || 0) - (layer.get(a.id) || 0);
+            if (layerDiff !== 0) return layerDiff;
+            const connA = (inEdges.get(a.id) || []).length + (outEdges.get(a.id) || []).length;
+            const connB = (inEdges.get(b.id) || []).length + (outEdges.get(b.id) || []).length;
+            return connB - connA;
+        });
 
         // Process each junction: determine its Y, spread its branches
         junctions.forEach(j => {
@@ -578,8 +586,11 @@ class ScenarioEditor {
                 }
             }
             if (jY === undefined) {
-                // First junction processed (rightmost): center based on input count
-                jY = (Math.max(pIn.length, pOut.length) - 1) / 2;
+                // No context from neighbors: place below all assigned Y values
+                const allYs = Array.from(yOrder.values());
+                const maxUsedY = allYs.length > 0 ? Math.max(...allYs) : -1;
+                const branchCount = Math.max(pIn.length, pOut.length);
+                jY = maxUsedY + 1 + (branchCount - 1) / 2;
             }
             yOrder.set(jId, jY);
 
