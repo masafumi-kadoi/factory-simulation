@@ -5,7 +5,7 @@ class ScenarioList {
     constructor() {
         this.localScenarios = [];
         this.apiScenarios = [];
-        this.currentSort = 'name'; // 'name', 'createdAt', 'updatedAt'
+        this.currentSort = 'updatedAt'; // 'name', 'createdAt', 'updatedAt'
         this._init();
     }
 
