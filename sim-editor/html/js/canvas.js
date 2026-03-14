@@ -652,6 +652,7 @@ export class Canvas {
     }
 
     render() {
+        if (!this.editor.scenario) return;
         this._renderGhost();
         this._renderGrid();
         this._renderConnections();

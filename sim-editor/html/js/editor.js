@@ -73,6 +73,10 @@ class ScenarioEditor {
         // Initialize menu bar (must be before _loadScenario so #scenario-name input exists)
         this.menuBar = new MenuBar(document.getElementById('menubar'), this);
 
+        // Load scenario first (must complete before any render)
+        await this._loadScenario();
+        if (!this.scenario) return; // redirect happened
+
         // Initialize canvas and properties panel
         this.canvas = new Canvas(document.getElementById('canvas'), this);
         this.canvas.snapToGrid = this._gridSnap;
@@ -85,9 +89,6 @@ class ScenarioEditor {
 
         // Setup event listeners
         this._setupEventListeners();
-
-        // Load scenario (after all UI components are initialized)
-        await this._loadScenario();
 
         // Render
         this._render();

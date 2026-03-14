@@ -8,6 +8,8 @@ export class ContextMenu {
 
     show(clientX, clientY, items) {
         this.hide();
+        this._justShown = true;
+        requestAnimationFrame(() => { this._justShown = false; });
         const el = document.createElement('div');
         el.className = 'context-menu';
 
@@ -69,7 +71,9 @@ export class ContextMenu {
 
     _setupGlobalHide() {
         document.addEventListener('click', () => this.hide());
-        document.addEventListener('contextmenu', () => this.hide());
+        document.addEventListener('contextmenu', () => {
+            if (!this._justShown) this.hide();
+        });
     }
 
     // Build menu items for station right-click

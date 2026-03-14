@@ -59,6 +59,7 @@ export class Minimap {
     }
 
     _getBounds() {
+        if (!this.editor.scenario) return null;
         const stations = this.editor.scenario.stations;
         if (stations.length === 0) return null;
 
@@ -82,7 +83,7 @@ export class Minimap {
     }
 
     render() {
-        if (!this._visible) return;
+        if (!this._visible || !this.editor.scenario) return;
 
         const ctx = this._ctx;
         const cw = this._canvas.width;
