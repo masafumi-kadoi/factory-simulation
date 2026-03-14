@@ -1,5 +1,5 @@
 // Canvas rendering and interaction
-import { MoveStationCommand } from './undo.js';
+import { MoveStationCommand, MoveMultipleStationsCommand } from './undo.js';
 
 export class Canvas {
     constructor(svg, editor) {
@@ -7,6 +7,7 @@ export class Canvas {
         this.editor = editor;
         this.stationsLayer = document.getElementById('stations-layer');
         this.connectionsLayer = document.getElementById('connections-layer');
+        this.gridLayer = document.getElementById('grid-layer');
 
         // Drag state
         this.draggedStation = null;
@@ -39,6 +40,14 @@ export class Canvas {
         this.gridSize = 20;
         this.snapToGrid = true;
 
+        // Rectangle selection state
+        this.isRectSelecting = false;
+        this.rectSelectStart = { x: 0, y: 0 };
+        this.rectSelectRect = null;
+
+        // Multi-drag state
+        this.multiDragStartPositions = new Map(); // stationId -> {x, y}
+
         this._setupEventListeners();
         this._updateViewBox();
     }
@@ -50,13 +59,14 @@ export class Canvas {
         this.svg.addEventListener('mousemove', (e) => this._handleMouseMove(e));
         this.svg.addEventListener('mouseup', (e) => this._handleMouseUp(e));
         this.svg.addEventListener('wheel', (e) => this._handleWheel(e));
-        this.svg.addEventListener('contextmenu', (e) => e.preventDefault()); // Disable context menu
+        this.svg.addEventListener('contextmenu', (e) => this._handleContextMenu(e));
     }
 
     _updateViewBox() {
         this.svg.setAttribute('viewBox',
             `${this.viewBox.x} ${this.viewBox.y} ${this.viewBox.width} ${this.viewBox.height}`
         );
+        if (this.editor.minimap) this.editor.minimap.render();
     }
 
     _snapToGrid(value) {
@@ -101,7 +111,13 @@ export class Canvas {
 
         if (stationId) {
             if (tool === 'select') {
-                this.editor.selectItem({ type: 'station', id: stationId });
+                if (e.shiftKey) {
+                    this.editor.addToSelection(stationId);
+                } else if (e.metaKey || e.ctrlKey) {
+                    this.editor.toggleInSelection(stationId);
+                } else {
+                    this.editor.selectItem({ type: 'station', id: stationId });
+                }
             } else if (tool === 'connect') {
                 this._handleConnectClick(stationId);
             } else if (tool === 'delete') {
@@ -124,6 +140,34 @@ export class Canvas {
             } else if (tool === 'select') {
                 this.editor.selectItem(null);
             }
+        }
+    }
+
+    _handleContextMenu(e) {
+        e.preventDefault();
+        const target = e.target;
+        const pt = this._getSVGPoint(e);
+        const contextMenu = this.editor.contextMenu;
+        if (!contextMenu) return;
+
+        const stationEl = target.closest('.station');
+        const connectionEl = target.closest('.connection');
+
+        if (stationEl) {
+            const stationId = stationEl.dataset.stationId;
+            // Ensure right-clicked station is selected
+            if (!this.editor.isStationSelected(stationId)) {
+                this.editor.selectItem({ type: 'station', id: stationId });
+            }
+            contextMenu.show(e.clientX, e.clientY, contextMenu.stationItems(stationId));
+        } else if (connectionEl) {
+            const connectionIndex = parseInt(connectionEl.dataset.connectionIndex);
+            this.editor.selectItem({ type: 'connection', index: connectionIndex });
+            contextMenu.show(e.clientX, e.clientY, contextMenu.connectionItems(connectionIndex));
+        } else {
+            // Empty canvas - store SVG coordinates for paste position
+            this.editor._contextMenuSVGPoint = { x: pt.x, y: pt.y };
+            contextMenu.show(e.clientX, e.clientY, contextMenu.canvasItems());
         }
     }
 
@@ -299,17 +343,36 @@ export class Canvas {
                 const stationData = this.editor.getStation(stationId);
                 if (!stationData) return;
 
+                // If the station isn't in the current selection, select it alone first
+                if (!this.editor.isStationSelected(stationId)) {
+                    this.editor.selectItem({ type: 'station', id: stationId });
+                }
+
+                // Setup drag for all selected stations
                 this.draggedStation = stationId;
                 this.dragOffset = {
                     x: pt.x - stationData.x,
                     y: pt.y - stationData.y
                 };
-                // Store initial position for undo
                 this.dragStartPos = {
                     x: stationData.x,
                     y: stationData.y
                 };
+                // Store start positions for all selected stations (multi-drag)
+                this.multiDragStartPositions.clear();
+                for (const sid of this.editor.selectedStationIds) {
+                    const s = this.editor.getStation(sid);
+                    if (s) this.multiDragStartPositions.set(sid, { x: s.x, y: s.y });
+                }
 
+                e.preventDefault();
+                return;
+            }
+
+            // Rectangle selection: mousedown on empty space in select mode
+            if (!station && !portSlot && this.editor.currentTool === 'select' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+                this.isRectSelecting = true;
+                this.rectSelectStart = { x: pt.x, y: pt.y };
                 e.preventDefault();
                 return;
             }
@@ -364,16 +427,55 @@ export class Canvas {
             return;
         }
 
-        // Handle station drag
+        // Handle station drag (multi-drag support)
         if (this.draggedStation) {
             let newX = pt.x - this.dragOffset.x;
             let newY = pt.y - this.dragOffset.y;
-
-            // Apply grid snap
             newX = this._snapToGrid(newX);
             newY = this._snapToGrid(newY);
 
-            this.editor.moveStation(this.draggedStation, newX, newY);
+            // Alignment guide snapping
+            if (this.editor._alignmentGuide) {
+                const threshold = 5 / this.zoom;
+                const selected = this.editor.selectedStationIds;
+                const others = this.editor.scenario.stations.filter(s => !selected.has(s.id));
+                let snapX = null, snapY = null;
+                for (const other of others) {
+                    if (snapX === null && Math.abs(newX - other.x) < threshold) snapX = other.x;
+                    if (snapY === null && Math.abs(newY - other.y) < threshold) snapY = other.y;
+                }
+                if (snapX !== null) newX = snapX;
+                if (snapY !== null) newY = snapY;
+                this._drawAlignmentGuides(newX, newY, snapX !== null, snapY !== null);
+            } else {
+                this._clearAlignmentGuides();
+            }
+
+            const primary = this.editor.getStation(this.draggedStation);
+            if (primary) {
+                const dx = newX - primary.x;
+                const dy = newY - primary.y;
+                // Move all selected stations by the same delta
+                for (const sid of this.editor.selectedStationIds) {
+                    const s = this.editor.getStation(sid);
+                    if (s) {
+                        s.x += dx;
+                        s.y += dy;
+                    }
+                }
+                this.editor.canvas.render();
+            }
+            return;
+        }
+
+        // Handle rectangle selection
+        if (this.isRectSelecting) {
+            const x = Math.min(this.rectSelectStart.x, pt.x);
+            const y = Math.min(this.rectSelectStart.y, pt.y);
+            const w = Math.abs(pt.x - this.rectSelectStart.x);
+            const h = Math.abs(pt.y - this.rectSelectStart.y);
+            this._drawSelectionRect(x, y, w, h);
+            return;
         }
     }
 
@@ -433,28 +535,65 @@ export class Canvas {
             return;
         }
 
-        // Handle station drag end
+        // Handle station drag end (multi-drag aware)
         if (this.draggedStation) {
-            const stationData = this.editor.getStation(this.draggedStation);
-            if (stationData) {
-                // Check if position actually changed
-                if (stationData.x !== this.dragStartPos.x || stationData.y !== this.dragStartPos.y) {
-                    // Create move command for undo/redo
+            // Check if any station actually moved
+            let moved = false;
+            for (const [sid, startPos] of this.multiDragStartPositions) {
+                const s = this.editor.getStation(sid);
+                if (s && (s.x !== startPos.x || s.y !== startPos.y)) { moved = true; break; }
+            }
+            if (moved && this.multiDragStartPositions.size > 1) {
+                // Multi-station move: create a batch undo command
+                const moves = [];
+                for (const [sid, startPos] of this.multiDragStartPositions) {
+                    const s = this.editor.getStation(sid);
+                    if (s) moves.push({ id: sid, fromX: startPos.x, fromY: startPos.y, toX: s.x, toY: s.y });
+                }
+                const command = new MoveMultipleStationsCommand(this.editor, moves);
+                this.editor.commandManager.undoStack.push(command);
+                this.editor.commandManager.redoStack = [];
+            } else if (moved) {
+                // Single station move
+                const stationData = this.editor.getStation(this.draggedStation);
+                if (stationData) {
                     const command = new MoveStationCommand(
-                        this.editor,
-                        this.draggedStation,
-                        this.dragStartPos.x,
-                        this.dragStartPos.y,
-                        stationData.x,
-                        stationData.y
+                        this.editor, this.draggedStation,
+                        this.dragStartPos.x, this.dragStartPos.y,
+                        stationData.x, stationData.y
                     );
-                    // Add to command history without executing (already moved during drag)
                     this.editor.commandManager.undoStack.push(command);
                     this.editor.commandManager.redoStack = [];
-                    this.editor._updateUndoRedoButtons();
                 }
             }
             this.draggedStation = null;
+            this.multiDragStartPositions.clear();
+            this._clearAlignmentGuides();
+            return;
+        }
+
+        // Handle rectangle selection end
+        if (this.isRectSelecting) {
+            this.isRectSelecting = false;
+            this._removeSelectionRect();
+            const pt = this._getSVGPoint(e);
+            const x1 = Math.min(this.rectSelectStart.x, pt.x);
+            const y1 = Math.min(this.rectSelectStart.y, pt.y);
+            const x2 = Math.max(this.rectSelectStart.x, pt.x);
+            const y2 = Math.max(this.rectSelectStart.y, pt.y);
+            // Select all stations within rectangle
+            const stationW = 160, stationH = 60;
+            const ids = this.editor.scenario.stations
+                .filter(s => {
+                    const cx = s.x + stationW / 2;
+                    const cy = s.y + stationH / 2;
+                    return cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2;
+                })
+                .map(s => s.id);
+            if (ids.length > 0) {
+                this.editor.setSelection(ids);
+            }
+            return;
         }
     }
 
@@ -513,8 +652,82 @@ export class Canvas {
     }
 
     render() {
+        this._renderGhost();
+        this._renderGrid();
         this._renderConnections();
         this._renderStations();
+    }
+
+    _renderGhost() {
+        const ghostLayer = document.getElementById('ghost-layer');
+        if (!ghostLayer) return;
+        ghostLayer.innerHTML = '';
+
+        if (!this.editor.isInSubScenario()) return;
+        const stack = this.editor._editStack;
+        if (stack.length === 0) return;
+
+        const parentScenario = stack[stack.length - 1].scenario;
+        if (!parentScenario) return;
+
+        // Draw parent stations as simple rectangles
+        parentScenario.stations.forEach(s => {
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            const hw = s.type === 'moduler' ? 50 : 40;
+            rect.setAttribute('x', s.x - hw);
+            rect.setAttribute('y', s.y - 30);
+            rect.setAttribute('width', hw * 2);
+            rect.setAttribute('height', 60);
+            rect.setAttribute('rx', 8);
+            rect.setAttribute('fill', '#888');
+            rect.setAttribute('stroke', '#666');
+            rect.setAttribute('stroke-width', 1);
+            ghostLayer.appendChild(rect);
+        });
+
+        // Draw parent connections
+        parentScenario.connections.forEach(c => {
+            const from = parentScenario.stations.find(s => s.id === c.from);
+            const to = parentScenario.stations.find(s => s.id === c.to);
+            if (!from || !to) return;
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', from.x);
+            line.setAttribute('y1', from.y);
+            line.setAttribute('x2', to.x);
+            line.setAttribute('y2', to.y);
+            line.setAttribute('stroke', '#888');
+            line.setAttribute('stroke-width', 1);
+            ghostLayer.appendChild(line);
+        });
+    }
+
+    _renderGrid() {
+        this.gridLayer.innerHTML = '';
+        if (!this.snapToGrid) return;
+
+        const gs = this.gridSize;
+        const vb = this.viewBox;
+        const startX = Math.floor(vb.x / gs) * gs;
+        const startY = Math.floor(vb.y / gs) * gs;
+        const endX = vb.x + vb.width;
+        const endY = vb.y + vb.height;
+
+        // Use a single path for performance
+        let d = '';
+        for (let x = startX; x <= endX; x += gs) {
+            d += `M${x} ${startY}V${endY}`;
+        }
+        for (let y = startY; y <= endY; y += gs) {
+            d += `M${startX} ${y}H${endX}`;
+        }
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('stroke', 'var(--border-color-light, #eee)');
+        path.setAttribute('stroke-width', 0.5 / this.zoom);
+        path.setAttribute('fill', 'none');
+        path.style.pointerEvents = 'none';
+        this.gridLayer.appendChild(path);
     }
 
     _renderStations() {
@@ -525,8 +738,7 @@ export class Canvas {
             g.classList.add('station', `station-${station.type}`);
             g.dataset.stationId = station.id;
 
-            const isSelected = this.editor.selectedItem?.type === 'station' &&
-                               this.editor.selectedItem.id === station.id;
+            const isSelected = this.editor.isStationSelected(station.id);
             if (isSelected) {
                 g.classList.add('selected');
             }
@@ -950,70 +1162,190 @@ export class Canvas {
         }
     }
 
+    _getConnectionEndpoints(connection) {
+        const fromStation = this.editor.getStation(connection.from);
+        const toStation = this.editor.getStation(connection.to);
+        if (!fromStation || !toStation) return null;
+
+        let x1, y1;
+        if (connection.fromPortIndex >= 0 && (fromStation.type === 'split' || fromStation.type === 'moduler')) {
+            const bufPos = this._getPortPosition(connection.from, connection.fromPortIndex, 'output');
+            if (bufPos) { x1 = bufPos.x; y1 = bufPos.y; }
+            else { x1 = fromStation.x + 40; y1 = fromStation.y; }
+        } else {
+            const targetX = (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler'))
+                ? (toStation.x - 40 - 40) : toStation.x;
+            const halfW = fromStation.type === 'moduler' ? 50 : 40;
+            x1 = targetX >= fromStation.x ? fromStation.x + halfW : fromStation.x - halfW;
+            y1 = fromStation.y;
+        }
+
+        let x2, y2;
+        if (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler')) {
+            const bufPos = this._getPortPosition(connection.to, connection.toPortIndex, 'input');
+            if (bufPos) { x2 = bufPos.x; y2 = bufPos.y; }
+            else { x2 = toStation.x - 40; y2 = toStation.y; }
+        } else {
+            const halfW = toStation.type === 'moduler' ? 50 : 40;
+            x2 = x1 <= toStation.x ? toStation.x - halfW : toStation.x + halfW;
+            y2 = toStation.y;
+        }
+
+        return { x1, y1, x2, y2 };
+    }
+
     _renderConnections() {
         this.connectionsLayer.innerHTML = '';
+        const lineStyle = this.editor.getLineStyle();
 
         this.editor.scenario.connections.forEach((connection, index) => {
-            const fromStation = this.editor.getStation(connection.from);
-            const toStation = this.editor.getStation(connection.to);
-
-            if (!fromStation || !toStation) return;
+            const pts = this._getConnectionEndpoints(connection);
+            if (!pts) return;
 
             const isSelected = this.editor.selectedItem?.type === 'connection' &&
                                this.editor.selectedItem.index === index;
 
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.classList.add('connection');
-            if (isSelected) {
-                line.classList.add('selected');
-            }
-            line.dataset.connectionIndex = index;
-
-            // Determine start point
-            let x1, y1;
-            if (connection.fromPortIndex >= 0 && (fromStation.type === 'split' || fromStation.type === 'moduler')) {
-                const bufPos = this._getPortPosition(connection.from, connection.fromPortIndex, 'output');
-                if (bufPos) {
-                    x1 = bufPos.x;
-                    y1 = bufPos.y;
-                } else {
-                    x1 = fromStation.x + 40;
-                    y1 = fromStation.y;
-                }
+            let el;
+            if (lineStyle === 'straight') {
+                el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                el.setAttribute('x1', pts.x1);
+                el.setAttribute('y1', pts.y1);
+                el.setAttribute('x2', pts.x2);
+                el.setAttribute('y2', pts.y2);
+            } else if (lineStyle === 'bezier') {
+                el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                const dx = Math.abs(pts.x2 - pts.x1) * 0.5;
+                const dirFrom = pts.x2 >= pts.x1 ? 1 : -1;
+                const dirTo = pts.x1 >= pts.x2 ? -1 : -1;
+                const cp1x = pts.x1 + dx * dirFrom;
+                const cp2x = pts.x2 - dx * dirFrom;
+                el.setAttribute('d', `M${pts.x1},${pts.y1} C${cp1x},${pts.y1} ${cp2x},${pts.y2} ${pts.x2},${pts.y2}`);
+                el.setAttribute('fill', 'none');
             } else {
-                // Choose the nearest edge based on relative position to target
-                const targetX = (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler'))
-                    ? (toStation.x - 40 - 40) // approximate port left edge
-                    : toStation.x;
-                const halfW = fromStation.type === 'moduler' ? 50 : 40;
-                x1 = targetX >= fromStation.x ? fromStation.x + halfW : fromStation.x - halfW;
-                y1 = fromStation.y;
+                // orthogonal
+                el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                const midX = (pts.x1 + pts.x2) / 2;
+                el.setAttribute('d', `M${pts.x1},${pts.y1} H${midX} V${pts.y2} H${pts.x2}`);
+                el.setAttribute('fill', 'none');
             }
 
-            // Determine end point
-            let x2, y2;
-            if (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler')) {
-                const bufPos = this._getPortPosition(connection.to, connection.toPortIndex, 'input');
-                if (bufPos) {
-                    x2 = bufPos.x;
-                    y2 = bufPos.y;
-                } else {
-                    x2 = toStation.x - 40;
-                    y2 = toStation.y;
-                }
-            } else {
-                // Choose the nearest edge based on relative position to source
-                const halfW = toStation.type === 'moduler' ? 50 : 40;
-                x2 = x1 <= toStation.x ? toStation.x - halfW : toStation.x + halfW;
-                y2 = toStation.y;
-            }
-
-            line.setAttribute('x1', x1);
-            line.setAttribute('y1', y1);
-            line.setAttribute('x2', x2);
-            line.setAttribute('y2', y2);
-
-            this.connectionsLayer.appendChild(line);
+            el.classList.add('connection');
+            if (isSelected) el.classList.add('selected');
+            el.dataset.connectionIndex = index;
+            this.connectionsLayer.appendChild(el);
         });
+    }
+
+    fitToScreen() {
+        const stations = this.editor.scenario.stations;
+        if (stations.length === 0) return;
+
+        // Calculate bounding box of all stations
+        const halfW = 50; // max half-width (moduler)
+        const halfH = 30;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        stations.forEach(s => {
+            minX = Math.min(minX, s.x - halfW);
+            minY = Math.min(minY, s.y - halfH);
+            maxX = Math.max(maxX, s.x + halfW);
+            maxY = Math.max(maxY, s.y + halfH);
+        });
+
+        const padding = 80;
+        const targetX = minX - padding;
+        const targetY = minY - padding;
+        const targetW = (maxX - minX) + padding * 2;
+        const targetH = (maxY - minY) + padding * 2;
+
+        // Maintain aspect ratio based on SVG element size
+        const svgRect = this.svg.getBoundingClientRect();
+        const svgAspect = svgRect.width / svgRect.height;
+        const contentAspect = targetW / targetH;
+
+        let finalW, finalH, finalX, finalY;
+        if (contentAspect > svgAspect) {
+            // Content is wider - fit to width
+            finalW = targetW;
+            finalH = targetW / svgAspect;
+            finalX = targetX;
+            finalY = targetY - (finalH - targetH) / 2;
+        } else {
+            // Content is taller - fit to height
+            finalH = targetH;
+            finalW = targetH * svgAspect;
+            finalX = targetX - (finalW - targetW) / 2;
+            finalY = targetY;
+        }
+
+        // Animate from current viewBox to target
+        const startVB = { ...this.viewBox };
+        const endVB = { x: finalX, y: finalY, width: finalW, height: finalH };
+        const duration = 300;
+        const startTime = performance.now();
+
+        const animate = (now) => {
+            const t = Math.min((now - startTime) / duration, 1);
+            const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+            this.viewBox.x = startVB.x + (endVB.x - startVB.x) * ease;
+            this.viewBox.y = startVB.y + (endVB.y - startVB.y) * ease;
+            this.viewBox.width = startVB.width + (endVB.width - startVB.width) * ease;
+            this.viewBox.height = startVB.height + (endVB.height - startVB.height) * ease;
+            this._updateViewBox();
+            if (t < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                this.zoom = svgRect.width / finalW;
+            }
+        };
+        requestAnimationFrame(animate);
+    }
+
+    _drawAlignmentGuides(x, y, hasX, hasY) {
+        this._clearAlignmentGuides();
+        const vb = this.viewBox;
+        if (hasX) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.classList.add('alignment-guide');
+            line.setAttribute('x1', x);
+            line.setAttribute('y1', vb.y);
+            line.setAttribute('x2', x);
+            line.setAttribute('y2', vb.y + vb.height);
+            this.svg.appendChild(line);
+        }
+        if (hasY) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.classList.add('alignment-guide');
+            line.setAttribute('x1', vb.x);
+            line.setAttribute('y1', y);
+            line.setAttribute('x2', vb.x + vb.width);
+            line.setAttribute('y2', y);
+            this.svg.appendChild(line);
+        }
+    }
+
+    _clearAlignmentGuides() {
+        this.svg.querySelectorAll('.alignment-guide').forEach(el => el.remove());
+    }
+
+    _drawSelectionRect(x, y, w, h) {
+        this._removeSelectionRect();
+        this.rectSelectRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        this.rectSelectRect.setAttribute('x', x);
+        this.rectSelectRect.setAttribute('y', y);
+        this.rectSelectRect.setAttribute('width', w);
+        this.rectSelectRect.setAttribute('height', h);
+        this.rectSelectRect.setAttribute('fill', 'rgba(74, 158, 255, 0.1)');
+        this.rectSelectRect.setAttribute('stroke', '#4a9eff');
+        this.rectSelectRect.setAttribute('stroke-width', '1');
+        this.rectSelectRect.setAttribute('stroke-dasharray', '5,3');
+        this.rectSelectRect.style.pointerEvents = 'none';
+        this.svg.appendChild(this.rectSelectRect);
+    }
+
+    _removeSelectionRect() {
+        if (this.rectSelectRect) {
+            this.rectSelectRect.remove();
+            this.rectSelectRect = null;
+        }
     }
 }

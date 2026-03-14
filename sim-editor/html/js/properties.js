@@ -33,11 +33,25 @@ export class PropertiesPanel {
 
         if (!selected) {
             this._renderScenarioInfo();
+        } else if (selected.type === 'multi') {
+            this._renderMultiSelection();
         } else if (selected.type === 'station') {
             this._renderStationProperties(selected.id);
         } else if (selected.type === 'connection') {
             this._renderConnectionProperties(selected.index);
         }
+    }
+
+    _renderMultiSelection() {
+        const count = this.editor.selectedStationIds.size;
+        this.container.innerHTML = `
+            <div class="empty-properties">
+                <p>${count}個選択中</p>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                    ドラッグで一括移動 | Delete で一括削除
+                </div>
+            </div>
+        `;
     }
 
     _renderScenarioInfo() {

@@ -176,6 +176,64 @@ export class MoveStationCommand {
     }
 }
 
+// Command: Move Multiple Stations
+export class MoveMultipleStationsCommand {
+    constructor(editor, moves) {
+        this.editor = editor;
+        this.moves = moves; // [{id, fromX, fromY, toX, toY}, ...]
+    }
+
+    execute() {
+        this.moves.forEach(m => {
+            const s = this.editor.scenario.stations.find(s => s.id === m.id);
+            if (s) { s.x = m.toX; s.y = m.toY; }
+        });
+        this.editor._markDirty();
+        this.editor._render();
+    }
+
+    undo() {
+        this.moves.forEach(m => {
+            const s = this.editor.scenario.stations.find(s => s.id === m.id);
+            if (s) { s.x = m.fromX; s.y = m.fromY; }
+        });
+        this.editor._markDirty();
+        this.editor._render();
+    }
+}
+
+// Command: Delete Multiple Stations
+export class DeleteMultipleStationsCommand {
+    constructor(editor, stationIds) {
+        this.editor = editor;
+        this.stationIds = stationIds;
+        this.stations = [];
+        this.connections = [];
+    }
+
+    execute() {
+        const idSet = new Set(this.stationIds);
+        this.stations = this.editor.scenario.stations.filter(s => idSet.has(s.id));
+        this.connections = this.editor.scenario.connections.filter(
+            c => idSet.has(c.from) || idSet.has(c.to)
+        );
+        this.editor.scenario.stations = this.editor.scenario.stations.filter(s => !idSet.has(s.id));
+        this.editor.scenario.connections = this.editor.scenario.connections.filter(
+            c => !idSet.has(c.from) && !idSet.has(c.to)
+        );
+        this.editor.selectItem(null);
+        this.editor._markDirty();
+        this.editor._render();
+    }
+
+    undo() {
+        this.editor.scenario.stations.push(...this.stations);
+        this.editor.scenario.connections.push(...this.connections);
+        this.editor._markDirty();
+        this.editor._render();
+    }
+}
+
 // Command: Add Connection
 export class AddConnectionCommand {
     constructor(editor, connection) {

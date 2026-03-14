@@ -5,12 +5,20 @@ import { validateScenario, validateStation } from './validation.js';
 import { apiClient } from './api.js';
 import { TooltipManager } from './tooltip.js';
 import { InterlockModal } from './interlock-modal.js';
+import { MenuBar } from './menubar.js';
+import { ThemeManager } from './theme.js';
+import { Clipboard } from './clipboard.js';
+import { ContextMenu } from './context-menu.js';
+import { Minimap } from './minimap.js';
+import { SearchBar } from './search.js';
 import {
     CommandManager,
     AddStationCommand,
     DeleteStationCommand,
     UpdateStationCommand,
     MoveStationCommand,
+    MoveMultipleStationsCommand,
+    DeleteMultipleStationsCommand,
     AddConnectionCommand,
     DeleteConnectionCommand
 } from './undo.js';
@@ -20,15 +28,28 @@ class ScenarioEditor {
         this.scenarioId = null;
         this.scenario = null;
         this.currentTool = 'select';
-        this.selectedItem = null;
+        this.selectedItem = null;        // Single selection (backward compat): {type:'station',id} or {type:'connection',index}
+        this.selectedStationIds = new Set(); // Multi-select: set of station IDs
         this.dirty = false;
         this.savedToAPI = false; // Track if scenario was saved to API
 
         this.canvas = null;
         this.propertiesPanel = null;
+        this.menuBar = null;
+        this.themeManager = new ThemeManager();
+        this.clipboard = new Clipboard(this);
+        this.contextMenu = new ContextMenu(this);
+        this.minimap = null;
+        this.searchBar = null;
         this.interlockModal = new InterlockModal();
         this.commandManager = new CommandManager(this);
         this.tooltipManager = new TooltipManager();
+
+        // Settings
+        this._lineStyle = localStorage.getItem('sim-editor-line-style') || 'bezier';
+        this._minimapVisible = localStorage.getItem('sim-editor-minimap') !== 'false';
+        this._gridSnap = localStorage.getItem('sim-editor-grid-snap') === 'true';
+        this._alignmentGuide = localStorage.getItem('sim-editor-alignment-guide') !== 'false';
 
         // Drill-down state for ModulerStation editing
         this._editStack = []; // Stack of { scenario, selectedItem, commandManager }
@@ -52,10 +73,18 @@ class ScenarioEditor {
         // Load scenario
         this._loadScenario();
 
+        // Initialize menu bar
+        this.menuBar = new MenuBar(document.getElementById('menubar'), this);
+
         // Initialize canvas and properties panel
         this.canvas = new Canvas(document.getElementById('canvas'), this);
+        this.canvas.snapToGrid = this._gridSnap;
         this.propertiesPanel = new PropertiesPanel(document.getElementById('properties-content'), this);
         this.propertiesPanel.setInterlockModal(this.interlockModal);
+
+        // Initialize minimap and search
+        this.minimap = new Minimap(this);
+        this.searchBar = new SearchBar(this);
 
         // Setup event listeners
         this._setupEventListeners();
@@ -117,99 +146,84 @@ class ScenarioEditor {
     }
 
     _setupEventListeners() {
-        // Back button
-        document.getElementById('back-btn').addEventListener('click', () => {
-            if (this.dirty && !confirm('保存していない変更があります。戻りますか？')) {
-                return;
-            }
-            window.location.href = 'index.html';
-        });
-
-        // Save button
-        document.getElementById('save-btn').addEventListener('click', () => {
-            this._saveScenario();
-        });
-
-        // Export button
-        document.getElementById('export-btn').addEventListener('click', () => {
-            this._exportJSON();
-        });
-
-        // Import button
-        document.getElementById('import-btn').addEventListener('click', () => {
-            document.getElementById('file-input').click();
-        });
-
         // File input
         document.getElementById('file-input').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
                 this._importJSON(file);
             }
-            e.target.value = ''; // Reset file input
-        });
-
-        // Undo button
-        document.getElementById('undo-btn').addEventListener('click', () => {
-            if (this.commandManager.undo()) {
-                this._updateUndoRedoButtons();
-            }
-        });
-
-        // Redo button
-        document.getElementById('redo-btn').addEventListener('click', () => {
-            if (this.commandManager.redo()) {
-                this._updateUndoRedoButtons();
-            }
+            e.target.value = '';
         });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            // Don't trigger shortcuts when typing in input fields
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                // Allow Cmd+S even in input fields
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    this._saveScenario();
+                }
                 return;
             }
 
             // Ctrl+Z / Cmd+Z for Undo
             if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
                 e.preventDefault();
-                if (this.commandManager.undo()) {
-                    this._updateUndoRedoButtons();
-                }
+                this.triggerUndo();
             }
             // Ctrl+Shift+Z / Cmd+Shift+Z for Redo
             if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
                 e.preventDefault();
-                if (this.commandManager.redo()) {
-                    this._updateUndoRedoButtons();
-                }
+                this.triggerRedo();
             }
             // Ctrl+Y / Cmd+Y for Redo (alternative)
             if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
                 e.preventDefault();
-                if (this.commandManager.redo()) {
-                    this._updateUndoRedoButtons();
-                }
+                this.triggerRedo();
+            }
+            // Ctrl+C / Cmd+C for Copy
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+                e.preventDefault();
+                this.triggerCopy();
+            }
+            // Ctrl+X / Cmd+X for Cut
+            if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+                e.preventDefault();
+                this.triggerCut();
+            }
+            // Ctrl+V / Cmd+V for Paste
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+                e.preventDefault();
+                this.triggerPaste();
             }
             // Ctrl+S / Cmd+S for Save
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 this._saveScenario();
             }
-            // Ctrl+E / Cmd+E for Export
-            if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+            // Ctrl+0 / Cmd+0 for Fit to Screen
+            if ((e.ctrlKey || e.metaKey) && e.key === '0') {
                 e.preventDefault();
-                this._exportJSON();
+                this.triggerFitToScreen();
             }
-            // Ctrl+I / Cmd+I for Import
-            if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+            // Ctrl+F / Cmd+F for Search
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
                 e.preventDefault();
-                document.getElementById('file-input').click();
+                if (this.searchBar) this.searchBar.toggle();
             }
-            // Delete key to delete selected item
+            // Ctrl+A / Cmd+A for Select All
+            if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+                e.preventDefault();
+                this.selectAll();
+            }
+            // Delete key to delete selected item(s)
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 e.preventDefault();
-                if (this.selectedItem) {
+                if (this.selectedStationIds.size > 1) {
+                    if (confirm(`${this.selectedStationIds.size}個のステーションを削除しますか？`)) {
+                        this.deleteMultipleStations([...this.selectedStationIds]);
+                    }
+                } else if (this.selectedItem) {
                     if (this.selectedItem.type === 'station') {
                         if (confirm('このステーションを削除しますか？')) {
                             this.deleteStation(this.selectedItem.id);
@@ -222,41 +236,14 @@ class ScenarioEditor {
                 }
             }
             // Tool shortcuts: V=Select, C=Connect, D=Delete, S=Source, P=Processing, R=Drain
-            if (e.key === 'v' || e.key === 'V') {
-                e.preventDefault();
-                this._selectTool('select');
-            }
-            if (e.key === 'c' || e.key === 'C') {
-                e.preventDefault();
-                this._selectTool('connect');
-            }
-            if (e.key === 'd' || e.key === 'D') {
-                e.preventDefault();
-                this._selectTool('delete');
-            }
-            if (e.key === 's' && !e.ctrlKey && !e.metaKey) {
-                e.preventDefault();
-                this._selectTool('source');
-            }
-            if (e.key === 'p' || e.key === 'P') {
-                e.preventDefault();
-                this._selectTool('processing');
-            }
-            if (e.key === 'r' || e.key === 'R') {
-                e.preventDefault();
-                this._selectTool('drain');
-            }
+            if (e.key === 'v' || e.key === 'V') { e.preventDefault(); this._selectTool('select'); }
+            if (e.key === 'c' || e.key === 'C') { e.preventDefault(); this._selectTool('connect'); }
+            if (e.key === 'd' || e.key === 'D') { e.preventDefault(); this._selectTool('delete'); }
+            if (e.key === 's' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); this._selectTool('source'); }
+            if (e.key === 'p' || e.key === 'P') { e.preventDefault(); this._selectTool('processing'); }
+            if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this._selectTool('drain'); }
             // Escape to deselect
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                this.selectItem(null);
-            }
-        });
-
-        // Scenario name input
-        document.getElementById('scenario-name').addEventListener('change', (e) => {
-            this.scenario.name = e.target.value;
-            this._markDirty();
+            if (e.key === 'Escape') { e.preventDefault(); this.selectItem(null); }
         });
 
         // Tool buttons
@@ -269,15 +256,24 @@ class ScenarioEditor {
         // Setup tooltips for tool buttons
         this._setupTooltips();
 
-        // Grid snap toggle
-        document.getElementById('grid-snap-toggle').addEventListener('change', (e) => {
-            this.canvas.snapToGrid = e.target.checked;
-        });
+        // Grid snap toggle (in tool palette)
+        const gridToggle = document.getElementById('grid-snap-toggle');
+        if (gridToggle) {
+            gridToggle.checked = this._gridSnap;
+            gridToggle.addEventListener('change', (e) => {
+                this._gridSnap = e.target.checked;
+                this.canvas.snapToGrid = this._gridSnap;
+                localStorage.setItem('sim-editor-grid-snap', this._gridSnap);
+            });
+        }
 
-        // Auto layout button
-        document.getElementById('auto-layout-btn').addEventListener('click', () => {
-            this.autoLayout();
-        });
+        // Auto layout button (in tool palette)
+        const autoLayoutBtn = document.getElementById('auto-layout-btn');
+        if (autoLayoutBtn) {
+            autoLayoutBtn.addEventListener('click', () => {
+                this.autoLayout();
+            });
+        }
 
         // Prevent accidental page leave
         window.addEventListener('beforeunload', (e) => {
@@ -309,13 +305,6 @@ class ScenarioEditor {
             }
         });
 
-        // Header buttons tooltips
-        this.tooltipManager.attach(document.getElementById('back-btn'), '一覧に戻る');
-        this.tooltipManager.attach(document.getElementById('undo-btn'), '元に戻す (Ctrl+Z)');
-        this.tooltipManager.attach(document.getElementById('redo-btn'), 'やり直し (Ctrl+Shift+Z)');
-        this.tooltipManager.attach(document.getElementById('import-btn'), 'JSONインポート (Ctrl+I)');
-        this.tooltipManager.attach(document.getElementById('save-btn'), 'APIに保存 (Ctrl+S)');
-        this.tooltipManager.attach(document.getElementById('export-btn'), 'JSONエクスポート (Ctrl+E)');
     }
 
     _selectTool(tool) {
@@ -345,14 +334,16 @@ class ScenarioEditor {
     }
 
     _render() {
+        const svg = document.getElementById('canvas');
+        if (svg) svg.classList.toggle('sub-scenario', this.isInSubScenario());
         this.canvas.render();
         this.propertiesPanel.render();
         this._updateUndoRedoButtons();
+        if (this.minimap) this.minimap.render();
     }
 
     _updateUndoRedoButtons() {
-        document.getElementById('undo-btn').disabled = !this.commandManager.canUndo();
-        document.getElementById('redo-btn').disabled = !this.commandManager.canRedo();
+        // No-op: undo/redo state is checked dynamically by menu dropdown
     }
 
     addStation(type, x, y) {
@@ -666,6 +657,7 @@ class ScenarioEditor {
 
         this._markDirty();
         this._render();
+        this.triggerFitToScreen();
     }
 
     deleteStation(stationId) {
@@ -750,14 +742,292 @@ class ScenarioEditor {
         }
     }
 
+    deleteMultipleStations(stationIds) {
+        // Filter out Entry/Exit if in SubScenario
+        const filtered = stationIds.filter(id => {
+            const s = this.getStation(id);
+            if (s && (s.type === 'entry' || s.type === 'exit') && this.isInSubScenario()) return false;
+            return true;
+        });
+        if (filtered.length === 0) return;
+        const command = new DeleteMultipleStationsCommand(this, filtered);
+        this.commandManager.execute(command);
+    }
+
     selectItem(item) {
         this.selectedItem = item;
+        this.selectedStationIds.clear();
+        if (item && item.type === 'station') {
+            this.selectedStationIds.add(item.id);
+        }
         this.propertiesPanel.render();
         this.canvas.render();
     }
 
+    // Multi-select: add a station to selection
+    addToSelection(stationId) {
+        this.selectedStationIds.add(stationId);
+        if (this.selectedStationIds.size === 1) {
+            this.selectedItem = { type: 'station', id: stationId };
+        } else {
+            this.selectedItem = { type: 'multi', ids: [...this.selectedStationIds] };
+        }
+        this.propertiesPanel.render();
+        this.canvas.render();
+    }
+
+    // Multi-select: toggle a station in selection
+    toggleInSelection(stationId) {
+        if (this.selectedStationIds.has(stationId)) {
+            this.selectedStationIds.delete(stationId);
+        } else {
+            this.selectedStationIds.add(stationId);
+        }
+        if (this.selectedStationIds.size === 0) {
+            this.selectedItem = null;
+        } else if (this.selectedStationIds.size === 1) {
+            this.selectedItem = { type: 'station', id: [...this.selectedStationIds][0] };
+        } else {
+            this.selectedItem = { type: 'multi', ids: [...this.selectedStationIds] };
+        }
+        this.propertiesPanel.render();
+        this.canvas.render();
+    }
+
+    // Multi-select: set selection to a set of station IDs
+    setSelection(stationIds) {
+        this.selectedStationIds = new Set(stationIds);
+        if (this.selectedStationIds.size === 0) {
+            this.selectedItem = null;
+        } else if (this.selectedStationIds.size === 1) {
+            this.selectedItem = { type: 'station', id: [...this.selectedStationIds][0] };
+        } else {
+            this.selectedItem = { type: 'multi', ids: [...this.selectedStationIds] };
+        }
+        this.propertiesPanel.render();
+        this.canvas.render();
+    }
+
+    selectAll() {
+        const ids = this.scenario.stations.map(s => s.id);
+        this.setSelection(ids);
+    }
+
+    isStationSelected(stationId) {
+        return this.selectedStationIds.has(stationId);
+    }
+
     _markDirty() {
         this.dirty = true;
+        if (this.menuBar) this.menuBar.updateSaveIndicator('unsaved');
+    }
+
+    _markClean() {
+        this.dirty = false;
+        if (this.menuBar) this.menuBar.updateSaveIndicator('saved');
+    }
+
+    // --- MenuBar bridge methods ---
+    triggerImport() { document.getElementById('file-input').click(); }
+    triggerExport() { this._exportJSON(); }
+    triggerSave() { this._saveScenario(); }
+    triggerUndo() { if (this.commandManager.undo()) this._render(); }
+    triggerRedo() { if (this.commandManager.redo()) this._render(); }
+    triggerFitToScreen() { if (this.canvas) this.canvas.fitToScreen(); }
+    triggerZoomIn() {
+        if (!this.canvas) return;
+        const newZoom = Math.min(this.canvas.zoom * 1.2, 5);
+        this._applyZoom(newZoom);
+    }
+    triggerZoomOut() {
+        if (!this.canvas) return;
+        const newZoom = Math.max(this.canvas.zoom / 1.2, 0.1);
+        this._applyZoom(newZoom);
+    }
+    _applyZoom(newZoom) {
+        const c = this.canvas;
+        const cx = c.viewBox.x + c.viewBox.width / 2;
+        const cy = c.viewBox.y + c.viewBox.height / 2;
+        c.zoom = newZoom;
+        const newW = 2000 / newZoom;
+        const newH = 1200 / newZoom;
+        c.viewBox.width = newW;
+        c.viewBox.height = newH;
+        c.viewBox.x = cx - newW / 2;
+        c.viewBox.y = cy - newH / 2;
+        c._updateViewBox();
+    }
+    triggerCopy() { this.clipboard.copy(); }
+    triggerCut() { this.clipboard.cut(); }
+    triggerPaste() {
+        let cx, cy;
+        if (this._contextMenuSVGPoint) {
+            cx = this._contextMenuSVGPoint.x;
+            cy = this._contextMenuSVGPoint.y;
+            this._contextMenuSVGPoint = null;
+        } else {
+            // Paste at center of current viewport
+            const c = this.canvas;
+            cx = c.viewBox.x + c.viewBox.width / 2;
+            cy = c.viewBox.y + c.viewBox.height / 2;
+        }
+        this.clipboard.paste(cx, cy);
+    }
+    hasSelection() { return this.selectedStationIds.size > 0 || (this.selectedItem && this.selectedItem.type === 'connection'); }
+    hasClipboard() { return this.clipboard.hasData(); }
+
+    isAutoSave() { return this.propertiesPanel ? this.propertiesPanel.autoSave : false; }
+    toggleAutoSave() {
+        if (!this.propertiesPanel) return;
+        this.propertiesPanel.autoSave = !this.propertiesPanel.autoSave;
+        localStorage.setItem('sim-editor-autosave', this.propertiesPanel.autoSave);
+        const cb = document.getElementById('auto-save-checkbox');
+        if (cb) cb.checked = this.propertiesPanel.autoSave;
+    }
+
+    isMinimapVisible() { return this._minimapVisible; }
+    toggleMinimap() {
+        this._minimapVisible = !this._minimapVisible;
+        localStorage.setItem('sim-editor-minimap', this._minimapVisible);
+        if (this.minimap) this.minimap.setVisible(this._minimapVisible);
+    }
+
+    isGridSnap() { return this._gridSnap; }
+    toggleGridSnap() {
+        this._gridSnap = !this._gridSnap;
+        localStorage.setItem('sim-editor-grid-snap', this._gridSnap);
+        if (this.canvas) {
+            this.canvas.snapToGrid = this._gridSnap;
+            this.canvas.render();
+        }
+        const toggle = document.getElementById('grid-snap-toggle');
+        if (toggle) toggle.checked = this._gridSnap;
+    }
+
+    isAlignmentGuide() { return this._alignmentGuide; }
+    toggleAlignmentGuide() {
+        this._alignmentGuide = !this._alignmentGuide;
+        localStorage.setItem('sim-editor-alignment-guide', this._alignmentGuide);
+    }
+
+    getLineStyle() { return this._lineStyle; }
+    setLineStyle(style) {
+        this._lineStyle = style;
+        localStorage.setItem('sim-editor-line-style', style);
+        this._render();
+    }
+
+    getThemeMode() { return this.themeManager.mode; }
+    setTheme(mode) { this.themeManager.setMode(mode); }
+
+    openSimDBSettings() {
+        const simdb = this.scenario.simdbConfig || {};
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>SimDB 接続先設定</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="property-group">
+                        <label class="property-label">ホスト</label>
+                        <input type="text" class="property-input" id="modal-simdb-host" value="${this._escapeAttr(simdb.host || '')}" placeholder="localhost">
+                    </div>
+                    <div class="property-group">
+                        <label class="property-label">ポート</label>
+                        <input type="number" class="property-input" id="modal-simdb-port" value="${simdb.port || 5432}" min="1" max="65535">
+                    </div>
+                    <div class="property-group">
+                        <label class="property-label">データベース</label>
+                        <input type="text" class="property-input" id="modal-simdb-database" value="${this._escapeAttr(simdb.database || '')}" placeholder="simdb">
+                    </div>
+                    <div class="property-group">
+                        <label class="property-label">ユーザー</label>
+                        <input type="text" class="property-input" id="modal-simdb-user" value="${this._escapeAttr(simdb.user || '')}" placeholder="postgres">
+                    </div>
+                    <div class="property-group">
+                        <label class="property-label">パスワード</label>
+                        <input type="password" class="property-input" id="modal-simdb-password" value="${this._escapeAttr(simdb.password || '')}" placeholder="パスワード">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" id="modal-simdb-cancel">キャンセル</button>
+                    <button class="btn-primary" id="modal-simdb-save">保存</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+        overlay.querySelector('#modal-simdb-cancel').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        overlay.querySelector('#modal-simdb-save').addEventListener('click', () => {
+            const host = overlay.querySelector('#modal-simdb-host').value.trim();
+            const port = parseInt(overlay.querySelector('#modal-simdb-port').value) || 5432;
+            const database = overlay.querySelector('#modal-simdb-database').value.trim();
+            const user = overlay.querySelector('#modal-simdb-user').value.trim();
+            const password = overlay.querySelector('#modal-simdb-password').value;
+
+            if (!host) {
+                this.scenario.simdbConfig = null;
+            } else {
+                this.scenario.simdbConfig = { host, port, database, user, password };
+            }
+            this._markDirty();
+            this._render();
+            overlay.remove();
+        });
+    }
+
+    _escapeAttr(str) {
+        return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    openShortcutsDialog() {
+        const shortcuts = [
+            ['Cmd+S', '保存'],
+            ['Cmd+Z', '元に戻す'],
+            ['Cmd+Shift+Z', 'やり直す'],
+            ['Cmd+C', 'コピー'],
+            ['Cmd+X', 'カット'],
+            ['Cmd+V', 'ペースト'],
+            ['Cmd+A', '全選択'],
+            ['Cmd+F', '検索'],
+            ['Cmd+0', '画面にフィット'],
+            ['Delete / Backspace', '選択削除'],
+            ['Shift+クリック', '選択に追加'],
+            ['Cmd+クリック', '選択トグル'],
+            ['ドラッグ（空白）', '範囲選択'],
+            ['ダブルクリック（Moduler）', '内部編集'],
+            ['マウスホイール', 'ズーム'],
+            ['中ボタンドラッグ', 'パン'],
+            ['Esc', '選択解除 / 検索閉じる'],
+        ];
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const rows = shortcuts.map(([key, desc]) =>
+            `<tr><td class="shortcut-key">${key}</td><td>${desc}</td></tr>`
+        ).join('');
+        overlay.innerHTML = `
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>キーボードショートカット</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <table class="shortcuts-table">${rows}</table>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-primary" id="modal-shortcuts-close">閉じる</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+        overlay.querySelector('#modal-shortcuts-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     }
 
     _showSaveDialog() {
@@ -896,7 +1166,7 @@ class ScenarioEditor {
 
             localStorage.setItem('sim-editor-scenarios', JSON.stringify(scenarios));
 
-            this.dirty = false;
+            this._markClean();
             const saveType = overwrite ? '上書き保存' : '新規保存';
             alert(`${saveType}しました\nシナリオID: ${response.scenarioId || 'localStorage'}`);
         } catch (error) {
@@ -914,7 +1184,7 @@ class ScenarioEditor {
             }
 
             localStorage.setItem('sim-editor-scenarios', JSON.stringify(scenarios));
-            this.dirty = false;
+            this._markClean();
             alert('localStorageに保存しました');
         }
     }
@@ -1123,7 +1393,7 @@ class ScenarioEditor {
         // Update breadcrumb
         this._updateBreadcrumb();
 
-        this._render();
+        this._animateDrill();
     }
 
     drillUp() {
@@ -1147,7 +1417,7 @@ class ScenarioEditor {
 
         this._markDirty();
         this._updateBreadcrumb();
-        this._render();
+        this._animateDrill();
     }
 
     drillToDepth(depth) {
@@ -1169,7 +1439,21 @@ class ScenarioEditor {
 
         this._markDirty();
         this._updateBreadcrumb();
-        this._render();
+        this._animateDrill();
+    }
+
+    _animateDrill() {
+        const svg = document.getElementById('canvas');
+        if (!svg) { this._render(); return; }
+        svg.style.opacity = '0';
+        svg.style.transition = 'opacity 0.15s ease-in';
+        requestAnimationFrame(() => {
+            this._render();
+            requestAnimationFrame(() => {
+                svg.style.opacity = '1';
+                svg.style.transition = 'opacity 0.2s ease-out';
+            });
+        });
     }
 
     _autoPlaceEntryExit() {
@@ -1217,6 +1501,14 @@ class ScenarioEditor {
         rootSpan.addEventListener('click', () => this.drillToDepth(0));
         breadcrumb.appendChild(rootSpan);
 
+        // Back button
+        const backBtn = document.createElement('span');
+        backBtn.className = 'breadcrumb-back';
+        backBtn.textContent = '←';
+        backBtn.title = '戻る';
+        backBtn.addEventListener('click', () => this.drillUp());
+        breadcrumb.appendChild(backBtn);
+
         // Path items
         this._currentSubScenarioPath.forEach((stationId, i) => {
             const sep = document.createElement('span');
@@ -1229,11 +1521,36 @@ class ScenarioEditor {
             if (i === this._currentSubScenarioPath.length - 1) {
                 item.classList.add('breadcrumb-current');
             }
-            item.textContent = stationId;
+            // Show station name instead of ID
+            const parentScenario = i === 0 ? this._editStack[0].scenario : this._editStack[i].scenario;
+            const station = parentScenario?.stations?.find(s => s.id === stationId);
+            item.textContent = (station?.config?.name) || stationId;
             item.dataset.depth = String(i + 1);
             item.addEventListener('click', () => this.drillToDepth(i + 1));
             breadcrumb.appendChild(item);
         });
+
+        // Port count warning
+        this._renderPortCountWarning(breadcrumb);
+    }
+
+    _renderPortCountWarning(breadcrumb) {
+        if (!this.isInSubScenario()) return;
+        const parentStation = this.scenario._parentStation;
+        if (!parentStation) return;
+
+        const entries = this.scenario.stations.filter(s => s.type === 'entry').length;
+        const exits = this.scenario.stations.filter(s => s.type === 'exit').length;
+        const expectedIn = parentStation.config?.inputCount || 1;
+        const expectedOut = parentStation.config?.outputCount || 1;
+
+        if (entries !== expectedIn || exits !== expectedOut) {
+            const warn = document.createElement('span');
+            warn.className = 'breadcrumb-warning';
+            warn.title = `ポート数不一致: Entry=${entries}(期待${expectedIn}), Exit=${exits}(期待${expectedOut})`;
+            warn.textContent = '⚠';
+            breadcrumb.appendChild(warn);
+        }
     }
 
     isInSubScenario() {
