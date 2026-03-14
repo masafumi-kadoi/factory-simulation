@@ -70,10 +70,7 @@ class ScenarioEditor {
             return;
         }
 
-        // Load scenario
-        this._loadScenario();
-
-        // Initialize menu bar
+        // Initialize menu bar (must be before _loadScenario so #scenario-name input exists)
         this.menuBar = new MenuBar(document.getElementById('menubar'), this);
 
         // Initialize canvas and properties panel
@@ -89,18 +86,21 @@ class ScenarioEditor {
         // Setup event listeners
         this._setupEventListeners();
 
+        // Load scenario (after all UI components are initialized)
+        await this._loadScenario();
+
         // Render
         this._render();
     }
 
-    _loadScenario() {
+    async _loadScenario() {
         // Check if loading from API via scenarioId query param
         const params = new URLSearchParams(window.location.search);
         const apiScenarioId = params.get('scenarioId');
 
         if (apiScenarioId) {
             // Load from API
-            this._loadScenarioFromAPI(apiScenarioId);
+            await this._loadScenarioFromAPI(apiScenarioId);
             return;
         }
 
@@ -235,13 +235,15 @@ class ScenarioEditor {
                     }
                 }
             }
-            // Tool shortcuts: V=Select, C=Connect, D=Delete, S=Source, P=Processing, R=Drain
-            if (e.key === 'v' || e.key === 'V') { e.preventDefault(); this._selectTool('select'); }
-            if (e.key === 'c' || e.key === 'C') { e.preventDefault(); this._selectTool('connect'); }
-            if (e.key === 'd' || e.key === 'D') { e.preventDefault(); this._selectTool('delete'); }
-            if (e.key === 's' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); this._selectTool('source'); }
-            if (e.key === 'p' || e.key === 'P') { e.preventDefault(); this._selectTool('processing'); }
-            if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this._selectTool('drain'); }
+            // Tool shortcuts (only without modifier keys)
+            if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+                if (e.key === 'v') { e.preventDefault(); this._selectTool('select'); }
+                if (e.key === 'c') { e.preventDefault(); this._selectTool('connect'); }
+                if (e.key === 'd') { e.preventDefault(); this._selectTool('delete'); }
+                if (e.key === 's') { e.preventDefault(); this._selectTool('source'); }
+                if (e.key === 'p') { e.preventDefault(); this._selectTool('processing'); }
+                if (e.key === 'r') { e.preventDefault(); this._selectTool('drain'); }
+            }
             // Escape to deselect
             if (e.key === 'Escape') { e.preventDefault(); this.selectItem(null); }
         });
@@ -334,6 +336,7 @@ class ScenarioEditor {
     }
 
     _render() {
+        if (!this.scenario) return; // Not loaded yet
         const svg = document.getElementById('canvas');
         if (svg) svg.classList.toggle('sub-scenario', this.isInSubScenario());
         this.canvas.render();
