@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scenario List - Factory Simulation Editor</title>
     <link href="css/style.css" rel="stylesheet">
+    <script>
+        // Apply saved theme before render to prevent flash
+        (function() {
+            const mode = localStorage.getItem('sim-editor-theme') || 'auto';
+            const theme = mode === 'auto'
+                ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                : mode;
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
 </head>
 <body>
     <div class="list-container">

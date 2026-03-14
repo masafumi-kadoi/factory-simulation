@@ -339,11 +339,11 @@ export class PropertiesPanel {
 
         this.container.querySelector('#update-btn').addEventListener('click', saveStationConfig);
 
-        // Auto-save on blur (when input loses focus)
+        // Auto-save on input (immediate feedback)
         if (this.autoSave) {
             this.container.querySelectorAll('.property-input, select.property-input').forEach(input => {
                 if (!input.disabled) {
-                    input.addEventListener('blur', () => saveStationConfig());
+                    input.addEventListener('input', () => saveStationConfig());
                     input.addEventListener('change', () => saveStationConfig());
                 }
             });
@@ -619,11 +619,11 @@ export class PropertiesPanel {
 
         this.container.querySelector('#update-connection-btn').addEventListener('click', saveConnectionConfig);
 
-        // Auto-save on blur for connection properties
+        // Auto-save on input for connection properties
         if (this.autoSave) {
             this.container.querySelectorAll('.property-input, select.property-input').forEach(input => {
                 if (!input.disabled) {
-                    input.addEventListener('blur', () => saveConnectionConfig());
+                    input.addEventListener('input', () => saveConnectionConfig());
                     input.addEventListener('change', () => saveConnectionConfig());
                 }
             });

@@ -234,7 +234,7 @@ body {
 
 .list-header h1 {
     font-size: 1.75rem;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .list-header-actions {
@@ -252,18 +252,18 @@ body {
     display: inline-flex;
     align-items: center;
     padding: 0.5rem 1rem;
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     background: transparent;
-    color: #495057;
+    color: var(--text-secondary);
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .btn-outline:hover {
-    background: #f8f9fa;
-    border-color: #adb5bd;
+    background: var(--bg-surface-hover);
+    border-color: var(--text-muted);
 }
 
 .list-main {
@@ -280,23 +280,23 @@ body {
 
 .sort-label {
     font-size: 0.85rem;
-    color: #666;
+    color: var(--text-secondary);
     margin-right: 0.25rem;
 }
 
 .sort-btn {
     padding: 0.35rem 0.75rem;
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--border-color);
     border-radius: 4px;
-    background: white;
+    background: var(--bg-surface);
     cursor: pointer;
     font-size: 0.8rem;
-    color: #555;
+    color: var(--text-secondary);
     transition: all 0.15s ease;
 }
 
 .sort-btn:hover {
-    background: #e9ecef;
+    background: var(--bg-surface-hover);
 }
 
 .sort-btn.active {
@@ -311,8 +311,8 @@ body {
 }
 
 .scenario-card {
-    background: white;
-    border: 1px solid #dee2e6;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 1.5rem;
     transition: all 0.2s ease;
@@ -320,7 +320,7 @@ body {
 }
 
 .scenario-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
     transform: translateY(-2px);
 }
 
@@ -334,12 +334,12 @@ body {
 .scenario-card-title {
     font-size: 1.25rem;
     font-weight: 600;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .scenario-card-meta {
     font-size: 0.875rem;
-    color: #6c757d;
+    color: var(--text-secondary);
     margin-bottom: 0.5rem;
 }
 
@@ -358,7 +358,7 @@ body {
 .scenario-section-label {
     font-size: 0.8rem;
     font-weight: 600;
-    color: #6c757d;
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.5rem 0;
@@ -368,7 +368,7 @@ body {
 .empty-state {
     text-align: center;
     padding: 4rem 2rem;
-    color: #6c757d;
+    color: var(--text-secondary);
 }
 
 .empty-state p:first-child {
@@ -626,7 +626,7 @@ body {
 }
 
 .station rect {
-    stroke: #333;
+    stroke: var(--station-stroke);
     stroke-width: 2;
 }
 

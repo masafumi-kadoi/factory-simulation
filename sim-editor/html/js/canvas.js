@@ -767,8 +767,8 @@ export class Canvas {
                 text.setAttribute('dominant-baseline', 'middle');
                 text.setAttribute('font-size', '12');
                 text.setAttribute('font-weight', 'bold');
-                text.setAttribute('fill', '#333');
-                text.textContent = station.id;
+                text.setAttribute('fill', 'var(--station-stroke)');
+                text.textContent = station.name || station.config?.name || station.id;
 
                 g.appendChild(rect);
                 g.appendChild(text);
@@ -813,8 +813,8 @@ export class Canvas {
         text.setAttribute('dominant-baseline', 'middle');
         text.setAttribute('font-size', '10');
         text.setAttribute('font-weight', 'bold');
-        text.setAttribute('fill', '#333');
-        text.textContent = station.id;
+        text.setAttribute('fill', 'var(--station-stroke)');
+        text.textContent = station.name || station.config?.name || station.id;
 
         g.appendChild(polygon);
         g.appendChild(text);
@@ -851,8 +851,8 @@ export class Canvas {
         text.setAttribute('dominant-baseline', 'middle');
         text.setAttribute('font-size', '11');
         text.setAttribute('font-weight', 'bold');
-        text.setAttribute('fill', '#333');
-        text.textContent = station.id;
+        text.setAttribute('fill', 'var(--station-stroke)');
+        text.textContent = station.name || station.config?.name || station.id;
 
         // Sub-label showing entry/exit count
         const subText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -861,7 +861,7 @@ export class Canvas {
         subText.setAttribute('text-anchor', 'middle');
         subText.setAttribute('dominant-baseline', 'middle');
         subText.setAttribute('font-size', '9');
-        subText.setAttribute('fill', '#666');
+        subText.setAttribute('fill', 'var(--text-secondary)');
         const entryCount = station.config.entryCount || 1;
         const exitCount = station.config.exitCount || 1;
         subText.textContent = `E:${entryCount} X:${exitCount}`;

@@ -338,6 +338,7 @@ class ScenarioEditor {
 
     _render() {
         if (!this.scenario) return; // Not loaded yet
+        if (!this.canvas) return; // Not initialized yet (during async _loadScenarioFromAPI)
         const svg = document.getElementById('canvas');
         if (svg) svg.classList.toggle('sub-scenario', this.isInSubScenario());
         this.canvas.render();

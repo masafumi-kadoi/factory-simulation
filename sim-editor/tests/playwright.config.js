@@ -10,6 +10,9 @@ module.exports = defineConfig({
         headless: true,
         viewport: { width: 1400, height: 900 },
         screenshot: 'only-on-failure',
+        launchOptions: {
+            args: ['--ignore-certificate-errors'],
+        },
     },
     projects: [
         {
