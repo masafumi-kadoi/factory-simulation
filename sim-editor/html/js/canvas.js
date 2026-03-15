@@ -139,6 +139,11 @@ export class Canvas {
                 this.editor.addStation(tool, pt.x, pt.y);
             } else if (tool === 'select') {
                 this.editor.selectItem(null);
+            } else if (tool === 'connect') {
+                // Cancel connection selection on empty click
+                if (this.connectFrom !== null) {
+                    this._cancelConnect();
+                }
             }
         }
     }
@@ -191,40 +196,32 @@ export class Canvas {
         if (portType === 'input') {
             // Merge input port: this is a connection TARGET
             if (this.connectFrom === null) {
-                // Can't start a connection from an input port
                 document.getElementById('canvas-info').textContent = '入力ポートからは接続開始できません。上流ステーションからドラッグしてください。';
                 return;
             }
-            // Check if this port already has a connection
             if (this._isPortConnected(stationId, portIndex, 'input')) {
                 alert('このポートには既に接続があります');
-                this.connectFrom = null;
-                this.connectFromPortIndex = -1;
+                this._cancelConnect();
                 return;
             }
-            // Create connection to this port
             this.editor.addConnection(this.connectFrom, stationId, this.connectFromPortIndex, portIndex);
-            this.connectFrom = null;
-            this.connectFromPortIndex = -1;
-            document.getElementById('canvas-info').textContent = 'ステーションをクリックして接続作成';
+            this._cancelConnect();
         } else if (portType === 'output') {
             // Split output port: this is a connection SOURCE
             if (this.connectFrom !== null) {
-                // Already have a source; can't use output port as target
                 document.getElementById('canvas-info').textContent = '出力ポートは接続先として使用できません';
-                this.connectFrom = null;
-                this.connectFromPortIndex = -1;
+                this._cancelConnect();
                 return;
             }
-            // Check if this port already has a connection
             if (this._isPortConnected(stationId, portIndex, 'output')) {
                 alert('このポートには既に接続があります');
                 return;
             }
-            // Set as connection source from port
             this.connectFrom = stationId;
             this.connectFromPortIndex = portIndex;
-            document.getElementById('canvas-info').textContent = `${stationId}[port${portIndex}] から接続 → 次のステーション/ポートをクリック`;
+            this._highlightConnectFrom(stationId);
+            const displayName = station.name || station.config?.name || stationId;
+            document.getElementById('canvas-info').textContent = `${displayName}[Port ${portIndex + 1}] から接続 → 次のステーション/ポートをクリック（空白クリックでキャンセル）`;
         }
     }
 
@@ -250,13 +247,14 @@ export class Canvas {
             }
             this.connectFrom = stationId;
             this.connectFromPortIndex = -1;
-            document.getElementById('canvas-info').textContent = `${stationId} から接続 → 次のステーション/ポートをクリック`;
+            this._highlightConnectFrom(stationId);
+            const displayName = station?.name || station?.config?.name || stationId;
+            document.getElementById('canvas-info').textContent = `${displayName} から接続 → 次のステーション/ポートをクリック（空白クリックでキャンセル）`;
         } else {
             // Second click - create connection
             if (this.connectFrom === stationId) {
                 alert('同じステーションには接続できません');
-                this.connectFrom = null;
-                this.connectFromPortIndex = -1;
+                this._cancelConnect();
                 return;
             }
 
@@ -269,10 +267,25 @@ export class Canvas {
             }
 
             this.editor.addConnection(this.connectFrom, stationId, this.connectFromPortIndex, -1);
-            this.connectFrom = null;
-            this.connectFromPortIndex = -1;
-            document.getElementById('canvas-info').textContent = 'ステーションをクリックして接続作成';
+            this._cancelConnect();
         }
+    }
+
+    _cancelConnect() {
+        this._clearConnectHighlight();
+        this.connectFrom = null;
+        this.connectFromPortIndex = -1;
+        document.getElementById('canvas-info').textContent = 'ステーションをクリックして接続作成';
+    }
+
+    _highlightConnectFrom(stationId) {
+        this._clearConnectHighlight();
+        const el = this.stationsLayer.querySelector(`.station[data-station-id="${stationId}"]`);
+        if (el) el.classList.add('connect-from');
+    }
+
+    _clearConnectHighlight() {
+        this.stationsLayer.querySelectorAll('.connect-from').forEach(el => el.classList.remove('connect-from'));
     }
 
     _handleMouseDown(e) {
@@ -529,6 +542,7 @@ export class Canvas {
             }
 
             this.isDraggingConnection = false;
+            this._clearConnectHighlight();
             this.connectFrom = null;
             this.connectFromPortIndex = -1;
             this.suppressNextClick = true; // suppress the click event that follows mouseup

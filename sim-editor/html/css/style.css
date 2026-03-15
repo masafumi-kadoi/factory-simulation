@@ -625,6 +625,13 @@ body {
     stroke-width: 4;
 }
 
+.station.connect-from rect,
+.station.connect-from polygon {
+    stroke: #ff9800;
+    stroke-width: 4;
+    filter: drop-shadow(0 0 6px rgba(255, 152, 0, 0.6));
+}
+
 .station rect {
     stroke: var(--station-stroke);
     stroke-width: 2;

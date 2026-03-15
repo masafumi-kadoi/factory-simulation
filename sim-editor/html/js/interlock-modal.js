@@ -168,7 +168,7 @@ export class InterlockModal {
         let title;
         if (this._portOpts) {
             const portTypeLabel = this._portOpts.portType === 'mergeInput' ? '入力' : '出力';
-            title = `ポート条件設定: ${this._escape(station.id)} [${portTypeLabel}ポート ${this._portOpts.portIndex}]`;
+            title = `ポート条件設定: ${this._escape(station.id)} [${portTypeLabel}ポート ${this._portOpts.portIndex + 1}]`;
         } else {
             title = `条件設定: ${this._escape(station.id)}`;
         }
@@ -479,12 +479,39 @@ export class InterlockModal {
     _collectWorkTypes() {
         if (!this._scenario) return [];
         const types = new Set();
-        for (const station of this._scenario.stations) {
-            const wt = station.config?.workType;
-            if (wt) types.add(wt);
-            const owt = station.config?.outputWorkType;
-            if (owt) types.add(owt);
-        }
+        const collectFromScenario = (scenario) => {
+            for (const station of (scenario.stations || [])) {
+                const wt = station.config?.workType;
+                if (wt) types.add(wt);
+                const owt = station.config?.outputWorkType;
+                if (owt) types.add(owt);
+                // Collect from sub-scenarios (moduler)
+                if (station.config?.subScenario) {
+                    collectFromScenario(station.config.subScenario);
+                }
+                // Collect from port interlockRules workType conditions
+                if (station.config?.ports) {
+                    for (const port of station.config.ports) {
+                        if (port.interlockRules?.rules) {
+                            for (const rule of port.interlockRules.rules) {
+                                for (const cond of (rule.conditions || [])) {
+                                    if (cond.signal?.startsWith('workType:')) {
+                                        types.add(cond.signal.substring(9));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Collect from connection conditions
+            for (const conn of (scenario.connections || [])) {
+                if (conn.condition?.startsWith('workType:')) {
+                    types.add(conn.condition.substring(9));
+                }
+            }
+        };
+        collectFromScenario(this._scenario);
         return Array.from(types).sort();
     }
 

@@ -369,7 +369,7 @@ export class PropertiesPanel {
                         div.dataset.index = i;
                         div.innerHTML = `
                             <div style="font-size: 0.8rem; color: #333; display: flex; justify-content: space-between; align-items: center;">
-                                <span>Slot ${i + 1}</span>
+                                <span>Port ${i + 1}</span>
                                 <span style="font-size: 0.7rem; color: #999;">Default</span>
                             </div>
                             <div style="display: flex; gap: 0.25rem; align-items: center;">
@@ -415,7 +415,7 @@ export class PropertiesPanel {
                         div.dataset.index = i;
                         div.innerHTML = `
                             <div style="font-size: 0.8rem; color: #333; display: flex; justify-content: space-between; align-items: center;">
-                                <span>Slot ${i + 1}</span>
+                                <span>Port ${i + 1}</span>
                                 <span style="font-size: 0.7rem; color: #999;">Default</span>
                             </div>
                             <div style="display: flex; gap: 0.25rem; align-items: center;">
@@ -677,7 +677,7 @@ export class PropertiesPanel {
             return `
                 <div class="merge-port-row" data-index="${i}">
                     <div style="font-size: 0.8rem; color: #333; display: flex; justify-content: space-between; align-items: center;">
-                        <span>Slot ${i + 1}</span>
+                        <span>Port ${i + 1}</span>
                         <span style="font-size: 0.7rem; color: ${hasCustomRules ? '#6f42c1' : '#999'};">${hasCustomRules ? 'Custom' : 'Default'}</span>
                     </div>
                     <div style="display: flex; gap: 0.25rem; align-items: center;">
@@ -715,7 +715,7 @@ export class PropertiesPanel {
             return `
                 <div class="split-port-row" data-index="${i}">
                     <div style="font-size: 0.8rem; color: #333; display: flex; justify-content: space-between; align-items: center;">
-                        <span>Slot ${i + 1}</span>
+                        <span>Port ${i + 1}</span>
                         <span style="font-size: 0.7rem; color: ${hasCustomRules ? '#fd7e14' : '#999'};">${hasCustomRules ? 'Custom' : 'Default'}</span>
                     </div>
                     <div style="display: flex; gap: 0.25rem; align-items: center;">
