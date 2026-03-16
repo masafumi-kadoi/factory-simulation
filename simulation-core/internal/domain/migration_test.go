@@ -195,3 +195,91 @@ func TestMigrateInterlockRules_AlreadyMigrated(t *testing.T) {
 		t.Error("expected no migration for already-migrated config")
 	}
 }
+
+func TestMigratePortsConfig_MergePortsToInPorts(t *testing.T) {
+	scenario := &Scenario{
+		Stations: []Station{
+			{
+				ID:   "merge-1",
+				Type: StationTypeMerge,
+				Config: map[string]interface{}{
+					"ports": []interface{}{
+						map[string]interface{}{"capacity": float64(1)},
+						map[string]interface{}{"capacity": float64(2)},
+					},
+				},
+			},
+		},
+	}
+
+	MigrateScenario(scenario)
+
+	st := &scenario.Stations[0]
+	if _, ok := st.Config["ports"]; ok {
+		t.Error("expected 'ports' key to be removed after migration")
+	}
+	inPorts, ok := st.Config["inPorts"]
+	if !ok {
+		t.Fatal("expected 'inPorts' key after migration")
+	}
+	arr, ok := inPorts.([]interface{})
+	if !ok || len(arr) != 2 {
+		t.Errorf("expected inPorts to have 2 entries, got %v", inPorts)
+	}
+}
+
+func TestMigratePortsConfig_SplitPortsToOutPorts(t *testing.T) {
+	scenario := &Scenario{
+		Stations: []Station{
+			{
+				ID:   "split-1",
+				Type: StationTypeSplit,
+				Config: map[string]interface{}{
+					"ports": []interface{}{
+						map[string]interface{}{"capacity": float64(1)},
+					},
+				},
+			},
+		},
+	}
+
+	MigrateScenario(scenario)
+
+	st := &scenario.Stations[0]
+	if _, ok := st.Config["ports"]; ok {
+		t.Error("expected 'ports' key to be removed after migration")
+	}
+	outPorts, ok := st.Config["outPorts"]
+	if !ok {
+		t.Fatal("expected 'outPorts' key after migration")
+	}
+	arr, ok := outPorts.([]interface{})
+	if !ok || len(arr) != 1 {
+		t.Errorf("expected outPorts to have 1 entry, got %v", outPorts)
+	}
+}
+
+func TestMigratePortsConfig_ProcessingNoChange(t *testing.T) {
+	scenario := &Scenario{
+		Stations: []Station{
+			{
+				ID:   "proc-1",
+				Type: StationTypeProcessing,
+				Config: map[string]interface{}{
+					"processingTime": float64(10),
+				},
+			},
+		},
+	}
+
+	MigrateScenario(scenario)
+
+	// Processing station should not be affected
+	st := &scenario.Stations[0]
+	if _, ok := st.Config["inPorts"]; ok {
+		t.Error("Processing station should not have inPorts")
+	}
+	if _, ok := st.Config["outPorts"]; ok {
+		t.Error("Processing station should not have outPorts")
+	}
+}

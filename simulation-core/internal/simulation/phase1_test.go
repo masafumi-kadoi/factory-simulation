@@ -19,9 +19,10 @@ func TestEvaluateRules_AllStationTypes_InitialState(t *testing.T) {
 		{domain.StationTypeProcessing, true, false},
 		// Drain: IWP=false → R1 fires → IR=ON
 		{domain.StationTypeDrain, true, false},
-		// Merge: IWP=false,CPL=false → R1 fires → IR=ON
-		{domain.StationTypeMerge, true, false},
-		// Split: IWP=false,CPL=false → R1 fires → IR=ON
+		// Merge: IR is derived from port-level signals (not rule-based at station level)
+		// Without ports initialized, IR stays false. In real engine, deriveStationSignals sets it.
+		{domain.StationTypeMerge, false, false},
+		// Split: allPortsEmpty=true(initial) & IWP=false & RUN=false & CPL=false → R1 fires → IR=ON
 		{domain.StationTypeSplit, true, false},
 		// Entry: IWP=false → R3 fires → IR=ON; OWP=false → R2 fires → OR=OFF
 		{domain.StationTypeEntry, true, false},

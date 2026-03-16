@@ -12,7 +12,9 @@ export const SIGNAL_DISPLAY = {
     inputReady:            { label: '搬入可 (IR)',              abbr: 'IR' },
     outputReady:           { label: '搬出可 (OR)',              abbr: 'OR' },
     workFull:              { label: 'ワーク滞留 (WF)',         abbr: 'WF' },
-    workEmpty:             { label: 'ワーク枯渇 (WE)',         abbr: 'WE' }
+    workEmpty:             { label: 'ワーク枯渇 (WE)',         abbr: 'WE' },
+    allPortsFull:          { label: '全ポート満杯 (APF)',      abbr: 'APF' },
+    allPortsEmpty:         { label: '全ポート空 (APE)',        abbr: 'APE' }
 };
 
 /**
@@ -21,6 +23,13 @@ export const SIGNAL_DISPLAY = {
 export function getSignalLabel(signalName) {
     if (SIGNAL_DISPLAY[signalName]) return SIGNAL_DISPLAY[signalName].label;
     if (signalName.startsWith('workType:')) return `ワーク種類: ${signalName.substring(9)}`;
+    // Dynamic port signals: port1Full, port2Empty, port1HasWork, etc.
+    const portFullMatch = signalName.match(/^port(\d+)Full$/);
+    if (portFullMatch) return `ポート${portFullMatch[1]}満杯`;
+    const portEmptyMatch = signalName.match(/^port(\d+)Empty$/);
+    if (portEmptyMatch) return `ポート${portEmptyMatch[1]}空`;
+    const portHasWorkMatch = signalName.match(/^port(\d+)HasWork$/);
+    if (portHasWorkMatch) return `ポート${portHasWorkMatch[1]}ワーク有`;
     return signalName;
 }
 
@@ -70,28 +79,26 @@ export const INTERLOCK_PRESETS = {
     merge: {
         standard: {
             name: 'Standard Merge',
-            description: '結合ステーション。複数のワークを受け入れ、条件充足後に1つの結合ワークを生成。',
-            signals: tenSignals(),
+            description: '結合ステーション。全入力ポート満杯で加工開始、結合完了後に搬出可。IR/IWPはポートから導出。',
+            signals: [...tenSignals(), { name: 'allPortsFull', initial: false }],
             rules: [
-                { id: 'R1', target: 'inputReady',  value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }, { signal: 'complete', value: false }] },
-                { id: 'R2', target: 'inputReady',  value: false, conditions: [{ signal: 'processReady', value: true }] },
-                { id: 'R3', target: 'outputReady', value: true,  conditions: [{ signal: 'complete', value: true }, { signal: 'outputWorkPresent', value: true }] },
-                { id: 'R4', target: 'outputReady', value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
+                { id: 'R1', target: 'processReady', value: true,  conditions: [{ signal: 'allPortsFull', value: true }, { signal: 'running', value: false }, { signal: 'complete', value: false }] },
+                { id: 'R2', target: 'processReady', value: false, conditions: [{ signal: 'running', value: true }] },
+                { id: 'R3', target: 'outputReady',  value: true,  conditions: [{ signal: 'complete', value: true }, { signal: 'outputWorkPresent', value: true }] },
+                { id: 'R4', target: 'outputReady',  value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
             ]
         }
     },
     split: {
         standard: {
             name: 'Standard Split',
-            description: '分割ステーション。結合ワークを受け入れ、元の構成要素に分割して順次搬出。',
-            signals: tenSignals(),
+            description: '分割ステーション。全出力ポート空で搬入可、ワーク到着で加工開始。OR/OWPはポートから導出。',
+            signals: [...tenSignals(), { name: 'allPortsEmpty', initial: true }],
             rules: [
-                { id: 'R1', target: 'inputReady',   value: true,  conditions: [{ signal: 'inputWorkPresent', value: false }, { signal: 'complete', value: false }] },
+                { id: 'R1', target: 'inputReady',   value: true,  conditions: [{ signal: 'allPortsEmpty', value: true }, { signal: 'inputWorkPresent', value: false }, { signal: 'running', value: false }, { signal: 'complete', value: false }] },
                 { id: 'R2', target: 'inputReady',   value: false, conditions: [{ signal: 'inputWorkPresent', value: true }] },
                 { id: 'R3', target: 'processReady', value: true,  conditions: [{ signal: 'inputWorkPresent', value: true }, { signal: 'running', value: false }, { signal: 'complete', value: false }] },
-                { id: 'R4', target: 'processReady', value: false, conditions: [{ signal: 'running', value: true }] },
-                { id: 'R5', target: 'outputReady',  value: true,  conditions: [{ signal: 'complete', value: true }, { signal: 'outputWorkPresent', value: true }] },
-                { id: 'R6', target: 'outputReady',  value: false, conditions: [{ signal: 'outputWorkPresent', value: false }] }
+                { id: 'R4', target: 'processReady', value: false, conditions: [{ signal: 'running', value: true }] }
             ]
         }
     },

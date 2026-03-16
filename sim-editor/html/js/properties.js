@@ -303,7 +303,7 @@ export class PropertiesPanel {
             // Save merge config
             if (station.type === 'merge') {
                 newConfig.mergeCount = parseInt(this.container.querySelector('#prop-mergeCount')?.value) || 2;
-                newConfig.ports = this._collectMergePorts();
+                newConfig.inPorts = this._collectMergePorts();
                 const outputWorkTypeEl = this.container.querySelector('#prop-outputWorkType');
                 newConfig.outputWorkType = outputWorkTypeEl ? outputWorkTypeEl.value.trim() : '';
             }
@@ -311,7 +311,7 @@ export class PropertiesPanel {
             // Save split config
             if (station.type === 'split') {
                 newConfig.splitCount = parseInt(this.container.querySelector('#prop-splitCount')?.value) || 2;
-                newConfig.ports = this._collectSplitPorts();
+                newConfig.outPorts = this._collectSplitPorts();
             }
 
             // Save moduler config (preserve subScenario)
@@ -669,7 +669,7 @@ export class PropertiesPanel {
 
     _renderMergeConfig(station) {
         const mergeCount = station.config.mergeCount || 2;
-        const ports = station.config.ports || [];
+        const ports = station.config.inPorts || station.config.ports || [];
         const outputWorkType = station.config.outputWorkType || '';
 
         const portsHtml = ports.map((buf, i) => {
@@ -708,7 +708,7 @@ export class PropertiesPanel {
 
     _renderSplitConfig(station) {
         const splitCount = station.config.splitCount || 2;
-        const ports = station.config.ports || [];
+        const ports = station.config.outPorts || station.config.ports || [];
 
         const portsHtml = ports.map((buf, i) => {
             const hasCustomRules = !!buf.interlockRules;
@@ -888,7 +888,7 @@ export class PropertiesPanel {
     _collectMergePorts() {
         const rows = this.container.querySelectorAll('.merge-port-row');
         const station = this.editor.getStation(this.editor.selectedItem?.id);
-        const existingPorts = station?.config?.ports || [];
+        const existingPorts = station?.config?.inPorts || station?.config?.ports || [];
         return Array.from(rows).map((row, i) => {
             const buf = {
                 capacity: parseInt(row.querySelector('.merge-port-capacity').value) || 1
@@ -904,7 +904,7 @@ export class PropertiesPanel {
     _collectSplitPorts() {
         const rows = this.container.querySelectorAll('.split-port-row');
         const station = this.editor.getStation(this.editor.selectedItem?.id);
-        const existingPorts = station?.config?.ports || [];
+        const existingPorts = station?.config?.outPorts || station?.config?.ports || [];
         return Array.from(rows).map((row, i) => {
             const buf = {
                 capacity: parseInt(row.querySelector('.split-port-capacity')?.value) || 1

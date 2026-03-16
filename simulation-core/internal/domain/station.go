@@ -54,8 +54,12 @@ type Station struct {
 	PositionX  *float64
 	PositionY  *float64
 
-	// Port unified model: Port[0]=body, Port[1+]=Merge input / Split output
-	Ports []Port
+	// In/Out separated port model
+	// InPorts[0]=station-level input, InPorts[1+]=Merge additional input ports
+	// OutPorts[0]=station-level output, OutPorts[1+]=Split additional output ports
+	InPorts  []Port
+	OutPorts []Port
+	Work     *Work // Work currently being processed inside the station
 
 	// State machine
 	State StationState
@@ -70,8 +74,8 @@ type Station struct {
 	// Configuration (processing time, arrival time, departure time, etc.)
 	Config map[string]interface{}
 
-	// Signal-based interlock
-	Signals        map[string]bool  // Shortcut to Ports[0].Signals
+	// Signal-based interlock (station-level)
+	Signals        map[string]bool  // Station-level 10 signals + derived signals
 	InterlockRules *InterlockConfig // Rule definitions (nil = use type default)
 
 	// ModulerStation fields
@@ -84,62 +88,57 @@ type Station struct {
 // NewStation creates a new station
 func NewStation(id string, stationType StationType, config map[string]interface{}) *Station {
 	return &Station{
-		ID:     id,
-		Type:   stationType,
-		Ports:  []Port{{Capacity: 1}},
-		State:  StateIdle,
-		Config: config,
+		ID:       id,
+		Type:     stationType,
+		InPorts:  []Port{{Capacity: 1}},
+		OutPorts: []Port{{Capacity: 1}},
+		State:    StateIdle,
+		Config:   config,
 	}
 }
 
-// GetWork returns the work at Port[0] (station body)
+// GetWork returns the work being processed at this station
 func (s *Station) GetWork() *Work {
-	if len(s.Ports) == 0 {
-		return nil
-	}
-	return s.Ports[0].Work
+	return s.Work
 }
 
-// SetWork sets the work at Port[0] (station body)
+// SetWork sets the work being processed at this station
 func (s *Station) SetWork(w *Work) {
-	if len(s.Ports) == 0 {
-		s.Ports = []Port{{Capacity: 1}}
-	}
-	s.Ports[0].Work = w
+	s.Work = w
 }
 
-// GetInputPort returns the Merge input port at index (maps to Ports[portIndex+1])
+// GetInputPort returns the Merge input port at index (InPorts[portIndex+1], where [0] is station-level)
 func (s *Station) GetInputPort(portIndex int) *Port {
 	idx := portIndex + 1
-	if idx <= 0 || idx >= len(s.Ports) {
+	if idx <= 0 || idx >= len(s.InPorts) {
 		return nil
 	}
-	return &s.Ports[idx]
+	return &s.InPorts[idx]
 }
 
-// GetOutputPort returns the Split output port at index (maps to Ports[portIndex+1])
+// GetOutputPort returns the Split output port at index (OutPorts[portIndex+1], where [0] is station-level)
 func (s *Station) GetOutputPort(portIndex int) *Port {
 	idx := portIndex + 1
-	if idx <= 0 || idx >= len(s.Ports) {
+	if idx <= 0 || idx >= len(s.OutPorts) {
 		return nil
 	}
-	return &s.Ports[idx]
+	return &s.OutPorts[idx]
 }
 
-// InputPortCount returns the number of Merge input ports (Ports[1+])
+// InputPortCount returns the number of Merge input ports (InPorts[1+])
 func (s *Station) InputPortCount() int {
-	if s.Type != StationTypeMerge || len(s.Ports) <= 1 {
+	if s.Type != StationTypeMerge || len(s.InPorts) <= 1 {
 		return 0
 	}
-	return len(s.Ports) - 1
+	return len(s.InPorts) - 1
 }
 
-// OutputPortCount returns the number of Split output ports (Ports[1+])
+// OutputPortCount returns the number of Split output ports (OutPorts[1+])
 func (s *Station) OutputPortCount() int {
-	if s.Type != StationTypeSplit || len(s.Ports) <= 1 {
+	if s.Type != StationTypeSplit || len(s.OutPorts) <= 1 {
 		return 0
 	}
-	return len(s.Ports) - 1
+	return len(s.OutPorts) - 1
 }
 
 // GetFloatConfig retrieves a float64 configuration value
@@ -198,20 +197,15 @@ func (s *Station) IsOutputReady() bool {
 	return s.State == StateCompleted && s.GetWork() != nil
 }
 
-// InitializeSignals sets all signals to their initial values from the interlock config
+// InitializeSignals sets all station-level signals to their initial values from the interlock config
 func (s *Station) InitializeSignals() {
 	if s.InterlockRules == nil {
 		return
 	}
-	if len(s.Ports) == 0 {
-		s.Ports = []Port{{Capacity: 1}}
-	}
-	s.Ports[0].Signals = make(map[string]bool)
+	s.Signals = make(map[string]bool)
 	for _, sig := range s.InterlockRules.Signals {
-		s.Ports[0].Signals[sig.Name] = sig.Initial
+		s.Signals[sig.Name] = sig.Initial
 	}
-	// Station.Signals is a shortcut to Ports[0].Signals
-	s.Signals = s.Ports[0].Signals
 
 	autoCorrectControlSignals(s.Signals, s.InterlockRules)
 }
@@ -281,16 +275,19 @@ func (s *Station) InitializeInterlockRulesFromConfig() {
 	}
 }
 
-// InitializePorts initializes Port[1+] from the station config.
-// Port[0] is the station body (initialized by InitializeSignals).
-// Port[1+] are Merge input ports or Split output ports.
+// InitializePorts initializes InPorts[1+] or OutPorts[1+] from the station config.
+// InPorts[0]/OutPorts[0] are station-level (initialized by constructor).
+// InPorts[1+] are Merge additional input ports, OutPorts[1+] are Split additional output ports.
 func (s *Station) InitializePorts() {
 	portsConfig := s.getPortsConfig()
 	if len(portsConfig) == 0 {
 		return
 	}
-	if len(s.Ports) == 0 {
-		s.Ports = []Port{{Capacity: 1}}
+	if len(s.InPorts) == 0 {
+		s.InPorts = []Port{{Capacity: 1}}
+	}
+	if len(s.OutPorts) == 0 {
+		s.OutPorts = []Port{{Capacity: 1}}
 	}
 
 	var getDefaultConfig func() *InterlockConfig
@@ -322,7 +319,11 @@ func (s *Station) InitializePorts() {
 		}
 		autoCorrectControlSignals(port.Signals, port.InterlockRules)
 
-		s.Ports = append(s.Ports, port)
+		if s.Type == StationTypeMerge {
+			s.InPorts = append(s.InPorts, port)
+		} else if s.Type == StationTypeSplit {
+			s.OutPorts = append(s.OutPorts, port)
+		}
 	}
 }
 
@@ -374,17 +375,34 @@ func parseInterlockConfig(raw interface{}) *InterlockConfig {
 	return config
 }
 
-// getPortsConfig returns the ports config as a slice of maps
+// getPortsConfig returns the ports config as a slice of maps.
+// Supports new keys (inPorts for Merge, outPorts for Split) and legacy key (ports).
 func (s *Station) getPortsConfig() []map[string]interface{} {
-	if val, ok := s.Config["ports"]; ok {
-		if arr, ok := val.([]interface{}); ok {
-			result := make([]map[string]interface{}, 0, len(arr))
-			for _, item := range arr {
-				if m, ok := item.(map[string]interface{}); ok {
-					result = append(result, m)
+	// Try new config keys first
+	var key string
+	if s.Type == StationTypeMerge {
+		key = "inPorts"
+	} else if s.Type == StationTypeSplit {
+		key = "outPorts"
+	}
+
+	// Try new key, then fall back to legacy "ports"
+	for _, k := range []string{key, "ports"} {
+		if k == "" {
+			continue
+		}
+		if val, ok := s.Config[k]; ok {
+			if arr, ok := val.([]interface{}); ok {
+				result := make([]map[string]interface{}, 0, len(arr))
+				for _, item := range arr {
+					if m, ok := item.(map[string]interface{}); ok {
+						result = append(result, m)
+					}
+				}
+				if len(result) > 0 {
+					return result
 				}
 			}
-			return result
 		}
 	}
 	return nil
@@ -539,38 +557,56 @@ func (s *Station) HasOutputPortWorks() bool {
 	return false
 }
 
-// GetPortSignal gets a signal value from a specific port (Ports[portIndex+1])
-func (s *Station) GetPortSignal(portIndex int, signalName string) bool {
-	idx := portIndex + 1
-	if idx <= 0 || idx >= len(s.Ports) {
+// GetInputPortSignal gets a signal value from a specific input port (InPorts[portIndex+1])
+func (s *Station) GetInputPortSignal(portIndex int, signalName string) bool {
+	port := s.GetInputPort(portIndex)
+	if port == nil || port.Signals == nil {
 		return false
 	}
-	if s.Ports[idx].Signals == nil {
-		return false
-	}
-	return s.Ports[idx].Signals[signalName]
+	return port.Signals[signalName]
 }
 
-// SetPortSignal sets a signal value on a specific port (Ports[portIndex+1])
-func (s *Station) SetPortSignal(portIndex int, signalName string, value bool) {
-	idx := portIndex + 1
-	if idx <= 0 || idx >= len(s.Ports) {
+// SetInputPortSignal sets a signal value on a specific input port (InPorts[portIndex+1])
+func (s *Station) SetInputPortSignal(portIndex int, signalName string, value bool) {
+	port := s.GetInputPort(portIndex)
+	if port == nil {
 		return
 	}
-	if s.Ports[idx].Signals == nil {
-		s.Ports[idx].Signals = make(map[string]bool)
+	if port.Signals == nil {
+		port.Signals = make(map[string]bool)
 	}
-	s.Ports[idx].Signals[signalName] = value
+	port.Signals[signalName] = value
+}
+
+// GetOutputPortSignal gets a signal value from a specific output port (OutPorts[portIndex+1])
+func (s *Station) GetOutputPortSignal(portIndex int, signalName string) bool {
+	port := s.GetOutputPort(portIndex)
+	if port == nil || port.Signals == nil {
+		return false
+	}
+	return port.Signals[signalName]
+}
+
+// SetOutputPortSignal sets a signal value on a specific output port (OutPorts[portIndex+1])
+func (s *Station) SetOutputPortSignal(portIndex int, signalName string, value bool) {
+	port := s.GetOutputPort(portIndex)
+	if port == nil {
+		return
+	}
+	if port.Signals == nil {
+		port.Signals = make(map[string]bool)
+	}
+	port.Signals[signalName] = value
 }
 
 // IsPortInputReady checks if a specific input port's inputReady signal is ON
 func (s *Station) IsPortInputReady(portIndex int) bool {
-	return s.GetPortSignal(portIndex, "inputReady")
+	return s.GetInputPortSignal(portIndex, "inputReady")
 }
 
 // IsPortOutputReady checks if a specific output port's outputReady signal is ON
 func (s *Station) IsPortOutputReady(portIndex int) bool {
-	return s.GetPortSignal(portIndex, "outputReady")
+	return s.GetOutputPortSignal(portIndex, "outputReady")
 }
 
 // CanStartProcessing checks if the station can start processing

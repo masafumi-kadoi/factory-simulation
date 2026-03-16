@@ -16,6 +16,15 @@ const (
 	SignalWorkEmpty             = "workEmpty"
 )
 
+// Derived signal name constants (Merge/Split)
+const (
+	SignalAllPortsFull  = "allPortsFull"  // ALL(InPorts[1+] full) — Merge
+	SignalAllPortsEmpty = "allPortsEmpty" // ALL(OutPorts[1+] empty) — Split
+)
+
+// Dynamic derived signal name helpers (portNFull, portNEmpty, portNHasWork)
+// These are generated at runtime based on port count, e.g. "port1Full", "port2Empty"
+
 // InterlockConfig represents the signal-based interlock configuration for a station
 type InterlockConfig struct {
 	Signals []SignalDef     `json:"signals"`
@@ -169,21 +178,24 @@ func getProcessingDefaultConfig() *InterlockConfig {
 }
 
 func getMergeDefaultConfig() *InterlockConfig {
+	signals := tenSignals()
+	signals = append(signals, SignalDef{Name: SignalAllPortsFull, Initial: false})
 	return &InterlockConfig{
-		Signals: tenSignals(),
+		Signals: signals,
 		Rules: []InterlockRule{
 			{
-				ID: "R1", Description: "空きステーション → 搬入可ON",
-				Target: SignalInputReady, Value: true,
+				ID: "R1", Description: "全ポート満杯 → 加工準備ON",
+				Target: SignalProcessReady, Value: true,
 				Conditions: []RuleCondition{
-					{Signal: SignalInputWorkPresent, Value: false},
+					{Signal: SignalAllPortsFull, Value: true},
+					{Signal: SignalRunning, Value: false},
 					{Signal: SignalComplete, Value: false},
 				},
 			},
 			{
-				ID: "R2", Description: "結合条件充足 → 搬入可OFF",
-				Target: SignalInputReady, Value: false,
-				Conditions: []RuleCondition{{Signal: SignalProcessReady, Value: true}},
+				ID: "R2", Description: "加工中 → 加工準備OFF",
+				Target: SignalProcessReady, Value: false,
+				Conditions: []RuleCondition{{Signal: SignalRunning, Value: true}},
 			},
 			{
 				ID: "R3", Description: "結合処理完了 → 搬出可ON",
@@ -203,14 +215,18 @@ func getMergeDefaultConfig() *InterlockConfig {
 }
 
 func getSplitDefaultConfig() *InterlockConfig {
+	signals := tenSignals()
+	signals = append(signals, SignalDef{Name: SignalAllPortsEmpty, Initial: true})
 	return &InterlockConfig{
-		Signals: tenSignals(),
+		Signals: signals,
 		Rules: []InterlockRule{
 			{
-				ID: "R1", Description: "空きステーション → 搬入可ON",
+				ID: "R1", Description: "全ポート空 → 搬入可ON",
 				Target: SignalInputReady, Value: true,
 				Conditions: []RuleCondition{
+					{Signal: SignalAllPortsEmpty, Value: true},
 					{Signal: SignalInputWorkPresent, Value: false},
+					{Signal: SignalRunning, Value: false},
 					{Signal: SignalComplete, Value: false},
 				},
 			},
@@ -232,19 +248,6 @@ func getSplitDefaultConfig() *InterlockConfig {
 				ID: "R4", Description: "加工中 → 加工準備OFF",
 				Target: SignalProcessReady, Value: false,
 				Conditions: []RuleCondition{{Signal: SignalRunning, Value: true}},
-			},
-			{
-				ID: "R5", Description: "処理完了 → 搬出可ON",
-				Target: SignalOutputReady, Value: true,
-				Conditions: []RuleCondition{
-					{Signal: SignalComplete, Value: true},
-					{Signal: SignalOutputWorkPresent, Value: true},
-				},
-			},
-			{
-				ID: "R6", Description: "全ポート搬出完了 → 搬出可OFF",
-				Target: SignalOutputReady, Value: false,
-				Conditions: []RuleCondition{{Signal: SignalOutputWorkPresent, Value: false}},
 			},
 		},
 	}

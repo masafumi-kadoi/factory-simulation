@@ -63,8 +63,8 @@ func TestPort1Plus_MergeInputPorts(t *testing.T) {
 	if station.InputPortCount() != 2 {
 		t.Fatalf("expected 2 input ports, got %d", station.InputPortCount())
 	}
-	if len(station.Ports) != 3 {
-		t.Fatalf("expected 3 total ports (body + 2 input), got %d", len(station.Ports))
+	if len(station.InPorts) != 3 {
+		t.Fatalf("expected 3 total InPorts (station-level + 2 input), got %d", len(station.InPorts))
 	}
 
 	// Port[1] capacity=1, Port[2] capacity=2
@@ -145,30 +145,32 @@ func TestGetPortSignal(t *testing.T) {
 	station.InitializeSignals()
 	station.InitializePorts()
 
-	// Port[1] has per-port signals (IWP, IR)
-	station.SetPortSignal(0, SignalInputWorkPresent, true)
-	if !station.GetPortSignal(0, SignalInputWorkPresent) {
+	// InPorts[1] has per-port signals (IWP, IR)
+	station.SetInputPortSignal(0, SignalInputWorkPresent, true)
+	if !station.GetInputPortSignal(0, SignalInputWorkPresent) {
 		t.Error("expected port signal inputWorkPresent=true")
 	}
 
 	// Out-of-range port returns false
-	if station.GetPortSignal(99, SignalInputReady) {
+	if station.GetInputPortSignal(99, SignalInputReady) {
 		t.Error("expected false for out-of-range port")
 	}
 }
 
 func TestInitializePorts_PortCount(t *testing.T) {
 	tests := []struct {
-		name          string
-		stationType   StationType
-		portsConfig   []interface{}
-		expectedTotal int // Total Ports count including Port[0]
+		name             string
+		stationType      StationType
+		portsConfig      []interface{}
+		expectedInPorts  int // Total InPorts count including [0]
+		expectedOutPorts int // Total OutPorts count including [0]
 	}{
 		{
-			name:          "Processing has 1 port (body only)",
-			stationType:   StationTypeProcessing,
-			portsConfig:   nil,
-			expectedTotal: 1,
+			name:             "Processing has 1 inPort + 1 outPort (station-level only)",
+			stationType:      StationTypeProcessing,
+			portsConfig:      nil,
+			expectedInPorts:  1,
+			expectedOutPorts: 1,
 		},
 		{
 			name:        "Merge with 3 input ports",
@@ -178,7 +180,8 @@ func TestInitializePorts_PortCount(t *testing.T) {
 				map[string]interface{}{"capacity": float64(1)},
 				map[string]interface{}{"capacity": float64(1)},
 			},
-			expectedTotal: 4,
+			expectedInPorts:  4, // [0]=station-level + 3 additional
+			expectedOutPorts: 1,
 		},
 		{
 			name:        "Split with 2 output ports",
@@ -187,7 +190,8 @@ func TestInitializePorts_PortCount(t *testing.T) {
 				map[string]interface{}{"capacity": float64(1)},
 				map[string]interface{}{"capacity": float64(1)},
 			},
-			expectedTotal: 3,
+			expectedInPorts:  1,
+			expectedOutPorts: 3, // [0]=station-level + 2 additional
 		},
 	}
 
@@ -202,8 +206,11 @@ func TestInitializePorts_PortCount(t *testing.T) {
 			station.InitializeSignals()
 			station.InitializePorts()
 
-			if len(station.Ports) != tt.expectedTotal {
-				t.Errorf("expected %d total ports, got %d", tt.expectedTotal, len(station.Ports))
+			if len(station.InPorts) != tt.expectedInPorts {
+				t.Errorf("expected %d InPorts, got %d", tt.expectedInPorts, len(station.InPorts))
+			}
+			if len(station.OutPorts) != tt.expectedOutPorts {
+				t.Errorf("expected %d OutPorts, got %d", tt.expectedOutPorts, len(station.OutPorts))
 			}
 		})
 	}
@@ -222,7 +229,7 @@ func TestDefaultRules_AllStationTypes(t *testing.T) {
 		{StationTypeProcessing, 6, false, false},
 		{StationTypeDrain, 2, false, false},
 		{StationTypeMerge, 4, false, false},
-		{StationTypeSplit, 6, false, false},
+		{StationTypeSplit, 4, false, false},
 		{StationTypeEntry, 4, false, false},
 		{StationTypeExit, 4, false, false},
 		{StationTypeModuler, 4, false, false},
@@ -234,8 +241,8 @@ func TestDefaultRules_AllStationTypes(t *testing.T) {
 			if config == nil {
 				t.Fatal("expected non-nil config")
 			}
-			if len(config.Signals) != 10 {
-				t.Errorf("expected 10 signals, got %d", len(config.Signals))
+			if len(config.Signals) < 10 {
+				t.Errorf("expected at least 10 signals, got %d", len(config.Signals))
 			}
 			if len(config.Rules) != tt.expectedRules {
 				t.Errorf("expected %d rules, got %d", tt.expectedRules, len(config.Rules))
@@ -252,9 +259,9 @@ func TestDefaultRules_AllStationTypes(t *testing.T) {
 				}
 			}
 
-			// All signals initial=false
+			// Base 10 signals initial=false (derived signals may have different initial values)
 			for _, sig := range config.Signals {
-				if sig.Initial {
+				if sig.Initial && sig.Name != SignalAllPortsEmpty && sig.Name != SignalAllPortsFull {
 					t.Errorf("expected signal %s initial=false", sig.Name)
 				}
 			}

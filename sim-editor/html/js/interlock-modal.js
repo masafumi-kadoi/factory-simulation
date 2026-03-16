@@ -52,7 +52,9 @@ export class InterlockModal {
         if (this._portOpts) {
             // Port mode: load from port's interlockRules
             const portIdx = this._portOpts.portIndex;
-            const ports = station.config.ports || [];
+            const ports = this._portOpts.portType === 'mergeInput'
+                ? (station.config.inPorts || station.config.ports || [])
+                : (station.config.outPorts || station.config.ports || []);
             const buf = ports[portIdx];
             this._isCustom = !!(buf && buf.interlockRules);
 
@@ -490,14 +492,17 @@ export class InterlockModal {
                     collectFromScenario(station.config.subScenario);
                 }
                 // Collect from port interlockRules workType conditions
-                if (station.config?.ports) {
-                    for (const port of station.config.ports) {
-                        if (port.interlockRules?.rules) {
-                            for (const rule of port.interlockRules.rules) {
-                                for (const cond of (rule.conditions || [])) {
-                                    if (cond.signal?.startsWith('workType:')) {
-                                        types.add(cond.signal.substring(9));
-                                    }
+                const allPorts = [
+                    ...(station.config?.inPorts || []),
+                    ...(station.config?.outPorts || []),
+                    ...(station.config?.ports || []),
+                ];
+                for (const port of allPorts) {
+                    if (port.interlockRules?.rules) {
+                        for (const rule of port.interlockRules.rules) {
+                            for (const cond of (rule.conditions || [])) {
+                                if (cond.signal?.startsWith('workType:')) {
+                                    types.add(cond.signal.substring(9));
                                 }
                             }
                         }
@@ -778,17 +783,18 @@ export class InterlockModal {
         if (this._portOpts) {
             // Port mode: save to port's interlockRules
             const portIdx = this._portOpts.portIndex;
-            if (!this._station.config.ports) this._station.config.ports = [];
-            while (this._station.config.ports.length <= portIdx) {
-                this._station.config.ports.push({ capacity: 1 });
+            const portKey = this._portOpts.portType === 'mergeInput' ? 'inPorts' : 'outPorts';
+            if (!this._station.config[portKey]) this._station.config[portKey] = [];
+            while (this._station.config[portKey].length <= portIdx) {
+                this._station.config[portKey].push({ capacity: 1 });
             }
             if (this._isCustom) {
-                this._station.config.ports[portIdx].interlockRules = {
+                this._station.config[portKey][portIdx].interlockRules = {
                     signals: clonePreset(this._editSignals),
                     rules: clonePreset(this._editRules)
                 };
             } else {
-                delete this._station.config.ports[portIdx].interlockRules;
+                delete this._station.config[portKey][portIdx].interlockRules;
             }
         } else {
             // Station mode

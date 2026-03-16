@@ -130,8 +130,11 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 			return nil, nil, nil, nil, fmt.Errorf("initial rule evaluation failed: %w", err)
 		}
 		// Evaluate port-level rules (Merge input ports, Split output ports)
-		for j := 1; j < len(station.Ports); j++ {
-			e.evaluatePortRules(&station.Ports[j])
+		for j := 1; j < len(station.InPorts); j++ {
+			e.evaluatePortRules(&station.InPorts[j])
+		}
+		for j := 1; j < len(station.OutPorts); j++ {
+			e.evaluatePortRules(&station.OutPorts[j])
 		}
 	}
 
@@ -386,15 +389,7 @@ func (e *Engine) handleMergeWorkArrived(work *domain.Work, station *domain.Stati
 	// Update port-level derived signals
 	e.updatePortDerivedSignals(station, portIndex, true)
 
-	// Set station-level IWP=ON (any port has work)
-	station.SetSignal(domain.SignalInputWorkPresent, true)
-
-	// Check merge condition → set processReady=ON
-	if station.CheckMergeCondition() && !e.mergeInProgress[station.ID] {
-		station.SetSignal(domain.SignalProcessReady, true)
-	}
-
-	// Evaluate station-level interlock rules
+	// Evaluate station-level interlock rules (deriveStationSignals will compute IWP, IR, allPortsFull, etc.)
 	// processReady trigger is handled inside evaluateAndLogSignals
 	if err := e.evaluateAndLogSignals(station); err != nil {
 		return err
@@ -911,6 +906,102 @@ func (e *Engine) updatePortDerivedSignals(station *domain.Station, portIndex int
 	e.evaluatePortRules(port)
 }
 
+// deriveStationSignals derives station-level signals from port-level signals for Merge/Split.
+// Merge: InPorts[1+] → Station.Signals (IR=ANY, IWP=ANY, allPortsFull=ALL, portNFull)
+// Split: OutPorts[1+] → Station.Signals (OR=ANY, OWP=ANY, allPortsEmpty=ALL, portNEmpty, portNHasWork)
+func deriveStationSignals(station *domain.Station) {
+	if station.Signals == nil {
+		return
+	}
+
+	switch station.Type {
+	case domain.StationTypeMerge:
+		deriveMergeStationSignals(station)
+	case domain.StationTypeSplit:
+		deriveSplitStationSignals(station)
+	}
+}
+
+func deriveMergeStationSignals(station *domain.Station) {
+	portCount := station.InputPortCount()
+	if portCount == 0 {
+		return
+	}
+
+	anyIR := false
+	anyIWP := false
+	allFull := true
+
+	for i := 0; i < portCount; i++ {
+		port := station.GetInputPort(i)
+		if port == nil {
+			continue
+		}
+		if port.Signals != nil {
+			if port.Signals[domain.SignalInputReady] {
+				anyIR = true
+			}
+			if port.Signals[domain.SignalInputWorkPresent] {
+				anyIWP = true
+			}
+		}
+
+		isFull := len(port.Works) >= port.Capacity
+		if !isFull {
+			allFull = false
+		}
+
+		// portNFull (dynamic: "port1Full", "port2Full", ...)
+		station.Signals[fmt.Sprintf("port%dFull", i+1)] = isFull
+	}
+
+	station.Signals[domain.SignalInputReady] = anyIR
+	station.Signals[domain.SignalInputWorkPresent] = anyIWP
+	station.Signals[domain.SignalAllPortsFull] = allFull
+}
+
+func deriveSplitStationSignals(station *domain.Station) {
+	portCount := station.OutputPortCount()
+	if portCount == 0 {
+		return
+	}
+
+	anyOR := false
+	anyOWP := false
+	allEmpty := true
+
+	for i := 0; i < portCount; i++ {
+		port := station.GetOutputPort(i)
+		if port == nil {
+			continue
+		}
+
+		hasWork := len(port.Works) > 0
+		isEmpty := !hasWork
+
+		if port.Signals != nil {
+			if port.Signals[domain.SignalOutputReady] {
+				anyOR = true
+			}
+			if port.Signals[domain.SignalOutputWorkPresent] {
+				anyOWP = true
+			}
+		}
+
+		if !isEmpty {
+			allEmpty = false
+		}
+
+		// portNEmpty / portNHasWork (dynamic)
+		station.Signals[fmt.Sprintf("port%dEmpty", i+1)] = isEmpty
+		station.Signals[fmt.Sprintf("port%dHasWork", i+1)] = hasWork
+	}
+
+	station.Signals[domain.SignalOutputReady] = anyOR
+	station.Signals[domain.SignalOutputWorkPresent] = anyOWP
+	station.Signals[domain.SignalAllPortsEmpty] = allEmpty
+}
+
 // evaluatePortRules evaluates interlock rules for a specific port
 func (e *Engine) evaluatePortRules(port *domain.Port) {
 	if port == nil || port.InterlockRules == nil || port.Signals == nil {
@@ -979,9 +1070,17 @@ func (e *Engine) findWorkByID(workID string) *domain.Work {
 		if w := station.GetWork(); w != nil && w.ID == workID {
 			return w
 		}
-		// Check Port[1+] (Merge input / Split output ports)
-		for j := 1; j < len(station.Ports); j++ {
-			for _, work := range station.Ports[j].Works {
+		// Check InPorts[1+] (Merge input ports)
+		for j := 1; j < len(station.InPorts); j++ {
+			for _, work := range station.InPorts[j].Works {
+				if work.ID == workID {
+					return work
+				}
+			}
+		}
+		// Check OutPorts[1+] (Split output ports)
+		for j := 1; j < len(station.OutPorts); j++ {
+			for _, work := range station.OutPorts[j].Works {
 				if work.ID == workID {
 					return work
 				}
@@ -1139,6 +1238,36 @@ func (e *Engine) logSignalChange(station *domain.Station, signalName string, old
 // evaluateAndLogSignals evaluates interlock rules, logs signal changes, checks handshakes,
 // and triggers processing start when processReady=ON
 func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
+	// For Merge/Split: derive station-level signals from port-level signals before rule evaluation
+	// Capture pre-derivation state to log derived signal changes
+	var preDeriveSignals map[string]bool
+	if station.Signals != nil && (station.Type == domain.StationTypeMerge || station.Type == domain.StationTypeSplit) {
+		preDeriveSignals = make(map[string]bool, len(station.Signals))
+		for k, v := range station.Signals {
+			preDeriveSignals[k] = v
+		}
+	}
+
+	deriveStationSignals(station)
+
+	// Log derived signal changes
+	if preDeriveSignals != nil {
+		for name, newVal := range station.Signals {
+			oldVal, existed := preDeriveSignals[name]
+			if !existed || oldVal != newVal {
+				e.statusLogs = append(e.statusLogs, StationStatusLog{
+					StationID:  station.ID,
+					Timestamp:  e.currentTime,
+					StatusType: "signal_change",
+					Value:      newVal,
+					SignalName: name,
+					OldValue:   oldVal,
+					RuleID:     "derived",
+				})
+			}
+		}
+	}
+
 	changes, err := evaluateRules(station, e.scenario, e.currentTime)
 	if err != nil {
 		return err

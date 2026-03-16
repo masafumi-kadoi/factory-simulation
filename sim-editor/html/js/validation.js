@@ -200,12 +200,13 @@ export function validateStation(station) {
         if (!config.mergeCount || config.mergeCount < 1) {
             errors.mergeCount = 'mergeCountは1以上である必要があります';
         }
-        if (!config.ports || config.ports.length === 0) {
-            errors.ports = 'ポートスロットは1つ以上必要です';
-        } else if (config.ports.length !== (config.mergeCount || 0)) {
-            errors.ports = `ポート数(${config.ports.length})がmergeCount(${config.mergeCount})と一致しません`;
+        const inPorts = config.inPorts || config.ports || [];
+        if (inPorts.length === 0) {
+            errors.ports = '入力ポートは1つ以上必要です';
+        } else if (inPorts.length !== (config.mergeCount || 0)) {
+            errors.ports = `入力ポート数(${inPorts.length})がmergeCount(${config.mergeCount})と一致しません`;
         } else {
-            config.ports.forEach((buf, i) => {
+            inPorts.forEach((buf, i) => {
                 if (!buf.capacity || buf.capacity < 1) errors[`port_${i}_capacity`] = `ポート${i+1}のcapacityは1以上必要です`;
             });
         }
@@ -222,10 +223,11 @@ export function validateStation(station) {
         if (!config.splitCount || config.splitCount < 1) {
             errors.splitCount = 'splitCountは1以上である必要があります';
         }
-        if (!config.ports || config.ports.length === 0) {
-            errors.ports = 'ポートスロットは1つ以上必要です';
-        } else if (config.ports.length !== (config.splitCount || 0)) {
-            errors.ports = `ポート数(${config.ports.length})がsplitCount(${config.splitCount})と一致しません`;
+        const outPorts = config.outPorts || config.ports || [];
+        if (outPorts.length === 0) {
+            errors.ports = '出力ポートは1つ以上必要です';
+        } else if (outPorts.length !== (config.splitCount || 0)) {
+            errors.ports = `出力ポート数(${outPorts.length})がsplitCount(${config.splitCount})と一致しません`;
         }
     }
 

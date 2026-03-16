@@ -912,7 +912,8 @@ func TestIntegration_Moduler_BasicPassthrough(t *testing.T) {
 			{
 				ID:     "moduler-1",
 				Type:   domain.StationTypeModuler,
-				Ports:  []domain.Port{{Capacity: 1}},
+				InPorts:  []domain.Port{{Capacity: 1}},
+				OutPorts: []domain.Port{{Capacity: 1}},
 				Config: map[string]interface{}{},
 				SubScenario: &domain.SubScenario{
 					Stations: []domain.Station{
@@ -981,7 +982,8 @@ func TestIntegration_Moduler_WithMergeAndSplit(t *testing.T) {
 			{
 				ID:     "moduler-qc",
 				Type:   domain.StationTypeModuler,
-				Ports:  []domain.Port{{Capacity: 1}},
+				InPorts:  []domain.Port{{Capacity: 1}},
+				OutPorts: []domain.Port{{Capacity: 1}},
 				Config: map[string]interface{}{},
 				SubScenario: &domain.SubScenario{
 					Stations: []domain.Station{
@@ -1087,7 +1089,8 @@ func TestIntegration_LargeScenario_WithModuler(t *testing.T) {
 			{
 				ID:     "moduler-qc",
 				Type:   domain.StationTypeModuler,
-				Ports:  []domain.Port{{Capacity: 1}},
+				InPorts:  []domain.Port{{Capacity: 1}},
+				OutPorts: []domain.Port{{Capacity: 1}},
 				Config: map[string]interface{}{},
 				SubScenario: &domain.SubScenario{
 					Stations: []domain.Station{

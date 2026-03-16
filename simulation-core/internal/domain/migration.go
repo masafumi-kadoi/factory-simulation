@@ -85,7 +85,7 @@ func MigrateInterlockRules(config *InterlockConfig) bool {
 	return true
 }
 
-// MigrateScenario migrates all interlock rules in a scenario.
+// MigrateScenario migrates all interlock rules and port config in a scenario.
 func MigrateScenario(scenario *Scenario) {
 	if scenario == nil {
 		return
@@ -95,12 +95,43 @@ func MigrateScenario(scenario *Scenario) {
 		if st.InterlockRules != nil {
 			MigrateInterlockRules(st.InterlockRules)
 		}
-		// Migrate port interlock rules
-		for j := range st.Ports {
-			if st.Ports[j].InterlockRules != nil {
-				MigrateInterlockRules(st.Ports[j].InterlockRules)
+		// Migrate port interlock rules (InPorts and OutPorts)
+		for j := range st.InPorts {
+			if st.InPorts[j].InterlockRules != nil {
+				MigrateInterlockRules(st.InPorts[j].InterlockRules)
 			}
 		}
+		for j := range st.OutPorts {
+			if st.OutPorts[j].InterlockRules != nil {
+				MigrateInterlockRules(st.OutPorts[j].InterlockRules)
+			}
+		}
+		// Migrate config: "ports" → "inPorts" (Merge) / "outPorts" (Split)
+		migratePortsConfig(st)
+	}
+}
+
+// migratePortsConfig migrates the legacy "ports" config key to "inPorts" (Merge) or "outPorts" (Split).
+func migratePortsConfig(st *Station) {
+	if st.Config == nil {
+		return
+	}
+	portsVal, hasPorts := st.Config["ports"]
+	if !hasPorts {
+		return
+	}
+
+	switch st.Type {
+	case StationTypeMerge:
+		if _, hasNew := st.Config["inPorts"]; !hasNew {
+			st.Config["inPorts"] = portsVal
+		}
+		delete(st.Config, "ports")
+	case StationTypeSplit:
+		if _, hasNew := st.Config["outPorts"]; !hasNew {
+			st.Config["outPorts"] = portsVal
+		}
+		delete(st.Config, "ports")
 	}
 }
 

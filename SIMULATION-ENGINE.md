@@ -9,7 +9,7 @@ Factory Simulationエンジンは**離散イベントシミュレーション**�
 
 ## 10信号モデル
 
-全ステーションは Port[0]（ステーション本体）に以下の10信号を持ちます。
+全ステーションはステーション本体に以下の10信号を持ちます。
 
 | 信号名 | 略称 | 種別 | 説明 |
 |--------|------|------|------|
@@ -36,12 +36,18 @@ Factory Simulationエンジンは**離散イベントシミュレーション**�
 ┌─────────────────────────────────────────────┐
 │  Station                                     │
 │                                              │
-│  Port[0] = ステーション本体                    │
-│  ├── Work (単一ワーク)                        │
-│  ├── Signals (10信号)                        │
-│  └── InterlockRules (ステーションレベル)        │
+│  Work (単一ワーク、ステーション本体)            │
+│  Signals (10信号 + 導出信号)                  │
+│  InterlockRules (ステーションレベル)            │
 │                                              │
-│  Port[1+] = 追加ポート (Merge/Splitのみ)      │
+│  InPorts[0] = ステーションレベル入力            │
+│  InPorts[1+] = 追加入力ポート (Mergeのみ)      │
+│  ├── Works[] (複数ワーク, Capacity制限)        │
+│  ├── Signals (ポートレベル信号)               │
+│  └── InterlockRules (ポートレベル)            │
+│                                              │
+│  OutPorts[0] = ステーションレベル出力           │
+│  OutPorts[1+] = 追加出力ポート (Splitのみ)     │
 │  ├── Works[] (複数ワーク, Capacity制限)        │
 │  ├── Signals (ポートレベル信号)               │
 │  └── InterlockRules (ポートレベル)            │
@@ -50,12 +56,29 @@ Factory Simulationエンジンは**離散イベントシミュレーション**�
 
 ### ポートインデックスの対応
 
-- `Port[0]`: ステーション本体（全ステーション共通）
-- `Port[1]` = ポート0（エディタ上の Port 1）
-- `Port[2]` = ポート1（エディタ上の Port 2）
-- `Port[N+1]` = ポートN（エディタ上の Port N+1）
+- `InPorts[0]` / `OutPorts[0]`: ステーションレベル（全ステーション共通）
+- `InPorts[1]` = 入力ポート0（エディタ上の Port 1）— Merge用
+- `OutPorts[1]` = 出力ポート0（エディタ上の Port 1）— Split用
 
-> **注意**: エンジン内部では `GetInputPort(0)` → `Ports[1]` のように +1 オフセットされます。
+> **注意**: エンジン内部では `GetInputPort(0)` → `InPorts[1]` のように +1 オフセットされます。
+
+### 導出信号（Merge/Split）
+
+Merge/Splitでは、ポートレベルの信号からステーションレベルの信号が**自動導出**されます。
+
+| 導出信号 | ステーション種別 | 導出ロジック |
+|----------|-----------------|-------------|
+| `allPortsFull` | Merge | 全入力ポートが満杯（`len(Works) >= Capacity`） |
+| `portNFull` | Merge | ポートN が満杯（動的: `port1Full`, `port2Full`, ...） |
+| `inputReady` | Merge | いずれかの入力ポートの IR=ON（ANY） |
+| `inputWorkPresent` | Merge | いずれかの入力ポートの IWP=ON（ANY） |
+| `allPortsEmpty` | Split | 全出力ポートが空（`len(Works) == 0`） |
+| `portNEmpty` | Split | ポートN が空（動的: `port1Empty`, `port2Empty`, ...） |
+| `portNHasWork` | Split | ポートN にワーク有（動的: `port1HasWork`, ...） |
+| `outputReady` | Split | いずれかの出力ポートの OR=ON（ANY） |
+| `outputWorkPresent` | Split | いずれかの出力ポートの OWP=ON（ANY） |
+
+導出は `evaluateAndLogSignals()` 内で、ルール評価の**前**に実行されます。
 
 ---
 
@@ -220,63 +243,83 @@ WorkDestroyed
 
 ### 4. Merge（結合）
 
-複数ポートからワークを受け取り、1つの結合ワークを生成するステーション。
+複数入力ポートからワークを受け取り、1つの結合ワークを生成するステーション。
 
 ```
- 上流A ──→ Port[1] (入力ポート0) ─┐
-                                   │  ┌──────────┐
- 上流B ──→ Port[2] (入力ポート1) ──┼─→│  Merge   │──→ 下流へ
-                                   │  │  Port[0] │
- 上流C ──→ Port[3] (入力ポート2) ─┘  └──────────┘
+ 上流A ──→ InPorts[1] (入力ポート0) ─┐
+                                      │  ┌──────────┐
+ 上流B ──→ InPorts[2] (入力ポート1) ──┼─→│  Merge   │──→ 下流へ
+                                      │  │  Work    │
+ 上流C ──→ InPorts[3] (入力ポート2) ─┘  └──────────┘
 ```
 
 **ポート構成:**
 
 | ポート | 用途 | ワーク |
 |--------|------|--------|
-| Port[0] | 本体（結合ワーク出力） | 結合後ワーク1つ |
-| Port[1] | 入力ポート0 | 入力ワーク（Capacity分） |
-| Port[2] | 入力ポート1 | 入力ワーク（Capacity分） |
-| Port[N+1] | 入力ポートN | 入力ワーク（Capacity分） |
+| Work | 本体（結合ワーク出力） | 結合後ワーク1つ |
+| InPorts[1] | 入力ポート0 | 入力ワーク（Capacity分） |
+| InPorts[2] | 入力ポート1 | 入力ワーク（Capacity分） |
+| InPorts[N+1] | 入力ポートN | 入力ワーク（Capacity分） |
 
 **2層インターロック:**
 
 | レイヤー | 対象 | 制御する信号 | 判定基準 |
 |----------|------|------------|----------|
-| **ポートレベル** | Port[1+] 各個別 | `inputReady` | そのポートにワークがあるか |
-| **ステーションレベル** | Port[0] | `outputReady`, `processReady` | 全ポートにワークが揃ったか、結合完了したか |
+| **ポートレベル** | InPorts[1+] 各個別 | `inputReady` | そのポートにワークがあるか |
+| **ステーションレベル** | Station.Signals | `outputReady`, `processReady` | 導出信号 `allPortsFull` による判定 |
 
 **信号フロー:**
 
 ```
-WorkArrived (Port[N+1]に到着)
+WorkArrived (InPorts[N+1]に到着)
   ├─ ポートレベル: port.IWP = ON
   │   └─ evaluatePortRules → port.IR = OFF
-  ├─ ステーションレベル: IWP = ON
-  ├─ 全ポート充足チェック → PR = ON (全ポートfull)
+  ├─ deriveStationSignals:
+  │   ├─ IWP = ANY(port.IWP)  ← 導出
+  │   ├─ IR = ANY(port.IR)    ← 導出
+  │   ├─ allPortsFull = ALL(port full)  ← 導出
+  │   └─ portNFull = port[N] full  ← 導出
   └─ evaluateRules
-       └─ IR = OFF (R2: PR=ON → IR=OFF) ※ステーションレベルIR
+       └─ PR = ON (R1: allPortsFull=ON & RUN=OFF & CPL=OFF → PR=ON)
             └─ triggerProcessReady → ProcessingStarted スケジュール
 
 ProcessingStarted (結合処理開始)
   ├─ RUN = ON, PWP = ON
-  └─ evaluateRules
+  └─ evaluateRules → PR = OFF (R2: RUN=ON → PR=OFF)
 
 MergeCompleted (結合処理完了)
-  ├─ 全ポートのワーク消費 → 結合ワークを Port[0] に生成
+  ├─ 全ポートのワーク消費 → 結合ワークを Work に生成
   ├─ ポートレベル: 全port.IWP = OFF → port.IR = ON
-  ├─ ステーションレベル: RUN=OFF, CPL=ON, OWP=ON, IWP=OFF, PR=OFF
+  ├─ deriveStationSignals → IWP=OFF, allPortsFull=OFF
+  ├─ ステーションレベル: RUN=OFF, CPL=ON, OWP=ON
   └─ evaluateRules
        └─ OR = ON (R3: CPL=ON & OWP=ON → OR=ON)
             └─ checkHandshakes → 下流.IR=ON なら WorkDeparted
 
 WorkDeparted (結合ワーク搬出)
-  ├─ IWP, PWP, OWP, CPL, PR = OFF
+  ├─ PWP, OWP, CPL, PR = OFF
+  ├─ deriveStationSignals → IWP/IR をポートから再導出
   └─ evaluateRules
-       ├─ OR = OFF
-       └─ IR = ON (ステーションレベル)
+       └─ OR = OFF (R4: OWP=OFF → OR=OFF)
             └─ checkHandshakes (各ポートの上流を確認)
 ```
+
+**デフォルトルール（ステーションレベル）:**
+
+| ID | 条件 | → | 結果 |
+|----|------|---|------|
+| R1 | allPortsFull=ON & RUN=OFF & CPL=OFF | → | PR = ON |
+| R2 | RUN = ON | → | PR = OFF |
+| R3 | CPL=ON & OWP=ON | → | OR = ON |
+| R4 | OWP = OFF | → | OR = OFF |
+
+**デフォルトルール（ポートレベル）:**
+
+| ID | 条件 | → | 結果 |
+|----|------|---|------|
+| R1 | IWP = OFF | → | IR = ON |
+| R2 | IWP = ON | → | IR = OFF |
 
 **ハンドシェイク判定:**
 
@@ -285,20 +328,20 @@ WorkDeparted (結合ワーク搬出)
 搬出時: ステーション.OR = ON  AND  下流.IR = ON  → 搬送開始
 ```
 
-> ステーションレベルの `inputReady` はポートレベルの `inputReady` とは独立です。
+> ステーションレベルの `inputReady` はポートから導出されます（ANY）。
 > **搬入判定にはポートレベルの `inputReady` が使われます。**
 
 ---
 
 ### 5. Split（分割）
 
-結合ワークを受け取り、元の構成要素に分割して各ポートから搬出するステーション。
+結合ワークを受け取り、元の構成要素に分割して各出力ポートから搬出するステーション。
 
 ```
                     ┌──────────┐
- 上流 ────→ Port[0] │  Split   │ Port[1] (出力ポート0) ──→ 下流A
-                    │          │ Port[2] (出力ポート1) ──→ 下流B
-                    │          │ Port[3] (出力ポート2) ──→ 下流C
+ 上流 ────→  Work   │  Split   │ OutPorts[1] (出力ポート0) ──→ 下流A
+                    │          │ OutPorts[2] (出力ポート1) ──→ 下流B
+                    │          │ OutPorts[3] (出力ポート2) ──→ 下流C
                     └──────────┘
 ```
 
@@ -306,22 +349,22 @@ WorkDeparted (結合ワーク搬出)
 
 | ポート | 用途 | ワーク |
 |--------|------|--------|
-| Port[0] | 本体（結合ワーク入力） | 受入ワーク1つ |
-| Port[1] | 出力ポート0 | 分割後ワーク |
-| Port[2] | 出力ポート1 | 分割後ワーク |
-| Port[N+1] | 出力ポートN | 分割後ワーク |
+| Work | 本体（結合ワーク入力） | 受入ワーク1つ |
+| OutPorts[1] | 出力ポート0 | 分割後ワーク |
+| OutPorts[2] | 出力ポート1 | 分割後ワーク |
+| OutPorts[N+1] | 出力ポートN | 分割後ワーク |
 
 **2層インターロック:**
 
 | レイヤー | 対象 | 制御する信号 | 判定基準 |
 |----------|------|------------|----------|
-| **ステーションレベル** | Port[0] | `inputReady`, `processReady` | 本体にワークがあるか、加工状態 |
-| **ポートレベル** | Port[1+] 各個別 | `outputReady` | そのポートにワークがあるか |
+| **ステーションレベル** | Station.Signals | `inputReady`, `processReady` | 導出信号 `allPortsEmpty` による判定 |
+| **ポートレベル** | OutPorts[1+] 各個別 | `outputReady` | そのポートにワークがあるか |
 
 **信号フロー:**
 
 ```
-WorkArrived (Port[0]に到着)
+WorkArrived (Workに到着)
   ├─ IWP, PWP, OWP = ON
   └─ evaluateRules
        ├─ IR = OFF (R2: IWP=ON → IR=OFF)
@@ -330,22 +373,44 @@ WorkArrived (Port[0]に到着)
 
 ProcessingStarted
   ├─ RUN = ON
-  └─ evaluateRules → PR = OFF
+  └─ evaluateRules → PR = OFF (R4: RUN=ON → PR=OFF)
 
 ProcessingCompleted (分割処理)
-  ├─ ExecuteSplit: Port[0].Work消費 → 各Port[1+]にワーク配分
+  ├─ ExecuteSplit: Work消費 → 各OutPorts[1+]にワーク配分
   ├─ ポートレベル: 各port.OWP = ON → port.OR = ON
-  ├─ ステーションレベル: RUN=OFF, CPL=ON, IWP=OFF, PWP=OFF, OWP=ON
+  ├─ deriveStationSignals:
+  │   ├─ OWP = ANY(port.OWP)  ← 導出
+  │   ├─ OR = ANY(port.OR)    ← 導出
+  │   ├─ allPortsEmpty = ALL(port empty) = OFF  ← 導出
+  │   └─ portNEmpty / portNHasWork  ← 導出
+  ├─ ステーションレベル: RUN=OFF, CPL=ON, IWP=OFF, PWP=OFF
   └─ evaluateRules
        └─ checkHandshakes (各ポート個別)
             └─ port[N].OR=ON & 下流.IR=ON → PortWorkDeparted スケジュール
 
 PortWorkDeparted (各ポートから個別に搬出)
   ├─ ポートレベル: port.OWP = OFF → port.OR = OFF
+  ├─ deriveStationSignals → allPortsEmpty / OWP / OR 再導出
   └─ 全ポート空? → ステーションリセット
-       ├─ CPL = OFF, OWP = OFF
-       └─ evaluateRules → IR = ON
+       ├─ CPL = OFF
+       └─ evaluateRules → IR = ON (R1: allPortsEmpty=ON & IWP=OFF & RUN=OFF & CPL=OFF)
 ```
+
+**デフォルトルール（ステーションレベル）:**
+
+| ID | 条件 | → | 結果 |
+|----|------|---|------|
+| R1 | allPortsEmpty=ON & IWP=OFF & RUN=OFF & CPL=OFF | → | IR = ON |
+| R2 | IWP = ON | → | IR = OFF |
+| R3 | IWP=ON & RUN=OFF & CPL=OFF | → | PR = ON |
+| R4 | RUN = ON | → | PR = OFF |
+
+**デフォルトルール（ポートレベル）:**
+
+| ID | 条件 | → | 結果 |
+|----|------|---|------|
+| R1 | OWP = ON | → | OR = ON |
+| R2 | OWP = OFF | → | OR = OFF |
 
 **ハンドシェイク判定:**
 
@@ -427,8 +492,8 @@ Modulerステーション内部の出口。Entryと同じ透過動作。
  │                                    │
  │  Entry ──→ Processing ──→ Exit    │
  │                                    │
- │  Port[0]: 本体 (信号導出用)        │
- │  Port[1+]: Entry/Exitポート        │
+ │  Work: なし (信号導出用)            │
+ │  InPorts[1+]/OutPorts[1+]: Entry/Exit │
  └────────────────────────────────────┘
 ```
 
@@ -436,8 +501,9 @@ Modulerステーション内部の出口。Entryと同じ透過動作。
 
 | ポート | 用途 | ワーク |
 |--------|------|--------|
-| Port[0] | 本体（信号の集約用） | なし（直接ワークを保持しない） |
-| Port[1+] | Entry/Exitの外部接続ポート | エディタ上のポート接続用 |
+| Work | 本体（信号の集約用） | なし（直接ワークを保持しない） |
+| InPorts[1+] | Entry外部接続ポート | エディタ上のポート接続用 |
+| OutPorts[1+] | Exit外部接続ポート | エディタ上のポート接続用 |
 
 **フラット展開（実行時）:**
 
@@ -453,7 +519,7 @@ Modulerステーション内部の出口。Entryと同じ透過動作。
 
 **信号導出（内部→親）:**
 
-Modulerの Port[0] 信号は内部ステーションの状態から**自動導出**されます。
+Modulerの Signals は内部ステーションの状態から**自動導出**されます。
 
 | 親Moduler信号 | 導出元 |
 |---------------|--------|
@@ -484,9 +550,9 @@ Modulerの Port[0] 信号は内部ステーションの状態から**自動導�
 2. 全ステーション:
    ├─ InitializeInterlockRulesFromConfig (カスタムルール読込)
    ├─ InterlockRules未設定 → GetDefaultInterlockConfig (デフォルト適用)
-   ├─ InitializeSignals (Port[0]の全信号を初期値にセット)
-   └─ InitializePorts (Port[1+]を生成、ポートレベルルール適用)
-3. 全ステーション: evaluateRules (初期制御信号の計算)
+   ├─ InitializeSignals (ステーションレベルの全信号を初期値にセット)
+   └─ InitializePorts (InPorts[1+]/OutPorts[1+]を生成、ポートレベルルール適用)
+3. 全ステーション: deriveStationSignals + evaluateRules (初期制御信号の計算)
 4. 初期ワーク配置 (placeInitialWorks)
 5. 各Sourceに WorkCreated イベントをスケジュール (time=0)
 ```
@@ -511,22 +577,22 @@ checkHandshakes(station):
 
   Case 1: station が上流 (非Split)
     station.OR=ON & station.Work≠nil → 下流の IR チェック
-      ├─ 下流がMerge → port[N].IR チェック
+      ├─ 下流がMerge → InPorts[N].IR チェック
       └─ 下流が通常  → station.IR チェック
     → 両方ON なら WorkDeparted スケジュール
 
   Case 1b: station が Split
-    各出力port.OR=ON → 下流の IR チェック
+    各OutPorts[N].OR=ON → 下流の IR チェック
     → 両方ON なら PortWorkDeparted スケジュール
 
   Case 2: station が下流 (非Merge)
     station.IR=ON → 上流の OR チェック
-      ├─ 上流がSplit → port[N].OR チェック
+      ├─ 上流がSplit → OutPorts[N].OR チェック
       └─ 上流が通常  → station.OR チェック
     → 両方ON なら WorkDeparted スケジュール
 
   Case 2b: station が Merge
-    各入力port.IR=ON → 上流の OR チェック
+    各InPorts[N].IR=ON → 上流の OR チェック
     → 両方ON なら WorkDeparted スケジュール
 ```
 
@@ -534,16 +600,16 @@ checkHandshakes(station):
 
 ## 全ステーション ポート・信号 比較表
 
-| ステーション | Port[0] 用途 | Port[1+] | IR 判定 | OR 判定 | PR |
-|-------------|-------------|----------|---------|---------|------|
-| **Source** | ワーク生成・搬出 | なし | × (搬入なし) | ステーション | × |
-| **Processing** | 搬入・加工・搬出 | なし | ステーション | ステーション | ステーション |
-| **Drain** | ワーク受入・破棄 | なし | ステーション | × (搬出なし) | × |
-| **Merge** | 結合ワーク搬出 | 入力ポート | **ポートレベル** | ステーション | ステーション |
-| **Split** | ワーク受入・分割 | 出力ポート | ステーション | **ポートレベル** | ステーション |
-| **Entry** | 即通過 | なし | ステーション | ステーション | × |
-| **Exit** | 即通過 | なし | ステーション | ステーション | × |
-| **Moduler** | 信号集約（ワーク非保持） | Entry/Exit接続 | ステーション(導出) | ステーション(導出) | × |
+| ステーション | Work 用途 | InPorts[1+] | OutPorts[1+] | IR 判定 | OR 判定 | PR |
+|-------------|----------|-------------|--------------|---------|---------|------|
+| **Source** | ワーク生成・搬出 | なし | なし | × (搬入なし) | ステーション | × |
+| **Processing** | 搬入・加工・搬出 | なし | なし | ステーション | ステーション | ステーション |
+| **Drain** | ワーク受入・破棄 | なし | なし | ステーション | × (搬出なし) | × |
+| **Merge** | 結合ワーク搬出 | 入力ポート | なし | **ポート(導出)** | ステーション | ステーション(allPortsFull) |
+| **Split** | ワーク受入・分割 | なし | 出力ポート | ステーション(allPortsEmpty) | **ポート(導出)** | ステーション |
+| **Entry** | 即通過 | なし | なし | ステーション | ステーション | × |
+| **Exit** | 即通過 | なし | なし | ステーション | ステーション | × |
+| **Moduler** | 信号集約（ワーク非保持） | Entry接続 | Exit接続 | ステーション(導出) | ステーション(導出) | × |
 
 ---
 

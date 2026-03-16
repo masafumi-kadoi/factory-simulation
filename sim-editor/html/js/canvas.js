@@ -48,6 +48,10 @@ export class Canvas {
         // Multi-drag state
         this.multiDragStartPositions = new Map(); // stationId -> {x, y}
 
+        // Manual double-click detection (browser dblclick unreliable with DOM rebuilds)
+        this._lastClickStationId = null;
+        this._lastClickTime = 0;
+
         this._setupEventListeners();
         this._updateViewBox();
     }
@@ -110,6 +114,20 @@ export class Canvas {
         const connectionIndex = target.closest('.connection')?.dataset?.connectionIndex;
 
         if (stationId) {
+            // Manual double-click detection for Moduler drill-down
+            const now = Date.now();
+            if (tool === 'select' && stationId === this._lastClickStationId && (now - this._lastClickTime) < 400) {
+                this._lastClickStationId = null;
+                this._lastClickTime = 0;
+                const station = this.editor.getStation(stationId);
+                if (station && station.type === 'moduler') {
+                    this.editor.drillDown(stationId);
+                    return;
+                }
+            }
+            this._lastClickStationId = stationId;
+            this._lastClickTime = now;
+
             if (tool === 'select') {
                 if (e.shiftKey) {
                     this.editor.addToSelection(stationId);
@@ -134,6 +152,7 @@ export class Canvas {
                 }
             }
         } else {
+            this._lastClickStationId = null;
             // Clicked on empty space
             if (tool === 'source' || tool === 'processing' || tool === 'drain' || tool === 'merge' || tool === 'split' || tool === 'moduler') {
                 this.editor.addStation(tool, pt.x, pt.y);
@@ -1000,7 +1019,7 @@ export class Canvas {
     }
 
     _renderMergePorts(parentGroup, station) {
-        const ports = station.config.ports || [];
+        const ports = station.config.inPorts || station.config.ports || [];
         const count = ports.length;
         if (count === 0) return;
 
@@ -1062,7 +1081,7 @@ export class Canvas {
     }
 
     _renderSplitPorts(parentGroup, station) {
-        const ports = station.config.ports || [];
+        const ports = station.config.outPorts || station.config.ports || [];
         const count = ports.length;
         if (count === 0) return;
 
@@ -1155,7 +1174,9 @@ export class Canvas {
         }
 
         // Merge/Split ports
-        const ports = station.config.ports || [];
+        const ports = (portType === 'input')
+            ? (station.config.inPorts || station.config.ports || [])
+            : (station.config.outPorts || station.config.ports || []);
         const count = ports.length;
         if (portIndex < 0 || portIndex >= count) return null;
 

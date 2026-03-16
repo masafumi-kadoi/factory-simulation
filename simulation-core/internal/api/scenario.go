@@ -101,10 +101,10 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: mergeCount must be >= 1", st.ID))
 				return
 			}
-			// Validate ports array
-			ports, ok := st.Config["ports"].([]interface{})
-			if !ok || len(ports) != int(mergeCount) {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: ports must have exactly mergeCount (%d) entries", st.ID, int(mergeCount)))
+			// Validate ports array (support both "inPorts" and legacy "ports")
+			ports := getPortsArray(st.Config, "inPorts", "ports")
+			if len(ports) != int(mergeCount) {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Merge station %s: inPorts/ports must have exactly mergeCount (%d) entries", st.ID, int(mergeCount)))
 				return
 			}
 			for idx, b := range ports {
@@ -137,10 +137,10 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: splitCount must be >= 1", st.ID))
 				return
 			}
-			// Validate ports array
-			ports, ok := st.Config["ports"].([]interface{})
-			if !ok || len(ports) != int(splitCount) {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: ports must have exactly splitCount (%d) entries", st.ID, int(splitCount)))
+			// Validate ports array (support both "outPorts" and legacy "ports")
+			ports := getPortsArray(st.Config, "outPorts", "ports")
+			if len(ports) != int(splitCount) {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Split station %s: outPorts/ports must have exactly splitCount (%d) entries", st.ID, int(splitCount)))
 				return
 			}
 			for idx, b := range ports {
@@ -563,6 +563,18 @@ func convertStationsToResponse(stations []domain.Station) []StationRequest {
 		}
 	}
 	return result
+}
+
+// getPortsArray retrieves a ports array from config, trying newKey first then fallback to legacyKey.
+func getPortsArray(config map[string]interface{}, newKey, legacyKey string) []interface{} {
+	for _, key := range []string{newKey, legacyKey} {
+		if val, ok := config[key]; ok {
+			if arr, ok := val.([]interface{}); ok {
+				return arr
+			}
+		}
+	}
+	return nil
 }
 
 // convertConnectionsToResponse converts domain connections to API response

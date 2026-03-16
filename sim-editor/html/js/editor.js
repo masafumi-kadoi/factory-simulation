@@ -384,7 +384,7 @@ class ScenarioEditor {
             },
             merge: {
                 mergeCount: 2,
-                ports: [
+                inPorts: [
                     { capacity: 1 },
                     { capacity: 1 }
                 ],
@@ -395,7 +395,7 @@ class ScenarioEditor {
             },
             split: {
                 splitCount: 2,
-                ports: [
+                outPorts: [
                     { capacity: 1 },
                     { capacity: 1 }
                 ],
