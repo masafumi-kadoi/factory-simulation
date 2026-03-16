@@ -58,6 +58,12 @@ export class MenuBar {
                 ]
             },
             {
+                id: 'settings', label: '設定',
+                items: [
+                    { id: 'mouse-config', label: 'マウス操作設定', shortcut: '', action: () => this.editor.openMouseConfig() },
+                ]
+            },
+            {
                 id: 'simdb', label: 'SimDB',
                 items: [
                     { id: 'simdb-settings', label: '接続先設定', shortcut: '', action: () => this.editor.openSimDBSettings() },

@@ -282,14 +282,6 @@ class ScenarioEditor {
             });
         }
 
-        // Mouse config button
-        const mouseConfigBtn = document.getElementById('mouse-config-btn');
-        if (mouseConfigBtn) {
-            mouseConfigBtn.addEventListener('click', () => {
-                this._mouseConfigModal.open();
-            });
-        }
-
         // Prevent accidental page leave
         window.addEventListener('beforeunload', (e) => {
             if (this.dirty) {
@@ -936,6 +928,10 @@ class ScenarioEditor {
 
     getThemeMode() { return this.themeManager.mode; }
     setTheme(mode) { this.themeManager.setMode(mode); }
+
+    openMouseConfig() {
+        this._mouseConfigModal.open();
+    }
 
     openSimDBSettings() {
         const simdb = this.scenario.simdbConfig || {};

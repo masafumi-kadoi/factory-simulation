@@ -16,7 +16,118 @@ class App {
         this._mouseConfigModal = new MouseConfigModal(this.mouseConfig);
         injectMouseConfigCSS();
 
+        this._buildMenuBar();
         this._init();
+    }
+
+    _buildMenuBar() {
+        const container = document.getElementById('menubar');
+        container.innerHTML = '';
+
+        const left = document.createElement('div');
+        left.className = 'menubar-left';
+
+        const menus = [
+            {
+                label: '表示', items: [
+                    { label: 'ステーション名表示', toggle: () => document.getElementById('show-station-names')?.checked, action: () => { const cb = document.getElementById('show-station-names'); if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } } },
+                    { label: 'ワークID表示', toggle: () => document.getElementById('show-work-ids')?.checked, action: () => { const cb = document.getElementById('show-work-ids'); if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } } },
+                    { label: 'インターロック表示', toggle: () => document.getElementById('show-interlocks')?.checked, action: () => { const cb = document.getElementById('show-interlocks'); if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } } },
+                ]
+            },
+            {
+                label: '設定', items: [
+                    { label: 'マウス操作設定', action: () => this._mouseConfigModal.open() },
+                ]
+            },
+        ];
+
+        let openMenu = null;
+
+        const closeAll = () => {
+            container.querySelectorAll('.menu-item.open').forEach(el => el.classList.remove('open'));
+            openMenu = null;
+        };
+
+        menus.forEach(menuDef => {
+            const item = document.createElement('div');
+            item.className = 'menu-item';
+
+            const label = document.createElement('span');
+            label.className = 'menu-label';
+            label.textContent = menuDef.label;
+            item.appendChild(label);
+
+            const dropdown = document.createElement('div');
+            dropdown.className = 'menu-dropdown';
+            item.appendChild(dropdown);
+
+            const renderDropdown = () => {
+                dropdown.innerHTML = '';
+                menuDef.items.forEach(itemDef => {
+                    if (itemDef.type === 'separator') {
+                        const sep = document.createElement('div');
+                        sep.className = 'menu-separator';
+                        dropdown.appendChild(sep);
+                        return;
+                    }
+                    const btn = document.createElement('button');
+                    btn.className = 'menu-dropdown-item';
+                    if (itemDef.toggle && itemDef.toggle()) btn.classList.add('active');
+
+                    const labelSpan = document.createElement('span');
+                    labelSpan.textContent = itemDef.label;
+                    btn.appendChild(labelSpan);
+
+                    if (itemDef.toggle) {
+                        const indicator = document.createElement('span');
+                        indicator.className = 'toggle-indicator';
+                        btn.appendChild(indicator);
+                    }
+
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        itemDef.action();
+                        closeAll();
+                    });
+                    dropdown.appendChild(btn);
+                });
+            };
+
+            label.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (openMenu === item) {
+                    closeAll();
+                } else {
+                    closeAll();
+                    item.classList.add('open');
+                    openMenu = item;
+                    renderDropdown();
+                }
+            });
+
+            label.addEventListener('mouseenter', () => {
+                if (openMenu && openMenu !== item) {
+                    closeAll();
+                    item.classList.add('open');
+                    openMenu = item;
+                    renderDropdown();
+                }
+            });
+
+            left.appendChild(item);
+        });
+
+        container.appendChild(left);
+
+        const right = document.createElement('div');
+        right.className = 'menubar-right';
+        const simInfo = document.createElement('span');
+        simInfo.id = 'sim-info';
+        right.appendChild(simInfo);
+        container.appendChild(right);
+
+        document.addEventListener('click', () => closeAll());
     }
 
     async _init() {
@@ -136,12 +247,6 @@ class App {
             }
         });
 
-        const mouseConfigBtn = document.getElementById('mouse-config-btn');
-        if (mouseConfigBtn) {
-            mouseConfigBtn.addEventListener('click', () => {
-                this._mouseConfigModal.open();
-            });
-        }
     }
 
     play() {
