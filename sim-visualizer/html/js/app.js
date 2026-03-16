@@ -1,6 +1,7 @@
 // Main application logic
 import { fetchSimulation, fetchScenario, fetchLogs } from './api.js';
 import { Visualizer3D } from './visualizer.js';
+import { MouseConfig, MouseConfigModal, injectMouseConfigCSS } from '../../../shared/js/mouse-config.js';
 
 class App {
     constructor() {
@@ -11,6 +12,9 @@ class App {
         this.isPlaying = false;
         this.speed = 1.0;
         this.lastFrameTime = 0;
+        this.mouseConfig = new MouseConfig('viewer');
+        this._mouseConfigModal = new MouseConfigModal(this.mouseConfig);
+        injectMouseConfigCSS();
 
         this._init();
     }
@@ -51,7 +55,7 @@ class App {
             // Initialize 3D visualizer
             const container = document.getElementById('container-3d');
             container.innerHTML = '';
-            this.visualizer = new Visualizer3D(container);
+            this.visualizer = new Visualizer3D(container, this.mouseConfig);
             const flatScenario = this._flattenScenario(scenario);
             console.log('[App] Flat stations:', flatScenario.stations.map(s => s.id));
             console.log('[App] Flat connections:', flatScenario.connections.map(c => `${c.from} → ${c.to}`));
@@ -131,6 +135,13 @@ class App {
                 this.visualizer.setShowInterlocks(e.target.checked);
             }
         });
+
+        const mouseConfigBtn = document.getElementById('mouse-config-btn');
+        if (mouseConfigBtn) {
+            mouseConfigBtn.addEventListener('click', () => {
+                this._mouseConfigModal.open();
+            });
+        }
     }
 
     play() {

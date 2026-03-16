@@ -2,10 +2,11 @@
 FROM nginx:alpine
 
 # Copy HTML and assets
-COPY html/ /usr/share/nginx/html/
+COPY sim-visualizer/html/ /usr/share/nginx/html/
+COPY shared/ /usr/share/nginx/html/shared/
 
 # Configure nginx
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY sim-visualizer/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

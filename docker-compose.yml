@@ -55,8 +55,8 @@ services:
 
   sim-visualizer:
     build:
-      context: ./sim-visualizer
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sim-visualizer/Dockerfile
     container_name: factory-sim-visualizer
     expose:
       - "80"
@@ -73,8 +73,8 @@ services:
 
   sim-editor:
     build:
-      context: ./sim-editor
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: sim-editor/Dockerfile
     container_name: factory-sim-editor
     expose:
       - "80"

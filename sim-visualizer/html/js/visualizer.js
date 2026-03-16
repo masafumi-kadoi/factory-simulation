@@ -16,8 +16,9 @@ const STATION_COLORS = {
 };
 
 export class Visualizer3D {
-    constructor(container) {
+    constructor(container, mouseConfig) {
         this.container = container;
+        this._mouseConfig = mouseConfig || null;
         this.scene = null;
         this.camera = null;
         this.renderer = null;
@@ -82,16 +83,36 @@ export class Visualizer3D {
         this.controls.minDistance = 200;
         this.controls.maxDistance = 2000;
         this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
-        this.controls.mouseButtons = {
-            LEFT: THREE.MOUSE.PAN,
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.ROTATE
-        };
+        this._applyMouseConfig();
+
+        // Update OrbitControls when mouse config changes
+        if (this._mouseConfig) {
+            this._mouseConfig.onChange(() => this._applyMouseConfig());
+        }
 
         window.addEventListener('resize', () => this._onResize());
 
         // Click handler for work selection
         this.renderer.domElement.addEventListener('click', (event) => this._handleClick(event));
+    }
+
+    _applyMouseConfig() {
+        if (!this.controls) return;
+        const ACTION_MAP = { pan: THREE.MOUSE.PAN, rotate: THREE.MOUSE.ROTATE, dolly: THREE.MOUSE.DOLLY };
+        if (this._mouseConfig) {
+            const cfg = this._mouseConfig.config;
+            this.controls.mouseButtons = {
+                LEFT: ACTION_MAP[cfg.left] ?? THREE.MOUSE.PAN,
+                MIDDLE: ACTION_MAP[cfg.middle] ?? THREE.MOUSE.DOLLY,
+                RIGHT: ACTION_MAP[cfg.right] ?? THREE.MOUSE.ROTATE,
+            };
+        } else {
+            this.controls.mouseButtons = {
+                LEFT: THREE.MOUSE.PAN,
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: THREE.MOUSE.ROTATE,
+            };
+        }
     }
 
     setOnWorkClick(callback) {

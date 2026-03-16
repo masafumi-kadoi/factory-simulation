@@ -169,6 +169,10 @@ export class Canvas {
 
     _handleContextMenu(e) {
         e.preventDefault();
+        // Only show context menu if right-click is assigned to contextMenu
+        const mc = this.editor.mouseConfig;
+        if (mc && mc.getButton('contextMenu') !== 2) return;
+
         const target = e.target;
         const pt = this._getSVGPoint(e);
         const contextMenu = this.editor.contextMenu;
@@ -310,10 +314,40 @@ export class Canvas {
     _handleMouseDown(e) {
         const pt = this._getSVGPoint(e);
 
-        // Middle button (button 1) for panning
-        if (e.button === 1) {
+        // Pan button (configurable, default: middle button)
+        const mc = this.editor.mouseConfig;
+        const panButton = mc ? mc.getButton('pan') : 1;
+        if (e.button === panButton) {
             this.isPanning = true;
             this.panStart = { x: e.clientX, y: e.clientY };
+            e.preventDefault();
+            return;
+        }
+
+        // Context menu via non-right button (e.g. middle=contextMenu in "panRight" preset)
+        const ctxButton = mc ? mc.getButton('contextMenu') : 2;
+        if (e.button === ctxButton && ctxButton !== 2) {
+            // Trigger context menu manually for non-right-click button
+            const contextMenu = this.editor.contextMenu;
+            if (contextMenu) {
+                const target = e.target;
+                const stationEl = target.closest('.station');
+                const connectionEl = target.closest('.connection');
+                if (stationEl) {
+                    const stationId = stationEl.dataset.stationId;
+                    if (!this.editor.isStationSelected(stationId)) {
+                        this.editor.selectItem({ type: 'station', id: stationId });
+                    }
+                    contextMenu.show(e.clientX, e.clientY, contextMenu.stationItems(stationId));
+                } else if (connectionEl) {
+                    const connectionIndex = parseInt(connectionEl.dataset.connectionIndex);
+                    this.editor.selectItem({ type: 'connection', index: connectionIndex });
+                    contextMenu.show(e.clientX, e.clientY, contextMenu.connectionItems(connectionIndex));
+                } else {
+                    this.editor._contextMenuSVGPoint = { x: pt.x, y: pt.y };
+                    contextMenu.show(e.clientX, e.clientY, contextMenu.canvasItems());
+                }
+            }
             e.preventDefault();
             return;
         }

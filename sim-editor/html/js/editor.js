@@ -11,6 +11,7 @@ import { Clipboard } from './clipboard.js';
 import { ContextMenu } from './context-menu.js';
 import { Minimap } from './minimap.js';
 import { SearchBar } from './search.js';
+import { MouseConfig, MouseConfigModal, injectMouseConfigCSS } from '../../../shared/js/mouse-config.js';
 import {
     CommandManager,
     AddStationCommand,
@@ -44,6 +45,9 @@ class ScenarioEditor {
         this.interlockModal = new InterlockModal();
         this.commandManager = new CommandManager(this);
         this.tooltipManager = new TooltipManager();
+        this.mouseConfig = new MouseConfig('editor');
+        this._mouseConfigModal = new MouseConfigModal(this.mouseConfig);
+        injectMouseConfigCSS();
 
         // Settings
         this._lineStyle = localStorage.getItem('sim-editor-line-style') || 'bezier';
@@ -275,6 +279,14 @@ class ScenarioEditor {
         if (autoLayoutBtn) {
             autoLayoutBtn.addEventListener('click', () => {
                 this.autoLayout();
+            });
+        }
+
+        // Mouse config button
+        const mouseConfigBtn = document.getElementById('mouse-config-btn');
+        if (mouseConfigBtn) {
+            mouseConfigBtn.addEventListener('click', () => {
+                this._mouseConfigModal.open();
             });
         }
 
