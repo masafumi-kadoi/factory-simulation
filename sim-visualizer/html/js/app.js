@@ -1,7 +1,16 @@
 // Main application logic
 import { fetchSimulation, fetchScenario, fetchLogs } from './api.js';
 import { Visualizer3D } from './visualizer.js';
-import { MouseConfig, MouseConfigModal, injectMouseConfigCSS } from '../../../shared/js/mouse-config.js';
+// MouseConfig is loaded dynamically to avoid blocking the app if the shared module is unavailable
+let MouseConfig, MouseConfigModal, injectMouseConfigCSS;
+try {
+    const mod = await import('../shared/js/mouse-config.js');
+    MouseConfig = mod.MouseConfig;
+    MouseConfigModal = mod.MouseConfigModal;
+    injectMouseConfigCSS = mod.injectMouseConfigCSS;
+} catch (e) {
+    console.warn('[App] mouse-config.js not available, using defaults:', e.message);
+}
 
 class App {
     constructor() {
@@ -12,9 +21,9 @@ class App {
         this.isPlaying = false;
         this.speed = 1.0;
         this.lastFrameTime = 0;
-        this.mouseConfig = new MouseConfig('viewer');
-        this._mouseConfigModal = new MouseConfigModal(this.mouseConfig);
-        injectMouseConfigCSS();
+        this.mouseConfig = MouseConfig ? new MouseConfig('viewer') : null;
+        this._mouseConfigModal = (MouseConfigModal && this.mouseConfig) ? new MouseConfigModal(this.mouseConfig) : null;
+        if (injectMouseConfigCSS) injectMouseConfigCSS();
 
         this._buildMenuBar();
         this._init();
@@ -37,7 +46,7 @@ class App {
             },
             {
                 label: '設定', items: [
-                    { label: 'マウス操作設定', action: () => this._mouseConfigModal.open() },
+                    { label: 'マウス操作設定', action: () => { if (this._mouseConfigModal) this._mouseConfigModal.open(); else alert('マウス操作設定モジュールが読み込まれていません'); } },
                 ]
             },
         ];

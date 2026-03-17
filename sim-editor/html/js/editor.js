@@ -11,7 +11,16 @@ import { Clipboard } from './clipboard.js';
 import { ContextMenu } from './context-menu.js';
 import { Minimap } from './minimap.js';
 import { SearchBar } from './search.js';
-import { MouseConfig, MouseConfigModal, injectMouseConfigCSS } from '../../../shared/js/mouse-config.js';
+// MouseConfig is loaded dynamically to avoid blocking the editor if the shared module is unavailable
+let MouseConfig, MouseConfigModal, injectMouseConfigCSS;
+try {
+    const mod = await import('../shared/js/mouse-config.js');
+    MouseConfig = mod.MouseConfig;
+    MouseConfigModal = mod.MouseConfigModal;
+    injectMouseConfigCSS = mod.injectMouseConfigCSS;
+} catch (e) {
+    console.warn('[Editor] mouse-config.js not available, using defaults:', e.message);
+}
 import {
     CommandManager,
     AddStationCommand,
@@ -45,9 +54,9 @@ class ScenarioEditor {
         this.interlockModal = new InterlockModal();
         this.commandManager = new CommandManager(this);
         this.tooltipManager = new TooltipManager();
-        this.mouseConfig = new MouseConfig('editor');
-        this._mouseConfigModal = new MouseConfigModal(this.mouseConfig);
-        injectMouseConfigCSS();
+        this.mouseConfig = MouseConfig ? new MouseConfig('editor') : null;
+        this._mouseConfigModal = (MouseConfigModal && this.mouseConfig) ? new MouseConfigModal(this.mouseConfig) : null;
+        if (injectMouseConfigCSS) injectMouseConfigCSS();
 
         // Settings
         this._lineStyle = localStorage.getItem('sim-editor-line-style') || 'bezier';
@@ -930,7 +939,11 @@ class ScenarioEditor {
     setTheme(mode) { this.themeManager.setMode(mode); }
 
     openMouseConfig() {
-        this._mouseConfigModal.open();
+        if (this._mouseConfigModal) {
+            this._mouseConfigModal.open();
+        } else {
+            alert('マウス操作設定モジュールが読み込まれていません');
+        }
     }
 
     openSimDBSettings() {
