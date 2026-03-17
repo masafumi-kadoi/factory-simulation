@@ -333,8 +333,7 @@ class ScenarioEditor {
 
         // Update canvas cursor
         const canvas = document.getElementById('canvas');
-        canvas.className = '';
-        canvas.classList.add(tool + '-mode');
+        canvas.setAttribute('class', tool + '-mode');
 
         // Update info text
         const infoTexts = {
