@@ -354,7 +354,12 @@ class ScenarioEditor {
         const svg = document.getElementById('canvas');
         if (svg) svg.classList.toggle('sub-scenario', this.isInSubScenario());
         this.canvas.render();
-        this.propertiesPanel.render();
+        // Skip properties re-render if user is actively editing inside the panel
+        const active = document.activeElement;
+        const propsContainer = this.propertiesPanel?.container;
+        if (!active || !propsContainer || !propsContainer.contains(active)) {
+            this.propertiesPanel.render();
+        }
         this._updateUndoRedoButtons();
         if (this.minimap) this.minimap.render();
     }
