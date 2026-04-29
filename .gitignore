@@ -1,5 +1,6 @@
 # === スペック駆動開発環境（scripts/setup-dev.sh で生成）===
-.claude/
+.claude/*
+!.claude/settings.json
 .agents/
 original-skills/
 vendor/
