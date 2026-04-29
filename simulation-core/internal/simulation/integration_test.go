@@ -1146,6 +1146,158 @@ func TestIntegration_LargeScenario_WithModuler(t *testing.T) {
 	}
 }
 
+// TestIntegration_NestedMergeSplitChain tests that mergedFrom metadata is preserved
+// through a chain of Merge → Merge → Moduler(internal Split) → external Split.
+// This reproduces the scenario where:
+// 1. Merge1: hoge + fuga → hogefuga (mergedFrom: [hoge, fuga])
+// 2. Merge2: hogefuga + piyo → hogefugapiyo (mergedFrom: [hogefuga{metadata:mergedFrom[hoge,fuga]}, piyo])
+// 3. Moduler internal Split: hogefugapiyo → hogefuga + piyo (restores hogefuga's mergedFrom)
+// 4. External Split: hogefuga → hoge + fuga (uses restored mergedFrom)
+func TestIntegration_NestedMergeSplitChain(t *testing.T) {
+	scenario := &domain.Scenario{
+		ID:   "test-nested-chain",
+		Name: "Nested Merge-Split Chain",
+		Stations: []domain.Station{
+			*domain.NewStation("src-hoge", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(1), "departureTime": float64(1.0), "workType": "hoge",
+			}),
+			*domain.NewStation("src-fuga", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(1), "departureTime": float64(1.0), "workType": "fuga",
+			}),
+			*domain.NewStation("src-piyo", domain.StationTypeSource, map[string]interface{}{
+				"workCount": float64(1), "departureTime": float64(1.0), "workType": "piyo",
+			}),
+			// Merge1: hoge + fuga → hogefuga
+			*domain.NewStation("merge-hf", domain.StationTypeMerge, map[string]interface{}{
+				"mergeCount": float64(2), "processingTime": float64(0.5),
+				"arrivalTime": float64(0.5), "departureTime": float64(0.5),
+				"outputWorkType": "hogefuga",
+				"inPorts": []interface{}{
+					map[string]interface{}{"capacity": float64(1)},
+					map[string]interface{}{"capacity": float64(1)},
+				},
+			}),
+			// Merge2: hogefuga + piyo → hogefugapiyo
+			*domain.NewStation("merge-all", domain.StationTypeMerge, map[string]interface{}{
+				"mergeCount": float64(2), "processingTime": float64(0.5),
+				"arrivalTime": float64(0.5), "departureTime": float64(0.5),
+				"outputWorkType": "hogefugapiyo",
+				"inPorts": []interface{}{
+					map[string]interface{}{"capacity": float64(1)},
+					map[string]interface{}{"capacity": float64(1)},
+				},
+			}),
+			// Moduler with internal Split: hogefugapiyo → hogefuga + piyo
+			{
+				ID:       "moduler-1",
+				Type:     domain.StationTypeModuler,
+				InPorts:  []domain.Port{{Capacity: 1}},
+				OutPorts: []domain.Port{{Capacity: 1}},
+				Config:   map[string]interface{}{},
+				SubScenario: &domain.SubScenario{
+					Stations: []domain.Station{
+						*domain.NewStation("entry-0", domain.StationTypeEntry, map[string]interface{}{}),
+						*domain.NewStation("internal-split", domain.StationTypeSplit, map[string]interface{}{
+							"processingTime": float64(0.5), "arrivalTime": float64(0.3), "departureTime": float64(0.3),
+							"outPorts": []interface{}{
+								map[string]interface{}{"capacity": float64(1)},
+								map[string]interface{}{"capacity": float64(1)},
+							},
+						}),
+						*domain.NewStation("exit-0", domain.StationTypeExit, map[string]interface{}{}),
+						*domain.NewStation("exit-1", domain.StationTypeExit, map[string]interface{}{}),
+					},
+					Connections: []domain.Connection{
+						{From: "entry-0", To: "internal-split", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+						{From: "internal-split", To: "exit-0", Condition: domain.RoutingDefault, FromPortIndex: 0, ToPortIndex: -1},
+						{From: "internal-split", To: "exit-1", Condition: domain.RoutingDefault, FromPortIndex: 1, ToPortIndex: -1},
+					},
+				},
+				EntryCount: 1,
+				ExitCount:  2,
+			},
+			// External Split: hogefuga → hoge + fuga
+			*domain.NewStation("split-ext", domain.StationTypeSplit, map[string]interface{}{
+				"processingTime": float64(0.5), "arrivalTime": float64(0.5), "departureTime": float64(0.5),
+				"outPorts": []interface{}{
+					map[string]interface{}{"capacity": float64(1)},
+					map[string]interface{}{"capacity": float64(1)},
+				},
+			}),
+			*domain.NewStation("drain-hoge", domain.StationTypeDrain, map[string]interface{}{"arrivalTime": float64(0.5)}),
+			*domain.NewStation("drain-fuga", domain.StationTypeDrain, map[string]interface{}{"arrivalTime": float64(0.5)}),
+			*domain.NewStation("drain-piyo", domain.StationTypeDrain, map[string]interface{}{"arrivalTime": float64(0.5)}),
+		},
+		Connections: []domain.Connection{
+			{From: "src-hoge", To: "merge-hf", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 0},
+			{From: "src-fuga", To: "merge-hf", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 1},
+			{From: "merge-hf", To: "merge-all", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 0},
+			{From: "src-piyo", To: "merge-all", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: 1},
+			{From: "merge-all", To: "moduler-1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			// Moduler exit-0 → external split (hogefuga)
+			{From: "moduler-1", To: "split-ext", Condition: domain.RoutingDefault, FromPortIndex: 0, ToPortIndex: -1},
+			// Moduler exit-1 → drain-piyo (piyo)
+			{From: "moduler-1", To: "drain-piyo", Condition: domain.RoutingDefault, FromPortIndex: 1, ToPortIndex: -1},
+			// External split → drain-hoge, drain-fuga
+			{From: "split-ext", To: "drain-hoge", Condition: domain.RoutingDefault, FromPortIndex: 0, ToPortIndex: -1},
+			{From: "split-ext", To: "drain-fuga", Condition: domain.RoutingDefault, FromPortIndex: 1, ToPortIndex: -1},
+		},
+	}
+
+	engine := NewEngine(scenario)
+	_, _, workEvents, _, err := engine.Run("sim-nested", "test", 60.0)
+	if err != nil {
+		t.Fatalf("simulation failed: %v", err)
+	}
+
+	// Verify: hoge and fuga are produced by external split, piyo goes to drain-piyo
+	// (port order may vary, so check across both drains)
+	destroyedPiyo := countWorkEventsWithType(workEvents, "drain-piyo", string(EventWorkDestroyed), "piyo")
+	if destroyedPiyo != 1 {
+		t.Errorf("expected 1 piyo work at drain-piyo, got %d", destroyedPiyo)
+	}
+
+	// hoge and fuga should be destroyed at either drain-hoge or drain-fuga
+	hogeCount := 0
+	fugaCount := 0
+	for _, we := range workEvents {
+		if we.EventType != string(EventWorkDestroyed) {
+			continue
+		}
+		if we.StationID == "drain-hoge" || we.StationID == "drain-fuga" {
+			switch we.WorkType {
+			case "hoge":
+				hogeCount++
+			case "fuga":
+				fugaCount++
+			}
+		}
+	}
+	if hogeCount != 1 {
+		t.Errorf("expected 1 hoge work destroyed, got %d", hogeCount)
+	}
+	if fugaCount != 1 {
+		t.Errorf("expected 1 fuga work destroyed, got %d", fugaCount)
+	}
+
+	if t.Failed() {
+		for _, we := range workEvents {
+			t.Logf("[%.2f] %s work=%s type=%s station=%s port=%d",
+				we.Timestamp, we.EventType, we.WorkFriendlyName, we.WorkType, we.StationID, we.PortIndex)
+		}
+	}
+}
+
+func countWorkEventsWithType(events []WorkEventLog, stationID, eventType, workType string) int {
+	count := 0
+	for _, e := range events {
+		if e.StationID == stationID && e.EventType == eventType && e.WorkType == workType {
+			count++
+		}
+	}
+	return count
+}
+
 func countWorkEvents(events []WorkEventLog, stationID string, eventType string) int {
 	count := 0
 	for _, e := range events {

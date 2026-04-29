@@ -463,10 +463,15 @@ func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []
 
 	mergedFromList := make([]interface{}, len(consumedWorks))
 	for i, w := range consumedWorks {
-		mergedFromList[i] = map[string]interface{}{
+		entry := map[string]interface{}{
 			"workId": w.ID,
 			"type":   w.Type,
 		}
+		// Preserve consumed work's metadata so Split can restore the full chain
+		if w.Metadata != nil {
+			entry["metadata"] = w.Metadata
+		}
+		mergedFromList[i] = entry
 	}
 	mergedWork.Metadata = map[string]interface{}{
 		"mergedFrom": mergedFromList,
@@ -478,7 +483,9 @@ func (s *Station) ExecuteMerge(newWorkIDFunc func() (string, string)) (*Work, []
 	return mergedWork, consumedWorks, nil
 }
 
-// ExecuteSplit splits a merged work into component works and places them into output ports (Ports[1+]).
+// ExecuteSplit splits a work into component works and places them into output ports.
+// If the work was previously merged (has mergedFrom metadata), it reconstructs the original works.
+// If the work was not merged, it creates copies for each output port.
 func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, error) {
 	if s.Type != StationTypeSplit {
 		return nil, fmt.Errorf("station %s is not a split station", s.ID)
@@ -489,40 +496,67 @@ func (s *Station) ExecuteSplit(newWorkIDFunc func() (string, string)) ([]*Work, 
 		return nil, fmt.Errorf("station %s has no work to split", s.ID)
 	}
 
-	mergedFrom, ok := work.Metadata["mergedFrom"]
-	if !ok {
-		return nil, fmt.Errorf("station %s: work %s has no mergedFrom metadata (not a merged work)", s.ID, work.ID)
-	}
-
-	mergedFromList, ok := mergedFrom.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("station %s: invalid mergedFrom format", s.ID)
-	}
-
 	var splitWorks []*Work
 	sourceWorkID := work.ID
 	sourceWorkType := work.Type
 
-	for i, item := range mergedFromList {
-		itemMap, ok := item.(map[string]interface{})
+	mergedFrom, hasMergedFrom := work.Metadata["mergedFrom"]
+	if hasMergedFrom {
+		// Merged work: reconstruct original works from mergedFrom metadata
+		mergedFromList, ok := mergedFrom.([]interface{})
 		if !ok {
-			continue
+			return nil, fmt.Errorf("station %s: invalid mergedFrom format", s.ID)
 		}
-		origType, _ := itemMap["type"].(string)
 
-		wID, fName := newWorkIDFunc()
-		splitWork := NewWorkWithType(wID, fName, origType)
-		splitWork.Metadata = map[string]interface{}{
-			"splitFrom": map[string]interface{}{
-				"workId": sourceWorkID,
-				"type":   sourceWorkType,
-			},
+		for i, item := range mergedFromList {
+			itemMap, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			origType, _ := itemMap["type"].(string)
+
+			wID, fName := newWorkIDFunc()
+			splitWork := NewWorkWithType(wID, fName, origType)
+			splitWork.Metadata = map[string]interface{}{
+				"splitFrom": map[string]interface{}{
+					"workId": sourceWorkID,
+					"type":   sourceWorkType,
+				},
+			}
+			// Restore original work's metadata (e.g., mergedFrom for nested merge/split chains)
+			if origMeta, ok := itemMap["metadata"].(map[string]interface{}); ok {
+				for k, v := range origMeta {
+					splitWork.Metadata[k] = v
+				}
+			}
+			splitWorks = append(splitWorks, splitWork)
+
+			port := s.GetOutputPort(i)
+			if port != nil {
+				port.Works = append(port.Works, splitWork)
+			}
 		}
-		splitWorks = append(splitWorks, splitWork)
+	} else {
+		// Non-merged work: create a copy for each output port
+		portCount := s.OutputPortCount()
+		if portCount == 0 {
+			portCount = 1 // fallback: at least 1 output
+		}
+		for i := 0; i < portCount; i++ {
+			wID, fName := newWorkIDFunc()
+			splitWork := NewWorkWithType(wID, fName, sourceWorkType)
+			splitWork.Metadata = map[string]interface{}{
+				"splitFrom": map[string]interface{}{
+					"workId": sourceWorkID,
+					"type":   sourceWorkType,
+				},
+			}
+			splitWorks = append(splitWorks, splitWork)
 
-		port := s.GetOutputPort(i)
-		if port != nil {
-			port.Works = append(port.Works, splitWork)
+			port := s.GetOutputPort(i)
+			if port != nil {
+				port.Works = append(port.Works, splitWork)
+			}
 		}
 	}
 

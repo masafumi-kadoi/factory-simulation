@@ -341,7 +341,7 @@ export class PropertiesPanel {
 
         // Auto-save on input (immediate feedback)
         if (this.autoSave) {
-            this.container.querySelectorAll('.property-input, select.property-input').forEach(input => {
+            this.container.querySelectorAll('.property-input, select.property-input, #prop-continuous, #prop-name').forEach(input => {
                 if (!input.disabled) {
                     input.addEventListener('input', () => saveStationConfig());
                     input.addEventListener('change', () => saveStationConfig());
@@ -393,7 +393,7 @@ export class PropertiesPanel {
             btn.addEventListener('click', () => {
                 const portIndex = parseInt(btn.dataset.portIndex);
                 if (this._interlockModal) {
-                    this._interlockModal.open(station, this.editor.scenario, () => {
+                    this._interlockModal.open(station, this.editor.getRootScenario(), () => {
                         this.editor._markDirty();
                         this.render();
                     }, { portIndex, portType: 'mergeInput' });
@@ -439,7 +439,7 @@ export class PropertiesPanel {
             btn.addEventListener('click', () => {
                 const portIndex = parseInt(btn.dataset.portIndex);
                 if (this._interlockModal) {
-                    this._interlockModal.open(station, this.editor.scenario, () => {
+                    this._interlockModal.open(station, this.editor.getRootScenario(), () => {
                         this.editor._markDirty();
                         this.render();
                     }, { portIndex, portType: 'splitOutput' });
@@ -487,7 +487,7 @@ export class PropertiesPanel {
         if (interlockBtn) {
             interlockBtn.addEventListener('click', () => {
                 if (this._interlockModal) {
-                    this._interlockModal.open(station, this.editor.scenario, () => {
+                    this._interlockModal.open(station, this.editor.getRootScenario(), () => {
                         this.editor._markDirty();
                         this.render();
                     });

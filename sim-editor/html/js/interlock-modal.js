@@ -820,32 +820,40 @@ export class InterlockModal {
 
         if (!this._isCustom) return { errors, warnings };
 
+        // Determine which signals are relevant based on port type
+        const checkIR = !this._portOpts || this._portOpts.portType === 'mergeInput';
+        const checkOR = !this._portOpts || this._portOpts.portType === 'splitOutput';
+
         // Check each main tab
         const irOn = this._editRules.find(r => r.target === 'inputReady' && r.value === true);
         const irOff = this._editRules.find(r => r.target === 'inputReady' && r.value === false);
         const orOn = this._editRules.find(r => r.target === 'outputReady' && r.value === true);
         const orOff = this._editRules.find(r => r.target === 'outputReady' && r.value === false);
 
-        if (!irOn || irOn.conditions.length === 0) {
-            warnings.push('搬入可がONになる条件がありません。ワークを受け入れられません。');
+        if (checkIR) {
+            if (!irOn || irOn.conditions.length === 0) {
+                warnings.push('搬入可がONになる条件がありません。ワークを受け入れられません。');
+            }
+            if (!irOff || irOff.conditions.length === 0) {
+                warnings.push('搬入可をOFFにする条件がありません。一度ONになると常にONのままになります。');
+            }
         }
-        if (!irOff || irOff.conditions.length === 0) {
-            warnings.push('搬入可をOFFにする条件がありません。一度ONになると常にONのままになります。');
-        }
-        if (!orOn || orOn.conditions.length === 0) {
-            warnings.push('搬出可がONになる条件がありません。ワークを搬出できません。');
-        }
-        if (!orOff || orOff.conditions.length === 0) {
-            warnings.push('搬出可をOFFにする条件がありません。一度ONになると常にONのままになります。');
+        if (checkOR) {
+            if (!orOn || orOn.conditions.length === 0) {
+                warnings.push('搬出可がONになる条件がありません。ワークを搬出できません。');
+            }
+            if (!orOff || orOff.conditions.length === 0) {
+                warnings.push('搬出可をOFFにする条件がありません。一度ONになると常にONのままになります。');
+            }
         }
 
         // Check for identical ON/OFF conditions (conflict)
-        if (irOn && irOff && irOn.conditions.length > 0 && irOff.conditions.length > 0) {
+        if (checkIR && irOn && irOff && irOn.conditions.length > 0 && irOff.conditions.length > 0) {
             if (this._conditionsEqual(irOn.conditions, irOff.conditions)) {
                 errors.push('搬入可ON/OFFの条件が同じです。矛盾しています。');
             }
         }
-        if (orOn && orOff && orOn.conditions.length > 0 && orOff.conditions.length > 0) {
+        if (checkOR && orOn && orOff && orOn.conditions.length > 0 && orOff.conditions.length > 0) {
             if (this._conditionsEqual(orOn.conditions, orOff.conditions)) {
                 errors.push('搬出可ON/OFFの条件が同じです。矛盾しています。');
             }
@@ -871,8 +879,8 @@ export class InterlockModal {
             }
         }
 
-        // Check for processReady ON rule in processing stations
-        if (this._station.type === 'processing' || this._station.type === 'split') {
+        // Check for processReady ON rule in processing stations (not for port-level rules)
+        if (!this._portOpts && (this._station.type === 'processing' || this._station.type === 'split')) {
             const hasPR = this._editRules.some(r => r.target === 'processReady' && r.value === true && (r.conditions || []).length > 0);
             if (!hasPR) {
                 warnings.push('加工準備ON (processReady) のルールがありません。加工が開始されない可能性があります。');

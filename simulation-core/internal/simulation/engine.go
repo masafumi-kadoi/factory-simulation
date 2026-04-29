@@ -354,6 +354,12 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 // Entry/Exit are transparent (zero processing time): WorkArrived → Completed → WorkDeparted.
 // No ProcessingStarted/ProcessingCompleted events are generated.
 func (e *Engine) handleEntryExitWorkArrived(work *domain.Work, station *domain.Station) error {
+	// Debug: log work metadata at Entry/Exit arrival
+	if work.Metadata != nil {
+		log.Printf("[%s] station=%s work=%s type=%s metadataKeys=%v",
+			station.Type, station.ID, work.ID, work.Type, metadataKeys(work.Metadata))
+	}
+
 	// Set work directly (bypass AddWork which sets state to Receiving)
 	station.SetWork(work)
 	station.State = domain.StateCompleted
@@ -407,6 +413,10 @@ func (e *Engine) handleMergeCompleted(event *Event, station *domain.Station) err
 	if err != nil {
 		return err
 	}
+
+	// Debug: log merged work metadata
+	log.Printf("[Merge] station=%s work=%s type=%s metadataKeys=%v mergedFromCount=%d",
+		station.ID, mergedWork.ID, mergedWork.Type, metadataKeys(mergedWork.Metadata), len(consumedWorks))
 
 	// Record work lineage
 	e.recordWorkLineage(mergedWork.ID, mergedWork.FriendlyName, consumedWorks, "merge", station.ID)
@@ -542,6 +552,13 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 func (e *Engine) handleSplitProcessingCompleted(station *domain.Station) error {
 	// Mark as processing complete first
 	station.State = domain.StateCompleted
+
+	// Debug: log work metadata before split
+	if work := station.GetWork(); work != nil {
+		hasMergedFrom := work.Metadata != nil && work.Metadata["mergedFrom"] != nil
+		log.Printf("[Split] station=%s work=%s type=%s hasMergedFrom=%v metadataKeys=%v",
+			station.ID, work.ID, work.Type, hasMergedFrom, metadataKeys(work.Metadata))
+	}
 
 	// Execute split (places works into output ports Ports[1+], clears Port[0].Work)
 	splitWorks, err := station.ExecuteSplit(e.generateWorkID)
@@ -1448,4 +1465,16 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 	}
 
 	return nil
+}
+
+// metadataKeys returns the keys of a work's metadata map (for debug logging)
+func metadataKeys(m map[string]interface{}) []string {
+	if m == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }

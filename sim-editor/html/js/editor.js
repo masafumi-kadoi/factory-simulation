@@ -1587,6 +1587,12 @@ class ScenarioEditor {
         return this._editStack.length > 0;
     }
 
+    /** Returns the root scenario (top of the edit stack), or the current scenario if not in a sub-scenario */
+    getRootScenario() {
+        if (this._editStack.length === 0) return this.scenario;
+        return this._editStack[0].scenario;
+    }
+
     // Auto-connect unconnected Entry/Exit to nearest station
     autoConnectEntryExit() {
         if (!this.isInSubScenario()) return;
