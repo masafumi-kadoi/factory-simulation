@@ -517,6 +517,17 @@ Modulerステーション内部の出口。Entryと同じ透過動作。
   ※ 内部ステーションIDは "親ID.子ID" 形式にプレフィックス付与
 ```
 
+**StationModulerMap（内部ステーション→親Modulerマッピング）:**
+
+フラット展開時に `buildStationModulerMap()` が構築する `map[string]string`。各内部ステーションIDをキーとし、親ModulerステーションIDを値とする。
+
+| 用途 | 旧方式 | 新方式 |
+|------|--------|--------|
+| `isInternalStation()` | `strings.Contains(id, ".")` — O(1)だが命名規約に依存 | `stationModulerMap[id]` — O(1)、構造的に正確 |
+| `findParentModuler()` | 全Modulerの全InternalStationIDsを走査 — O(M×I) | `stationModulerMap[id]` — O(1) |
+
+> `stationModulerMap` が未構築（nil）の場合はフォールバック（旧方式）が動作する。
+
 **信号導出（内部→親）:**
 
 Modulerの Signals は内部ステーションの状態から**自動導出**されます。
@@ -547,14 +558,21 @@ Modulerの Signals は内部ステーションの状態から**自動導出**さ
 
 ```
 1. FlattenScenario: ModulerStation を再帰的にフラット展開
-2. 全ステーション:
+   └─ StationModulerMap を構築（内部ステーションID → 親Moduler IDのマッピング）
+2. BuildStationIndex: O(1)ルックアップ用インデックスを構築
+   ├─ stationIndex: ステーションID → Stationsスライス内インデックス
+   ├─ connectionsFrom: ステーションID → 出力接続インデックス群
+   └─ connectionsTo: ステーションID → 入力接続インデックス群
+3. stationModulerMap をEngineに設定
+4. 全ステーション:
    ├─ InitializeInterlockRulesFromConfig (カスタムルール読込)
    ├─ InterlockRules未設定 → GetDefaultInterlockConfig (デフォルト適用)
    ├─ InitializeSignals (ステーションレベルの全信号を初期値にセット)
    └─ InitializePorts (InPorts[1+]/OutPorts[1+]を生成、ポートレベルルール適用)
-3. 全ステーション: deriveStationSignals + evaluateRules (初期制御信号の計算)
-4. 初期ワーク配置 (placeInitialWorks)
-5. 各Sourceに WorkCreated イベントをスケジュール (time=0)
+5. タイマーデフォルト値初期化 (initializeTimerDefaults)
+6. 全ステーション: deriveStationSignals + evaluateRules (初期制御信号の計算)
+7. 初期ワーク配置 (placeInitialWorks)
+8. 各Sourceに WorkCreated イベントをスケジュール (time=0)
 ```
 
 ### イベントループ
@@ -564,13 +582,14 @@ while (イベントキューが空でない AND 現在時刻 ≤ timeLimit):
     event = キューから最小時刻のイベントを取得
     currentTime = event.Time
     processEvent(event)
-    if (内部ステーションのイベント):
+    if isInternalStation(event.StationID):  // stationModulerMapでO(1)判定
         triggerModulerDerivation (親Modulerの信号再導出)
 ```
 
 ### ハンドシェイク（搬送開始条件）
 
 ワーク搬送は、`evaluateAndLogSignals()` 内で `checkHandshakes()` が呼ばれて判定されます。
+接続の走査には `GetConnectionsFrom()` / `GetConnectionsTo()` を使用し、`BuildStationIndex()` で構築されたインデックスによりO(degree)で隣接接続を取得します。
 
 ```
 checkHandshakes(station):
@@ -642,6 +661,27 @@ WorkDeparted → workFullタイマー取消、workEmptyタイマー開始
 ```
 
 これらの信号はインターロックルールの条件として使用でき、たとえば「滞留時に搬出を優先する」などの制御が可能です。
+
+---
+
+## ログ構造とModulerID
+
+全てのログ（`StationStatusLog`, `WorkEventLog`）には `ModulerID` フィールドが付与されます。
+
+| ログ種別 | ModulerID の値 |
+|----------|---------------|
+| トップレベルステーションのログ | `""` (空文字) |
+| Moduler内部ステーションのログ | 親ModulerステーションID (例: `"moduler-1"`) |
+
+これにより、フラットなログ出力をModuler構造ベースでグルーピング・フィルタリングできます。
+
+```
+例: moduler-1 内部のログのみ抽出
+  StationStatusLog { StationID: "moduler-1.proc-1", ModulerID: "moduler-1", ... }
+  WorkEventLog     { StationID: "moduler-1.proc-1", ModulerID: "moduler-1", ... }
+```
+
+`ModulerID` は `stationModulerMap` から自動で設定されるため、ログ出力側での明示的な判定は不要です。
 
 ---
 

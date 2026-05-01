@@ -58,7 +58,7 @@ factory-simulation/
 │       ├── executions.html # 実行履歴
 │       └── status.html     # システムステータス
 ├── database/
-│   └── migrations/         # PostgreSQLマイグレーション (001-004)
+│   └── migrations/         # PostgreSQLマイグレーション (001-010)
 └── docker-compose.yml      # コンテナ構成
 ```
 
@@ -159,22 +159,31 @@ echo "Open: http://localhost:8081?sim=$SIM_ID"
 
 各ステーションは2つの信号を持ちます：
 
-| 信号 | 意味 | ONの条件 |
-|------|------|----------|
-| **搬入可 (InputReady)** | ワークを受け入れ可能 | `State == Idle && CurrentWork == nil` |
-| **搬出可 (OutputReady)** | ワークを送出可能 | `State == Completed && CurrentWork != nil` |
+各ステーションは**10信号インターロックモデル**を持ちます（IWP/PWP/OWP/RUN/CPL/PR/IR/OR/WF/WE）。
 
-**ワーク移動の条件:**
-- 送出側の「搬出可」がON **かつ** 受入側の「搬入可」がONの時のみワークが移動
-- これにより、1ステーション1ワークが保証される
+| 信号 | 意味 |
+|------|------|
+| **搬入可 (InputReady=IR)** | インターロックルールにより導出。ワークを受け入れ可能 |
+| **搬出可 (OutputReady=OR)** | インターロックルールにより導出。ワークを送出可能 |
+
+**ワーク移動の条件（ハンドシェイク方式）:**
+- 送出側の `OR=ON` **かつ** 受入側の `IR=ON` の時のみワークが移動
+- Merge/Splitは2層インターロック（ステーションレベル + ポートレベル）
+
+詳細は [SIMULATION-ENGINE.md](SIMULATION-ENGINE.md) を参照。
 
 ### ステーション種別
 
 | 種別 | 役割 | 特徴 |
 |------|------|------|
 | **Source** | ワーク生成 | 指定個数のワークを逐次生成 |
-| **Processing** | 処理（基底クラス） | 1ワークを受け取り、処理して送出 |
+| **Processing** | 加工処理 | 1ワークを受け取り、処理して送出 |
 | **Drain** | ワーク消滅 | ワークを破棄して終了 |
+| **Merge** | ワーク結合 | 複数入力ポートからワークを受け取り1つに結合 |
+| **Split** | ワーク分割 | 1つのワークを複数出力ポートに分割 |
+| **Entry** | モジュラー入口 | Moduler内部の透過入口（加工時間なし） |
+| **Exit** | モジュラー出口 | Moduler内部の透過出口（加工時間なし） |
+| **Moduler** | 複合ステーション | 内部にサブシナリオを持ち、実行時にフラット展開 |
 
 ### 状態遷移
 
@@ -222,7 +231,7 @@ POST /api/scenarios
   "stations": [
     {
       "id": "station-id",
-      "type": "source|processing|drain",
+      "type": "source|processing|drain|merge|split|entry|exit|moduler",
       "locationId": 123,
       "config": {
         "workCount": 3,
@@ -233,7 +242,7 @@ POST /api/scenarios
     }
   ],
   "connections": [
-    {"from": "station-id-1", "to": "station-id-2", "condition": "default"}
+    {"from": "station-id-1", "to": "station-id-2", "condition": "default", "fromPortIndex": -1, "toPortIndex": -1}
   ]
 }
 ```

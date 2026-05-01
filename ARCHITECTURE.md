@@ -63,58 +63,45 @@ Factory Simulationは、工場の生産ラインにおけるワークフロー�
 - 処理中ステーションへの干渉防止
 - デッドロックの防止
 
-### 実装例（Go）
+### 10信号インターロックモデル
 
-```go
-// station.go
+現在の実装は10信号モデルを採用しています。信号の状態からインターロックルールにより制御信号が導出されます。
 
-// IsInputReady returns true if station can accept a new work (搬入可 signal)
-func (s *Station) IsInputReady() bool {
-    // Input ready only when station is idle (no work present)
-    return s.State == StateIdle && s.CurrentWork == nil
-}
+| 信号名 | 略称 | 種別 | 説明 |
+|--------|------|------|------|
+| `inputWorkPresent` | IWP | 状態 | 入力ワーク有 |
+| `processingWorkPresent` | PWP | 状態 | 加工中ワーク有 |
+| `outputWorkPresent` | OWP | 状態 | 出力ワーク有 |
+| `running` | RUN | 状態 | 加工実行中 |
+| `complete` | CPL | 状態 | 加工完了 |
+| `processReady` | PR | 制御 | 加工開始可 |
+| `inputReady` | IR | 制御 | 搬入可 |
+| `outputReady` | OR | 制御 | 搬出可 |
+| `workFull` | WF | タイマー | ワーク滞留 |
+| `workEmpty` | WE | タイマー | ワーク枯渇 |
 
-// IsOutputReady returns true if station has completed work and ready to send (搬出可 signal)
-func (s *Station) IsOutputReady() bool {
-    // Output ready only when station has completed processing
-    return s.State == StateCompleted && s.CurrentWork != nil
-}
-```
+ワーク搬送は**ハンドシェイク方式**で制御されます：
+- 上流の `outputReady=ON` かつ 下流の `inputReady=ON` が同時に成立した時のみ搬送開始
+- `checkHandshakes()` がインデックス化された接続マップを使って O(degree) で判定
 
-```go
-// engine.go
-
-// Check interlock: OutputReady must be ON (except for Source stations)
-if station.Type != domain.StationTypeSource && !station.IsOutputReady() {
-    return fmt.Errorf("interlock violation: station %s OutputReady=OFF (state=%s), cannot depart work", station.ID, station.State)
-}
-
-// Check interlock: Next station must have InputReady ON
-if !nextStation.IsInputReady() {
-    return fmt.Errorf("interlock violation: next station %s InputReady=OFF (state=%s), cannot send work", nextStation.ID, nextStation.State)
-}
-```
+詳細は [SIMULATION-ENGINE.md](SIMULATION-ENGINE.md) を参照してください。
 
 ---
 
 ## ステーション設計
 
-### 継承構造（今後の実装）
+### 実装済みステーション（8種類）
 
-Processingステーションを基底クラスとし、他のステーションはこれを継承します：
-
-```
-BaseStation (interface)
-    ↓
-ProcessingStation (基底実装)
-    ↓ 継承
-    ├── MergeStation
-    ├── SplitStation
-    ├── InspectionStation
-    └── DischargeStation
-```
-
-### 現在実装されているステーション
+| 種別 | 型名 | 役割 |
+|------|------|------|
+| Source | `source` | ワーク生成 |
+| Processing | `processing` | 搬入・加工・搬出 |
+| Drain | `drain` | ワーク消滅 |
+| Merge | `merge` | 複数ワークを1つに結合 |
+| Split | `split` | 1つのワークを複数に分割 |
+| Entry | `entry` | Moduler内部の透過入口 |
+| Exit | `exit` | Moduler内部の透過出口 |
+| Moduler | `moduler` | 内部にサブシナリオを持つ複合ステーション |
 
 #### 1. Source Station（ワーク生成）
 
@@ -183,62 +170,42 @@ Idle → Receiving → Processing → Completed → Idle
 }
 ```
 
-### 今後実装予定のステーション
+#### 4. Merge Station（結合）
 
-#### Merge Station（統合）
-
-**役割**: 複数のワークを1つに統合
+**役割**: 複数の入力ポートからワークを受け取り、1つの結合ワークを生成
 
 ```
-Work-A ──┐
-         ├─→ Merge ─→ Work-C (新規)
-Work-B ──┘
+Work-A ──→ InPorts[1] ─┐
+                        │  ┌────────┐
+Work-B ──→ InPorts[2] ──┼─→│ Merge  │──→ 下流へ
+                        │  └────────┘
+Work-C ──→ InPorts[3] ─┘
 ```
 
 **設定パラメータ**:
 ```json
 {
-  "requiredWorkCount": 2,  // 必要なワーク数
   "processingTime": 3.0,
   "arrivalTime": 1.0,
-  "departureTime": 1.0
+  "departureTime": 1.0,
+  "mergeInputCount": 2,
+  "workType": "assembledPart"
 }
 ```
 
-**課題**:
-- 複数のワークを保持する必要がある（1ステーション1ワークの原則を拡張）
-- 親ワークの追跡（トレーサビリティ）
+**特徴**:
+- 2層インターロック（ポートレベル + ステーションレベル）
+- 全入力ポートが満杯になると結合処理を開始
+- 結合後のワークに `mergedFrom` メタデータを付与（トレーサビリティ）
 
-#### Split Station（分割）
+#### 5. Split Station（分割）
 
-**役割**: 1つのワークを複数に分割
-
-```
-Work-A ─→ Split ──┬─→ Work-B (新規)
-                  └─→ Work-C (新規)
-```
-
-**設定パラメータ**:
-```json
-{
-  "outputWorkCount": 3,    // 出力ワーク数
-  "processingTime": 2.0,
-  "arrivalTime": 1.0,
-  "departureTime": 1.0
-}
-```
-
-**課題**:
-- 複数のワークを順次送出する必要がある
-- ラウンドロビンでの経路選択
-- 子ワークの追跡（トレーサビリティ）
-
-#### Inspection Station（検査）
-
-**役割**: ワークの品質検査とOK/NG判定
+**役割**: 1つのワークを複数の出力ポートに分割
 
 ```
-Work-A ─→ Inspection ─→ Work-A (qualityStatus更新)
+                  ┌─→ OutPorts[1] ──→ 下流A
+Work ─→ Split ──┤
+                  └─→ OutPorts[2] ──→ 下流B
 ```
 
 **設定パラメータ**:
@@ -247,35 +214,45 @@ Work-A ─→ Inspection ─→ Work-A (qualityStatus更新)
   "processingTime": 2.0,
   "arrivalTime": 1.0,
   "departureTime": 1.0,
-  "okProbability": 0.9     // OK判定の確率
+  "splitOutputCount": 2,
+  "splitWorkTypes": ["partA", "partB"]
 }
 ```
 
-**処理内容**:
-- ワークの `qualityStatus` を更新（OK/NG）
-- ワーク自体は変更しない（通過型）
+**特徴**:
+- 2層インターロック（ステーションレベル + ポートレベル）
+- 分割後のワークに `splitFrom` メタデータを付与（トレーサビリティ）
+- ワーク種別ルーティング（`workType:<type>` 条件）に対応
 
-#### Discharge Station（振り分け）
+#### 6. Entry Station（モジュラー入口）
 
-**役割**: 品質ステータスに応じた経路分岐
+**役割**: Moduler内部の透過入口。加工時間なしで即通過
+
+**特徴**: 処理時間0、WorkArrived → 即StateCompleted → OutputReady=ON → WorkDeparted
+
+#### 7. Exit Station（モジュラー出口）
+
+**役割**: Moduler内部の透過出口。Entry と同一の動作
+
+#### 8. Moduler Station（複合ステーション）
+
+**役割**: 内部にサブシナリオ（Entry/Processing/Exit等）を持つ複合ステーション
 
 ```
-              ┌─→ OK経路
-Work ─→ Discharge
-              └─→ NG経路
+┌───────────── Moduler ─────────────┐
+│                                    │
+│  Entry ──→ Processing ──→ Exit    │
+│                                    │
+│  Work: なし (信号導出用)            │
+└────────────────────────────────────┘
 ```
 
-**設定パラメータ**:
-```json
-{
-  "arrivalTime": 1.0,
-  "departureTime": 1.0
-}
-```
-
-**処理内容**:
-- 処理時間なし（即座に振り分け）
-- 接続の `condition` フィールドに基づいてルーティング
+**特徴**:
+- シミュレーション実行時に `FlattenScenario()` でフラットに展開
+- 内部ステーションIDは「親ID.子ID」形式にプレフィックス付与（例: `moduler-1.proc-1`）
+- 親Modulerの信号は内部ステーションの状態から自動導出（`deriveModulerSignals()`）
+- ネストに対応（Moduler内にModulerを配置可能）
+- `stationModulerMap` によるO(1)の親Moduler検索
 
 ---
 
@@ -296,41 +273,40 @@ Factory Simulationは**離散イベントシミュレーション**方式を採�
 |----------|------|----------|
 | **WorkCreated** | ワーク生成 | Sourceステーション |
 | **WorkArrived** | ワーク到着 | 移動時間経過後 |
-| **ProcessingStarted** | 処理開始 | ワーク到着 + 搬入可 |
+| **ProcessingStarted** | 処理開始 | ワーク到着 + processReady=ON |
 | **ProcessingCompleted** | 処理完了 | 処理時間経過後 |
-| **WorkDeparted** | ワーク出発 | 搬出可 + 次ステーション搬入可 |
+| **WorkDeparted** | ワーク出発 | ハンドシェイク成立（OR=ON & IR=ON） |
 | **WorkDestroyed** | ワーク破棄 | Drainステーション到着 |
+| **WorkMerged** | ワーク結合 | Mergeで全ポート満杯後の結合完了 |
+| **WorkSplit** | ワーク分割 | Splitでの分割完了 |
+| **MergeCompleted** | 結合処理完了 | Mergeの処理時間経過後 |
+| **SplitCompleted** | 分割処理完了 | Splitの処理時間経過後 |
+| **CheckWorkFull** | 滞留チェック | stayTime経過後 |
+| **CheckWorkEmpty** | 枯渇チェック | noWorkTimeout経過後 |
 
 ### イベントループ
 
 ```go
-// Run executes the simulation until the time limit or event exhaustion
-func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*domain.Simulation, error) {
-    // Initialize: Schedule FIRST WorkCreated event for each source station
-    for _, station := range e.scenario.Stations {
-        if station.Type == domain.StationTypeSource {
-            e.eventQueue.Push(NewEvent(EventWorkCreated, 0.0, station.ID, nil))
-        }
-    }
+func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*domain.Simulation, []StationStatusLog, []WorkEventLog, []WorkLineageLog, error) {
+    // Step 0: Flatten ModulerStations + build indexes
+    e.scenario = FlattenScenario(e.scenario)
+    e.scenario.BuildStationIndex()          // O(1) station/connection lookup
+    e.stationModulerMap = e.scenario.StationModulerMap
+
+    // Step 1: Initialize interlock rules, signals, ports
+    // Step 2: Evaluate initial signals
+    // Step 3: Place initial works
+    // Step 4: Schedule first WorkCreated for each Source
 
     // Event loop
     for !e.eventQueue.IsEmpty() {
         event := e.eventQueue.Pop()
         e.currentTime = event.Time
-
-        // Check time limit
-        if e.currentTime > timeLimit {
-            simulation.Complete(timeLimit, domain.EndReasonTimeLimit)
-            break
-        }
-
-        // Process event
-        if err := e.processEvent(event, simulation); err != nil {
-            return nil, err
-        }
+        if e.currentTime > timeLimit { break }
+        e.processEvent(event, simulation)
     }
 
-    return simulation, nil
+    return simulation, e.statusLogs, e.workEventLogs, e.workLineageLogs, nil
 }
 ```
 
@@ -344,14 +320,8 @@ type Event struct {
     Time      float64    // Event timestamp
     StationID string
     WorkID    *string
+    PortIndex int        // Port slot index (-1 = no port, used for Merge/Split)
 }
-
-type PriorityQueue struct {
-    events []*Event
-}
-
-func (pq *PriorityQueue) Push(event *Event)
-func (pq *PriorityQueue) Pop() *Event
 ```
 
 ### Sourceステーションの逐次ワーク生成
@@ -390,47 +360,76 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 ### ER図
 
 ```
-Scenarios (シナリオ定義)
-    ├─ scenario_id (PK)
-    ├─ friendly_name
-    ├─ scenario_data (JSONB)
-    └─ created_at
+scenarios
+    ├─ id (PK)
+    ├─ name
+    ├─ simdb_host, simdb_port, simdb_database, simdb_user, simdb_password
+    ├─ created_at
+    └─ updated_at
 
-Simulation_Runs (シミュレーション実行)
-    ├─ simulation_id (PK)
+scenario_stations
+    ├─ id (PK)
+    ├─ scenario_id (FK)
+    ├─ station_id
+    ├─ station_type (source|processing|drain|merge|split|entry|exit|moduler)
+    ├─ parent_id (Moduler内部ステーション用)
+    ├─ config (JSONB)
+    ├─ location_id (SimDB連携)
+    ├─ position_x, position_y (エディタ座標)
+    └─ name
+
+scenario_connections
+    ├─ id (PK)
+    ├─ scenario_id (FK)
+    ├─ from_station, to_station
+    ├─ condition (default|quality_ok|quality_ng|workType:xxx)
+    └─ from_port_index, to_port_index (Merge/Splitポート指定, -1=なし)
+
+simulation_runs
+    ├─ id (PK)
     ├─ scenario_id (FK)
     ├─ friendly_name
-    ├─ status
-    ├─ end_time
-    ├─ end_reason
+    ├─ status (running|completed|failed)
+    ├─ start_time, end_time, simulation_end_time
+    ├─ end_reason (time_limit|event_exhausted)
     └─ created_at
 
-Work_Events (ワークイベントログ)
+work_events
     ├─ id (PK)
-    ├─ simulation_id (FK)
-    ├─ work_id
-    ├─ work_friendly_name
+    ├─ simulation_run_id (FK)
+    ├─ work_id, work_friendly_name
     ├─ station_id
-    ├─ timestamp
-    └─ event_type
+    ├─ timestamp, event_type
+    ├─ work_type
+    └─ port_index (-1=なし)
 
-Station_Status_Logs (ステーション状態ログ)
+station_status_logs
     ├─ id (PK)
-    ├─ simulation_id (FK)
+    ├─ simulation_run_id (FK)
     ├─ station_id
-    ├─ timestamp
-    ├─ status_type
-    └─ value
+    ├─ timestamp, status_type, value
+    ├─ signal_name, old_value, rule_id (signal_change用)
 
-Work_Lineage (ワーク系譜)
+work_lineage
     ├─ id (PK)
-    ├─ simulation_id (FK)
-    ├─ child_work_id
-    ├─ parent_work_id
-    ├─ operation_type (merge/split)
-    ├─ station_id
-    └─ timestamp
+    ├─ simulation_run_id (FK)
+    ├─ child_work_id, child_work_friendly_name
+    ├─ parent_work_id, parent_work_friendly_name
+    ├─ operation_type (merge|split)
+    ├─ station_id, timestamp
+    └─ created_at
+
+execution_configs
+    ├─ id (PK)
+    ├─ scenario_id (FK)
+    ├─ start_time
+    ├─ end_condition_type, end_condition_value
+    ├─ initial_conditions (JSONB)
+    ├─ status, simulation_id, error_message
+    └─ created_at, updated_at
 ```
+
+マイグレーションファイル: `database/migrations/` に001〜010の10ファイル。
 
 ### シナリオデータ構造（JSONB）
 
@@ -440,7 +439,7 @@ Work_Lineage (ワーク系譜)
   "stations": [
     {
       "id": "station-1",
-      "type": "source|processing|drain",
+      "type": "source|processing|drain|merge|split|entry|exit|moduler",
       "config": {
         "workCount": 10,
         "processingTime": 5.0,
@@ -453,7 +452,9 @@ Work_Lineage (ワーク系譜)
     {
       "from": "station-1",
       "to": "station-2",
-      "condition": "default|quality_ok|quality_ng"
+      "condition": "default|quality_ok|quality_ng|workType:xxx",
+      "fromPortIndex": -1,
+      "toPortIndex": -1
     }
   ]
 }
@@ -463,56 +464,30 @@ Work_Lineage (ワーク系譜)
 
 ## 今後の拡張性
 
-### フェーズ1: ステーション種別の追加（次のステップ）
+### 実装済み機能
 
-1. **Merge Station の実装**
-   - 複数ワーク保持の仕組み追加
-   - 待機状態の実装
-   - トレーサビリティの実装
+以下は設計段階から実装済みとなった機能：
 
-2. **Split Station の実装**
-   - 複数ワーク送出の仕組み
-   - ラウンドロビンルーティング
-   - 子ワーク追跡
+- **Merge/Split Station**: 2層インターロック、ポートレベル制御、トレーサビリティ
+- **Entry/Exit/Moduler Station**: サブシナリオのフラット展開、ネスト対応
+- **ワーク種別ルーティング**: `workType:<type>` 条件による分岐
+- **タイマー信号**: `workFull`/`workEmpty` による滞留・枯渇検出
+- **SimDB連携**: 外部生産データベースからの初期条件取得
+- **インデックス最適化**: ステーション/接続のO(1)ルックアップ、`stationModulerMap`
 
-3. **Inspection/Discharge Station の実装**
-   - 品質ステータスの導入
-   - 条件付きルーティング
+### 拡張候補
 
-### フェーズ2: 高度な機能
-
-1. **複数経路対応**
-   - 複数の接続先への分岐
-   - 条件付きルーティングの拡張
+1. **Inspection/Discharge Station**
+   - 品質ステータス判定とOK/NG条件ルーティング
 
 2. **リアルタイムシミュレーション**
    - WebSocketによるライブ更新
-   - 進行中のシミュレーションの可視化
 
 3. **パフォーマンス分析**
-   - ボトルネック検出
-   - 稼働率計算
-   - サイクルタイム分析
+   - ボトルネック検出、稼働率計算、サイクルタイム分析
 
-4. **最適化機能**
-   - パラメータ自動調整
-   - 遺伝的アルゴリズムによる最適化
-
-### フェーズ3: エンタープライズ機能
-
-1. **スケーラビリティ**
-   - 大規模シナリオ対応（1000+ステーション）
-   - 分散シミュレーション
-
-2. **高度な可視化**
-   - 2Dガントチャート
-   - 統計ダッシュボード
-   - レポート生成
-
-3. **統合機能**
-   - REST API拡張
-   - gRPC対応
-   - 外部システム連携
+4. **高度な可視化**
+   - 2Dガントチャート、統計ダッシュボード
 
 ---
 
