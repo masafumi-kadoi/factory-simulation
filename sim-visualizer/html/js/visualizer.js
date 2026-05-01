@@ -24,21 +24,23 @@ export class Visualizer3D {
         this.renderer = null;
         this.controls = null;
 
-        this.stations = new Map(); // Map<stationId, {mesh, position, label, stationType, portSlots}>
-        this.works = new Map(); // Map<workId, {mesh, label}>
-        this.connections = []; // [{line, from, to, fromStationId, toStationId, indicators}]
+        this.stations = new Map();
+        this.works = new Map();
+        this.connections = [];
         this.showWorkIDs = true;
         this.showStationNames = true;
         this.showInterlocks = false;
-        this.interlockIndicators = []; // [{mesh, stationId, signalName, connectionIndex}]
-        this.modulerHierarchy = new Map(); // Map<parentId, Set<childId>> (dot-ID based)
-        this.modulerCollapseState = new Map(); // Map<parentStationId, boolean> (true = collapsed)
+        this.interlockIndicators = [];
+        this.modulerHierarchy = new Map();
         this.ground = null;
         this.gridHelper = null;
         this._raycaster = new THREE.Raycaster();
         this._mouse = new THREE.Vector2();
-        this._onWorkClick = null; // callback: (workId) => void
-        this._activeWorks = null; // reference to current activeWorks map
+        this._onWorkClick = null;
+        this._onModulerDoubleClick = null;
+        this._activeWorks = null;
+        this._clickTimer = null;
+        this._clickTarget = null;
 
         this._initScene();
         this._animate();
@@ -85,14 +87,12 @@ export class Visualizer3D {
         this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
         this._applyMouseConfig();
 
-        // Update OrbitControls when mouse config changes
         if (this._mouseConfig) {
             this._mouseConfig.onChange(() => this._applyMouseConfig());
         }
 
         window.addEventListener('resize', () => this._onResize());
 
-        // Click handler for work selection
         this.renderer.domElement.addEventListener('click', (event) => this._handleClick(event));
     }
 
@@ -119,6 +119,10 @@ export class Visualizer3D {
         this._onWorkClick = callback;
     }
 
+    setOnModulerDoubleClick(callback) {
+        this._onModulerDoubleClick = callback;
+    }
+
     _handleClick(event) {
         const rect = this.renderer.domElement.getBoundingClientRect();
         this._mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -126,7 +130,7 @@ export class Visualizer3D {
 
         this._raycaster.setFromCamera(this._mouse, this.camera);
 
-        // Check station clicks first (for moduler collapse/expand)
+        // Detect which station or work was clicked
         const stationMeshes = [];
         this.stations.forEach((station) => {
             stationMeshes.push(station.mesh);
@@ -134,38 +138,53 @@ export class Visualizer3D {
         });
 
         const stationIntersects = this._raycaster.intersectObjects(stationMeshes, false);
+        let clickedStationId = null;
         if (stationIntersects.length > 0) {
             let obj = stationIntersects[0].object;
             while (obj && !obj.userData.stationId) {
                 obj = obj.parent;
             }
             if (obj && obj.userData.stationId) {
-                const stationId = obj.userData.stationId;
-                // Toggle collapse for moduler stations
-                if (this.modulerHierarchy.has(stationId)) {
-                    this.toggleModulerCollapse(stationId);
-                    return;
-                }
+                clickedStationId = obj.userData.stationId;
             }
         }
 
-        // Then check work clicks
-        if (!this._onWorkClick) return;
-
-        const workMeshes = [];
-        this.works.forEach((work) => {
-            workMeshes.push(work.mesh);
-            work.mesh.children.forEach(child => workMeshes.push(child));
-        });
-
-        const intersects = this._raycaster.intersectObjects(workMeshes, false);
-        if (intersects.length > 0) {
-            let obj = intersects[0].object;
-            while (obj && !obj.userData.workId) {
-                obj = obj.parent;
+        // Double-click detection for moduler stations
+        if (clickedStationId && this.modulerHierarchy.has(clickedStationId)) {
+            if (this._clickTimer && this._clickTarget === clickedStationId) {
+                clearTimeout(this._clickTimer);
+                this._clickTimer = null;
+                this._clickTarget = null;
+                if (this._onModulerDoubleClick) {
+                    this._onModulerDoubleClick(clickedStationId);
+                }
+                return;
             }
-            if (obj && obj.userData.workId) {
-                this._onWorkClick(obj.userData.workId);
+            this._clickTarget = clickedStationId;
+            this._clickTimer = setTimeout(() => {
+                this._clickTimer = null;
+                this._clickTarget = null;
+            }, 300);
+            return;
+        }
+
+        // Work click
+        if (this._onWorkClick) {
+            const workMeshes = [];
+            this.works.forEach((work) => {
+                workMeshes.push(work.mesh);
+                work.mesh.children.forEach(child => workMeshes.push(child));
+            });
+
+            const intersects = this._raycaster.intersectObjects(workMeshes, false);
+            if (intersects.length > 0) {
+                let obj = intersects[0].object;
+                while (obj && !obj.userData.workId) {
+                    obj = obj.parent;
+                }
+                if (obj && obj.userData.workId) {
+                    this._onWorkClick(obj.userData.workId);
+                }
             }
         }
     }
@@ -246,8 +265,10 @@ export class Visualizer3D {
 
     _animate() {
         requestAnimationFrame(() => this._animate());
-        this.controls.update();
-        this.renderer.render(this.scene, this.camera);
+        if (this.controls) this.controls.update();
+        if (this.renderer && this.scene && this.camera) {
+            this.renderer.render(this.scene, this.camera);
+        }
     }
 
     loadScenario(scenario) {
@@ -260,12 +281,10 @@ export class Visualizer3D {
 
         this._adjustSceneToPositions(positions);
 
-        // Build port→connected station direction map before creating port slots
         const stationTypes = new Map();
         scenario.stations.forEach(s => stationTypes.set(s.id, s.type));
         const portTargets = this._buildPortTargetMap(scenario.connections, stationTypes, positions);
 
-        // Create stations with port slots
         scenario.stations.forEach(station => {
             const pos = positions.get(station.id);
             if (!pos) return;
@@ -281,7 +300,6 @@ export class Visualizer3D {
             });
         });
 
-        // Helper: resolve "parentId.entry-N" / "parentId.exit-N" to parent station + port slot
         const resolveModulerChild = (id) => {
             const dotIdx = id.lastIndexOf('.');
             if (dotIdx === -1) return null;
@@ -294,13 +312,11 @@ export class Visualizer3D {
             return null;
         };
 
-        // Create connections (route to port slots when applicable)
         scenario.connections.forEach(conn => {
             let from = this.stations.get(conn.from);
             let to = this.stations.get(conn.to);
             let fromPos, toPos;
 
-            // Resolve moduler child references (e.g. "moduler-qc.exit-0" → parent's exit port slot)
             if (!from) {
                 const child = resolveModulerChild(conn.from);
                 if (child) {
@@ -327,13 +343,11 @@ export class Visualizer3D {
             if (!fromPos) fromPos = from.position;
             if (!toPos) toPos = to.position;
 
-            // Split: connect from port slot by index
             if (from.stationType === 'split' && from.portSlots.length > 0 && conn.fromPortIndex >= 0) {
                 const slot = this._findPortSlot(from, conn.fromPortIndex, 'exit');
                 if (slot) fromPos = slot.position;
             }
 
-            // Merge: connect to port slot by index
             if (to.stationType === 'merge' && to.portSlots.length > 0 && conn.toPortIndex >= 0) {
                 const slot = this._findPortSlot(to, conn.toPortIndex, 'entry');
                 if (slot) toPos = slot.position;
@@ -349,20 +363,10 @@ export class Visualizer3D {
             };
             this.connections.push(connData);
 
-            // Create interlock indicator cubes on the connection
             this._createInterlockIndicators(connData, from, to);
         });
 
-        // Build moduler hierarchy from dot-separated station IDs
         this._buildModulerHierarchy();
-
-        // Default: all moduler stations collapsed
-        this.modulerHierarchy.forEach((children, parentId) => {
-            this.modulerCollapseState.set(parentId, true);
-        });
-
-        // Apply initial collapse state
-        this._applyCollapseState();
 
         console.log(`[Visualizer3D] Created ${this.stations.size} stations and ${this.connections.length} connections`);
         if (this.modulerHierarchy.size > 0) {
@@ -372,21 +376,13 @@ export class Visualizer3D {
 
     _buildModulerHierarchy() {
         this.modulerHierarchy.clear();
-
-        // Find stations with dot-separated IDs and group by parent prefix
         this.stations.forEach((stationData, stationId) => {
-            const dotIdx = stationId.indexOf('.');
-            if (dotIdx === -1) return; // Top-level station
-
-            const parentId = stationId.substring(0, dotIdx);
-            if (!this.modulerHierarchy.has(parentId)) {
-                this.modulerHierarchy.set(parentId, new Set());
+            if (stationData.stationType === 'moduler') {
+                this.modulerHierarchy.set(stationId, new Set());
             }
-            this.modulerHierarchy.get(parentId).add(stationId);
         });
     }
 
-    // Get the parent moduler station ID for a child station, or null if not a child
     _getParentModulerId(stationId) {
         const dotIdx = stationId.indexOf('.');
         if (dotIdx === -1) return null;
@@ -394,75 +390,7 @@ export class Visualizer3D {
         return this.modulerHierarchy.has(parentId) ? parentId : null;
     }
 
-    // Check if a station is inside a collapsed moduler
-    _isInsideCollapsedModuler(stationId) {
-        const parentId = this._getParentModulerId(stationId);
-        if (!parentId) return false;
-        return this.modulerCollapseState.get(parentId) !== false;
-    }
-
-    // Get display position for a station, redirecting to parent moduler if collapsed
-    _getDisplayPosition(stationId) {
-        const parentId = this._getParentModulerId(stationId);
-        if (parentId && this.modulerCollapseState.get(parentId) !== false) {
-            const parentStation = this.stations.get(parentId);
-            if (parentStation) return parentStation.position;
-        }
-        const station = this.stations.get(stationId);
-        return station ? station.position : null;
-    }
-
-    toggleModulerCollapse(parentStationId) {
-        const current = this.modulerCollapseState.get(parentStationId);
-        if (current === undefined) return;
-        this.modulerCollapseState.set(parentStationId, !current);
-        this._applyCollapseState();
-    }
-
-    _applyCollapseState() {
-        this.modulerHierarchy.forEach((children, parentId) => {
-            const collapsed = this.modulerCollapseState.get(parentId) !== false;
-            const parentStation = this.stations.get(parentId);
-
-            // Show/hide child stations
-            children.forEach(childId => {
-                const child = this.stations.get(childId);
-                if (!child) return;
-                child.mesh.visible = !collapsed;
-                if (child.label) child.label.visible = !collapsed && this.showStationNames;
-                if (child.portSlots) {
-                    child.portSlots.forEach(slot => {
-                        slot.mesh.visible = !collapsed;
-                        if (slot.label) slot.label.visible = !collapsed && this.showStationNames;
-                        if (slot.connLine) slot.connLine.visible = !collapsed;
-                    });
-                }
-            });
-
-            // Show/hide connections between children
-            this.connections.forEach(conn => {
-                const fromIsChild = children.has(conn.fromStationId);
-                const toIsChild = children.has(conn.toStationId);
-                // Internal connections (both ends are children)
-                if (fromIsChild && toIsChild) {
-                    if (conn.line) conn.line.visible = !collapsed;
-                }
-            });
-
-            // Update parent station signals text if collapsed
-            if (parentStation && collapsed) {
-                this._updateModulerSignalText(parentId);
-            }
-        });
-    }
-
-    _updateModulerSignalText(parentStationId) {
-        // Signal text is updated via updateInterlockStates - this is a placeholder
-        // The actual signal values are shown through the interlock indicators
-    }
-
     _createPortSlots(station, stationPos, portTargets) {
-        // Moduler stations: create entry/exit port slots
         if (station.type === 'moduler') {
             return this._createModulerPortSlots(station, stationPos, portTargets);
         }
@@ -474,18 +402,15 @@ export class Visualizer3D {
         const portRadius = 14;
         const portHeight = 3;
         const spacing = 35;
-        const count = ports.length;
         const offset = 60;
 
-        // Determine port type for target lookup
         const portType = station.type === 'merge' ? 'entry' : (station.type === 'split' ? 'exit' : null);
         if (!portType) return [];
 
         return ports.map((port, i) => {
-            const { x, z } = this._calcPortPosition(stationPos, i, count, spacing, offset, portType, portTargets);
+            const { x, z } = this._calcPortPosition(stationPos, i, ports.length, spacing, offset, portType, portTargets);
             const position = { x, y: 0, z };
 
-            // Create small disc mesh
             const discGeo = new THREE.CylinderGeometry(portRadius, portRadius, portHeight, 24);
             const discMat = new THREE.MeshStandardMaterial({
                 color, transparent: true, opacity: 0.3,
@@ -510,11 +435,7 @@ export class Visualizer3D {
             const labelText = `B${i}`;
             const label = this._createLabel(labelText, x, 12, z);
 
-            const connLine = this._createSlotConnectorLine(
-                { x, z },
-                stationPos,
-                color
-            );
+            const connLine = this._createSlotConnectorLine({ x, z }, stationPos, color);
 
             return { mesh: group, label, position, connLine };
         });
@@ -529,7 +450,6 @@ export class Visualizer3D {
         const offset = 70;
         const slots = [];
 
-        // Entry ports - direction based on connected station
         const entryColor = STATION_COLORS['entry'];
         for (let i = 0; i < entryCount; i++) {
             const { x, z } = this._calcPortPosition(stationPos, i, entryCount, spacing, offset, 'entry', portTargets);
@@ -562,7 +482,6 @@ export class Visualizer3D {
             slots.push({ mesh: group, label, position, connLine, portType: 'entry', portIndex: i });
         }
 
-        // Exit ports - direction based on connected station
         const exitColor = STATION_COLORS['exit'];
         for (let i = 0; i < exitCount; i++) {
             const { x, z } = this._calcPortPosition(stationPos, i, exitCount, spacing, offset, 'exit', portTargets);
@@ -684,7 +603,6 @@ export class Visualizer3D {
         const radius = isModuler ? 45 : 30;
         const discHeight = 4;
 
-        // Disc (thin cylinder)
         const discGeo = new THREE.CylinderGeometry(radius, radius, discHeight, 32);
         const discMat = new THREE.MeshStandardMaterial({
             color, transparent: true, opacity: isModuler ? 0.3 : 0.4,
@@ -693,7 +611,6 @@ export class Visualizer3D {
         });
         const discMesh = new THREE.Mesh(discGeo, discMat);
 
-        // Outer ring (edge glow)
         const ringGeo = new THREE.RingGeometry(radius - 2, radius, 48);
         const ringMat = new THREE.MeshBasicMaterial({
             color, transparent: true, opacity: 0.8, side: THREE.DoubleSide
@@ -706,7 +623,6 @@ export class Visualizer3D {
         group.add(discMesh);
         group.add(ringMesh);
 
-        // Moduler: add inner ring for double-border effect
         if (isModuler) {
             const innerRingGeo = new THREE.RingGeometry(radius - 8, radius - 6, 48);
             const innerRingMat = new THREE.MeshBasicMaterial({
@@ -815,7 +731,6 @@ export class Visualizer3D {
         const dx = toPos.x - fromPos.x;
         const dz = toPos.z - fromPos.z;
 
-        // outputReady indicator near the "from" station (20% along the line)
         const outX = fromPos.x + dx * 0.2;
         const outZ = fromPos.z + dz * 0.2;
         const outMaterial = new THREE.MeshStandardMaterial({
@@ -833,7 +748,6 @@ export class Visualizer3D {
             connectionIndex: this.connections.length - 1
         });
 
-        // inputReady indicator near the "to" station (80% along the line)
         const inX = fromPos.x + dx * 0.8;
         const inZ = fromPos.z + dz * 0.8;
         const inMaterial = new THREE.MeshStandardMaterial({
@@ -860,7 +774,6 @@ export class Visualizer3D {
     }
 
     updateInterlockStates(signalStates) {
-        // signalStates: Map<stationId, Map<signalName, bool>>
         this.interlockIndicators.forEach(indicator => {
             const stationSignals = signalStates.get(indicator.stationId);
             if (!stationSignals) return;
@@ -868,7 +781,7 @@ export class Visualizer3D {
             const value = stationSignals.get(indicator.signalName);
             if (value === undefined) return;
 
-            const color = value ? 0x28a745 : 0xdc3545; // green=ON, red=OFF
+            const color = value ? 0x28a745 : 0xdc3545;
             indicator.mesh.material.color.setHex(color);
             indicator.mesh.material.emissive.setHex(color);
         });
@@ -895,31 +808,25 @@ export class Visualizer3D {
         return line;
     }
 
-    // Find the port slot position by index
     _getPortSlotPosition(stationData, portIndex) {
         if (!stationData.portSlots || stationData.portSlots.length === 0) return null;
         if (portIndex < 0 || portIndex >= stationData.portSlots.length) return null;
         return stationData.portSlots[portIndex].position;
     }
 
-    // Find port slot by index and type (for moduler stations with mixed entry/exit slots)
     _findPortSlot(stationData, portIndex, portType) {
         if (!stationData.portSlots || stationData.portSlots.length === 0) return null;
 
-        // For moduler stations, filter by portType
         if (stationData.stationType === 'moduler') {
             const matching = stationData.portSlots.filter(s => s.portType === portType);
             return matching[portIndex] || null;
         }
 
-        // For merge/split, use index directly
         if (portIndex < 0 || portIndex >= stationData.portSlots.length) return null;
         return stationData.portSlots[portIndex];
     }
 
-    // Calculate port position on the straight line toward the connected station
     _calcPortPosition(stationPos, portIndex, totalCount, spacing, offset, portType, portTargets) {
-        // Find target for this specific port
         const target = portTargets.find(t => t.portIndex === portIndex && t.portType === portType);
 
         if (target && target.targetPos) {
@@ -928,7 +835,6 @@ export class Visualizer3D {
             const dist = Math.sqrt(dx * dx + dz * dz);
 
             if (dist > 0.01) {
-                // Place port on the straight line from station center toward target
                 const dirX = dx / dist;
                 const dirZ = dz / dist;
                 return {
@@ -938,7 +844,6 @@ export class Visualizer3D {
             }
         }
 
-        // Fallback: fixed Z offset (merge/entry → Z-, split/exit → Z+)
         const zSign = portType === 'entry' ? -1 : 1;
         return {
             x: stationPos.x + (portIndex - (totalCount - 1) / 2) * spacing,
@@ -946,11 +851,9 @@ export class Visualizer3D {
         };
     }
 
-    // Build mapping: stationId → [{ portIndex, portType, targetPos }]
     _buildPortTargetMap(connections, stationTypes, positions) {
         const map = new Map();
 
-        // Helper: parse "parentId.entry-N" or "parentId.exit-N" pattern
         const parseModulerChild = (id) => {
             const dotIdx = id.lastIndexOf('.');
             if (dotIdx === -1) return null;
@@ -963,7 +866,6 @@ export class Visualizer3D {
             return null;
         };
 
-        // Helper: resolve position, falling back to parent moduler position for child stations
         const resolvePos = (id) => {
             const pos = positions.get(id);
             if (pos) return pos;
@@ -976,7 +878,6 @@ export class Visualizer3D {
             const fromPos = resolvePos(conn.from);
             const toPos = resolvePos(conn.to);
 
-            // Moduler port targets: detect "parentId.entry-N" / "parentId.exit-N"
             const toChild = parseModulerChild(conn.to);
             if (toChild && fromPos && stationTypes.get(toChild.parentId) === 'moduler') {
                 if (!map.has(toChild.parentId)) map.set(toChild.parentId, []);
@@ -991,14 +892,12 @@ export class Visualizer3D {
 
             if (!fromPos || !toPos) return;
 
-            // Merge: "to" station with toPortIndex >= 0
             const toType = stationTypes.get(conn.to);
             if (toType === 'merge' && conn.toPortIndex >= 0) {
                 if (!map.has(conn.to)) map.set(conn.to, []);
                 map.get(conn.to).push({ portIndex: conn.toPortIndex, portType: 'entry', targetPos: fromPos });
             }
 
-            // Split: "from" station with fromPortIndex >= 0
             const fromType = stationTypes.get(conn.from);
             if (fromType === 'split' && conn.fromPortIndex >= 0) {
                 if (!map.has(conn.from)) map.set(conn.from, []);
@@ -1012,7 +911,6 @@ export class Visualizer3D {
     updateWorks(activeWorks, currentTime) {
         this._activeWorks = activeWorks;
 
-        // Remove works that no longer exist
         const toRemove = [];
         this.works.forEach((work, workId) => {
             if (!activeWorks.has(workId)) {
@@ -1023,7 +921,23 @@ export class Visualizer3D {
         });
         toRemove.forEach(id => this.works.delete(id));
 
-        // Add or update works
+        // Build per-station work count for offset positioning
+        const stationWorkCounts = new Map();
+        const stationWorkIndex = new Map();
+        activeWorks.forEach((workInfo, workId) => {
+            if (workInfo.state === 'at_station') {
+                const sid = workInfo.stationId;
+                if (!stationWorkCounts.has(sid)) stationWorkCounts.set(sid, []);
+                stationWorkCounts.get(sid).push(workId);
+            }
+        });
+        stationWorkCounts.forEach((workIds, sid) => {
+            workIds.sort();
+            workIds.forEach((wid, idx) => {
+                stationWorkIndex.set(wid, { index: idx, total: workIds.length });
+            });
+        });
+
         activeWorks.forEach((workInfo, workId) => {
             if (!this.works.has(workId)) {
                 const geometry = new THREE.SphereGeometry(12, 32, 32);
@@ -1052,22 +966,26 @@ export class Visualizer3D {
             const work = this.works.get(workId);
 
             if (workInfo.state === 'at_station') {
-                // If inside a collapsed moduler, show at parent moduler position
-                const displayPos = this._getDisplayPosition(workInfo.stationId);
                 const station = this.stations.get(workInfo.stationId);
-                if (displayPos) {
-                    let x = displayPos.x;
-                    let z = displayPos.z;
+                if (station) {
+                    let x = station.position.x;
+                    let z = station.position.z;
                     const y = 40;
 
-                    // For port works (merge input / split output), position at port slot
-                    // (only when not redirected to parent moduler)
-                    if (!this._isInsideCollapsedModuler(workInfo.stationId) && station && workInfo.isInPort && workInfo.portIndex >= 0) {
+                    if (workInfo.isInPort && workInfo.portIndex >= 0) {
                         const slotPos = this._getPortSlotPosition(station, workInfo.portIndex);
                         if (slotPos) {
                             x = slotPos.x;
                             z = slotPos.z;
                         }
+                    }
+
+                    // Multi-work offset
+                    const offsetInfo = stationWorkIndex.get(workId);
+                    if (offsetInfo && offsetInfo.total > 1) {
+                        const angle = (offsetInfo.index / offsetInfo.total) * Math.PI * 2;
+                        x += Math.cos(angle) * 15;
+                        z += Math.sin(angle) * 15;
                     }
 
                     work.mesh.position.set(x, y, z);
@@ -1077,36 +995,20 @@ export class Visualizer3D {
                 const fromStation = this.stations.get(workInfo.fromStation);
                 const toStation = this.stations.get(workInfo.toStation);
 
-                if (!fromStation || !toStation) {
-                    if (!this._warnedMissing) this._warnedMissing = new Set();
-                    const key = `${workInfo.fromStation}->${workInfo.toStation}`;
-                    if (!this._warnedMissing.has(key)) {
-                        console.warn('[Visualizer3D] Moving work missing station:', workId, 'from:', workInfo.fromStation, !!fromStation, 'to:', workInfo.toStation, !!toStation);
-                        console.warn('[Visualizer3D] Available stations:', [...this.stations.keys()]);
-                        this._warnedMissing.add(key);
-                    }
-                }
-
                 if (fromStation && toStation) {
                     const duration = workInfo.arriveTime - workInfo.departTime;
                     const elapsed = currentTime - workInfo.departTime;
                     const progress = Math.max(0, Math.min(1, elapsed / duration));
 
-                    // Determine start/end positions (may be port slots)
-                    // Use display position (redirects to parent moduler if collapsed)
-                    const fromPos = this._getDisplayPosition(workInfo.fromStation) || fromStation.position;
-                    const toPos = this._getDisplayPosition(workInfo.toStation) || toStation.position;
-                    let startX = fromPos.x, startZ = fromPos.z;
-                    let endX = toPos.x, endZ = toPos.z;
+                    let startX = fromStation.position.x, startZ = fromStation.position.z;
+                    let endX = toStation.position.x, endZ = toStation.position.z;
 
-                    // If departing from split/moduler station, use port slot position (only if not collapsed)
-                    if (!this._isInsideCollapsedModuler(workInfo.fromStation) && (fromStation.stationType === 'split' || fromStation.stationType === 'moduler') && workInfo.fromPortIndex >= 0) {
+                    if ((fromStation.stationType === 'split' || fromStation.stationType === 'moduler') && workInfo.fromPortIndex >= 0) {
                         const slot = this._findPortSlot(fromStation, workInfo.fromPortIndex, 'exit');
                         if (slot) { startX = slot.position.x; startZ = slot.position.z; }
                     }
 
-                    // If arriving at merge/moduler station, use port slot position (only if not collapsed)
-                    if (!this._isInsideCollapsedModuler(workInfo.toStation) && (toStation.stationType === 'merge' || toStation.stationType === 'moduler') && workInfo.toPortIndex >= 0) {
+                    if ((toStation.stationType === 'merge' || toStation.stationType === 'moduler') && workInfo.toPortIndex >= 0) {
                         const slot = this._findPortSlot(toStation, workInfo.toPortIndex, 'entry');
                         if (slot) { endX = slot.position.x; endZ = slot.position.z; }
                     }
@@ -1128,7 +1030,6 @@ export class Visualizer3D {
     }
 
     clear() {
-        // Clear stations (including port slots)
         this.stations.forEach(station => {
             this.scene.remove(station.mesh);
             if (station.label) this.scene.remove(station.label);
@@ -1142,21 +1043,18 @@ export class Visualizer3D {
         });
         this.stations.clear();
 
-        // Clear works
         this.works.forEach(work => {
             this.scene.remove(work.mesh);
             if (work.label) this.scene.remove(work.label);
         });
         this.works.clear();
 
-        // Clear connections
         this.connections.forEach(conn => {
             if (conn.line) this.scene.remove(conn.line);
-            else this.scene.remove(conn); // backward compat
+            else this.scene.remove(conn);
         });
         this.connections = [];
 
-        // Clear interlock indicators
         this.interlockIndicators.forEach(indicator => {
             this.scene.remove(indicator.mesh);
             indicator.mesh.geometry.dispose();
