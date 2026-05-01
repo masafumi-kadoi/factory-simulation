@@ -339,22 +339,10 @@ class App {
                             toStation: resolvedTo
                         });
                     }
-                } else if (toInside) {
-                    const toRel = workInfo.toStation.substring(prefix.length);
-                    const toParent = this._getDirectParent(workInfo.toStation);
-                    let resolvedTo = toRel;
-                    if (toParent !== modulerId && toParent && toParent.startsWith(prefix)) {
-                        resolvedTo = toParent.substring(prefix.length);
-                    }
-                    filtered.set(workId, { state: 'at_station', stationId: resolvedTo });
-                } else if (fromInside) {
-                    const fromRel = workInfo.fromStation.substring(prefix.length);
-                    const fromParent = this._getDirectParent(workInfo.fromStation);
-                    let resolvedFrom = fromRel;
-                    if (fromParent !== modulerId && fromParent && fromParent.startsWith(prefix)) {
-                        resolvedFrom = fromParent.substring(prefix.length);
-                    }
-                    filtered.set(workId, { state: 'at_station', stationId: resolvedFrom });
+                } else if (toInside && !fromInside) {
+                    // External → internal: work hasn't entered yet, don't show in modal
+                } else if (fromInside && !toInside) {
+                    // Internal → external: work has left, don't show in modal
                 }
             }
         });
