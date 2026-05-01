@@ -70,6 +70,13 @@ func (e *Engine) triggerModulerDerivation(station *domain.Station) error {
 
 // findParentModuler finds the Moduler station that contains the given station ID.
 func (e *Engine) findParentModuler(stationID string) *domain.Station {
+	if e.stationModulerMap != nil {
+		if parentID, ok := e.stationModulerMap[stationID]; ok {
+			return e.scenario.GetStation(parentID)
+		}
+		return nil
+	}
+	// Fallback for cases where stationModulerMap is not built
 	for i := range e.scenario.Stations {
 		st := &e.scenario.Stations[i]
 		if st.Type != domain.StationTypeModuler {
@@ -112,8 +119,12 @@ func toSet(items []string) map[string]bool {
 	return s
 }
 
-// isInternalStation checks if a station ID belongs to any Moduler's internal stations
-// by checking if it contains a dot (prefix separator).
-func isInternalStation(stationID string) bool {
+// isInternalStation checks if a station ID belongs to any Moduler's internal stations.
+// Uses the stationModulerMap for O(1) lookup when available, falls back to dot-check.
+func (e *Engine) isInternalStation(stationID string) bool {
+	if e.stationModulerMap != nil {
+		_, ok := e.stationModulerMap[stationID]
+		return ok
+	}
 	return strings.Contains(stationID, ".")
 }

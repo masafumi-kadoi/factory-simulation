@@ -181,14 +181,30 @@ func TestDeriveModulerSignals_NonexistentMonitorID(t *testing.T) {
 }
 
 func TestIsInternalStation(t *testing.T) {
-	if !isInternalStation("mod-1.proc-1") {
+	// Test with stationModulerMap (map-based lookup)
+	e := &Engine{
+		stationModulerMap: map[string]string{
+			"mod-1.proc-1":         "mod-1",
+			"outer.inner.proc-1":   "outer.inner",
+		},
+	}
+	if !e.isInternalStation("mod-1.proc-1") {
 		t.Error("expected true for mod-1.proc-1")
 	}
-	if isInternalStation("proc-1") {
+	if e.isInternalStation("proc-1") {
 		t.Error("expected false for proc-1")
 	}
-	if !isInternalStation("outer.inner.proc-1") {
+	if !e.isInternalStation("outer.inner.proc-1") {
 		t.Error("expected true for nested station ID")
+	}
+
+	// Test fallback (nil map → dot-based check)
+	eFallback := &Engine{}
+	if !eFallback.isInternalStation("mod-1.proc-1") {
+		t.Error("fallback: expected true for mod-1.proc-1")
+	}
+	if eFallback.isInternalStation("proc-1") {
+		t.Error("fallback: expected false for proc-1")
 	}
 }
 

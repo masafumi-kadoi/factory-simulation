@@ -38,6 +38,11 @@ type Scenario struct {
 	Connections []Connection
 	CreatedAt   *time.Time
 	UpdatedAt   *time.Time
+
+	stationIndex      map[string]int    // station ID -> index in Stations slice
+	StationModulerMap map[string]string // station ID -> parent Moduler station ID
+	connectionsFrom   map[string][]int  // station ID -> indices into Connections slice (outgoing)
+	connectionsTo     map[string][]int  // station ID -> indices into Connections slice (incoming)
 }
 
 // SubScenario represents the internal stations and connections within a ModulerStation.
@@ -57,8 +62,69 @@ func NewScenario(id, name string, stations []Station, connections []Connection) 
 	}
 }
 
+// BuildStationIndex builds the station ID -> index map for O(1) lookups,
+// and the connection index maps for efficient neighbor queries.
+// Must be called after Stations and Connections are finalized (e.g., after FlattenScenario).
+func (s *Scenario) BuildStationIndex() {
+	s.stationIndex = make(map[string]int, len(s.Stations))
+	for i := range s.Stations {
+		s.stationIndex[s.Stations[i].ID] = i
+	}
+
+	s.connectionsFrom = make(map[string][]int, len(s.Stations))
+	s.connectionsTo = make(map[string][]int, len(s.Stations))
+	for i, conn := range s.Connections {
+		s.connectionsFrom[conn.From] = append(s.connectionsFrom[conn.From], i)
+		s.connectionsTo[conn.To] = append(s.connectionsTo[conn.To], i)
+	}
+}
+
+// GetConnectionsFrom returns connections originating from the given station.
+func (s *Scenario) GetConnectionsFrom(stationID string) []Connection {
+	if s.connectionsFrom != nil {
+		indices := s.connectionsFrom[stationID]
+		result := make([]Connection, len(indices))
+		for i, idx := range indices {
+			result[i] = s.Connections[idx]
+		}
+		return result
+	}
+	var result []Connection
+	for _, conn := range s.Connections {
+		if conn.From == stationID {
+			result = append(result, conn)
+		}
+	}
+	return result
+}
+
+// GetConnectionsTo returns connections targeting the given station.
+func (s *Scenario) GetConnectionsTo(stationID string) []Connection {
+	if s.connectionsTo != nil {
+		indices := s.connectionsTo[stationID]
+		result := make([]Connection, len(indices))
+		for i, idx := range indices {
+			result[i] = s.Connections[idx]
+		}
+		return result
+	}
+	var result []Connection
+	for _, conn := range s.Connections {
+		if conn.To == stationID {
+			result = append(result, conn)
+		}
+	}
+	return result
+}
+
 // GetStation retrieves a station by ID
 func (s *Scenario) GetStation(id string) *Station {
+	if s.stationIndex != nil {
+		if idx, ok := s.stationIndex[id]; ok {
+			return &s.Stations[idx]
+		}
+		return nil
+	}
 	for i := range s.Stations {
 		if s.Stations[i].ID == id {
 			return &s.Stations[i]

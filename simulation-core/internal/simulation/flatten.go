@@ -10,18 +10,37 @@ import (
 // The original ModulerStation is kept in the result (for signal evaluation) but its SubScenario
 // internal stations are extracted with prefixed IDs (e.g., "moduler-1.entry-0").
 // External connections to/from ModulerStations are rewritten to point directly at Entry/Exit stations.
+// Also builds StationModulerMap: a mapping from each internal station ID to its parent Moduler ID.
 func FlattenScenario(scenario *domain.Scenario) *domain.Scenario {
 	flatStations, flatConnections := flattenStationsAndConnections(scenario.Stations, scenario.Connections, "")
 
+	modulerMap := buildStationModulerMap(flatStations)
+
 	return &domain.Scenario{
-		ID:          scenario.ID,
-		Name:        scenario.Name,
-		SimDBConfig: scenario.SimDBConfig,
-		Stations:    flatStations,
-		Connections: flatConnections,
-		CreatedAt:   scenario.CreatedAt,
-		UpdatedAt:   scenario.UpdatedAt,
+		ID:                scenario.ID,
+		Name:              scenario.Name,
+		SimDBConfig:       scenario.SimDBConfig,
+		Stations:          flatStations,
+		Connections:       flatConnections,
+		CreatedAt:         scenario.CreatedAt,
+		UpdatedAt:         scenario.UpdatedAt,
+		StationModulerMap: modulerMap,
 	}
+}
+
+// buildStationModulerMap builds a mapping from internal station IDs to their parent Moduler station ID.
+func buildStationModulerMap(stations []domain.Station) map[string]string {
+	m := make(map[string]string)
+	for i := range stations {
+		st := &stations[i]
+		if st.Type != domain.StationTypeModuler {
+			continue
+		}
+		for _, internalID := range st.InternalStationIDs {
+			m[internalID] = st.ID
+		}
+	}
+	return m
 }
 
 // flattenStationsAndConnections flattens stations and connections at one level,

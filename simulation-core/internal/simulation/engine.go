@@ -21,6 +21,7 @@ type StationStatusLog struct {
 	SignalName string
 	OldValue   bool
 	RuleID     string
+	ModulerID  string // Parent Moduler station ID (empty for top-level stations)
 }
 
 // WorkEventLog represents a log entry for work events
@@ -32,6 +33,7 @@ type WorkEventLog struct {
 	EventType        string
 	WorkType         string // Work type (e.g. "partA", "partB")
 	PortIndex      int    // Port slot index (-1 = no port)
+	ModulerID      string // Parent Moduler station ID (empty for top-level stations)
 }
 
 // WorkLineageLog represents a log entry for work lineage (traceability)
@@ -63,6 +65,7 @@ type Engine struct {
 	mergeInProgress    map[string]bool         // Tracks merge stations currently processing (stationID -> in progress)
 	initialWorks       map[string]InitialWorkCondition // Initial work conditions by station ID
 	pendingTimers      map[string]float64     // Timer tracking: key="stationID:timerType" → scheduledTime
+	stationModulerMap  map[string]string       // station ID -> parent Moduler station ID (empty for top-level stations)
 }
 
 // InitialWorkCondition represents a work already present at a station at simulation start
@@ -107,6 +110,8 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 
 	// Step 0: Flatten ModulerStations (recursive expansion)
 	e.scenario = FlattenScenario(e.scenario)
+	e.scenario.BuildStationIndex()
+	e.stationModulerMap = e.scenario.StationModulerMap
 
 	// Step 1: Initialize interlock rules, signals, and port slots for all stations
 	for i := range e.scenario.Stations {
@@ -219,7 +224,7 @@ func (e *Engine) processEvent(event *Event, simulation *domain.Simulation) error
 	}
 
 	// After processing an internal station's event, re-derive parent Moduler signals
-	if isInternalStation(station.ID) {
+	if e.isInternalStation(station.ID) {
 		if err := e.triggerModulerDerivation(station); err != nil {
 			return err
 		}
@@ -1117,6 +1122,7 @@ func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timest
 		EventType:        eventType,
 		WorkType:         workType,
 		PortIndex:      portIndex,
+		ModulerID:      e.stationModulerMap[stationID],
 	})
 }
 
@@ -1236,6 +1242,7 @@ func (e *Engine) logStationStatus(station *domain.Station, statusType string) {
 		Timestamp:  e.currentTime,
 		StatusType: statusType,
 		Value:      value,
+		ModulerID:  e.stationModulerMap[station.ID],
 	})
 }
 
@@ -1249,6 +1256,7 @@ func (e *Engine) logSignalChange(station *domain.Station, signalName string, old
 		SignalName: signalName,
 		OldValue:   oldValue,
 		RuleID:     ruleID,
+		ModulerID:  e.stationModulerMap[station.ID],
 	})
 }
 
@@ -1280,6 +1288,7 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 					SignalName: name,
 					OldValue:   oldVal,
 					RuleID:     "derived",
+					ModulerID:  e.stationModulerMap[station.ID],
 				})
 			}
 		}
@@ -1300,6 +1309,7 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 			SignalName: change.SignalName,
 			OldValue:   change.OldValue,
 			RuleID:     change.RuleID,
+			ModulerID:  e.stationModulerMap[change.StationID],
 		})
 	}
 
@@ -1337,13 +1347,11 @@ func (e *Engine) triggerProcessReady(station *domain.Station) {
 // checkHandshakes checks if transfer handshakes are satisfied after signal changes.
 // A transfer begins when upstream.outputReady=ON AND downstream.inputReady=ON.
 // For Merge: uses per-port inputReady. For Split: uses per-port outputReady.
+// Uses indexed connection lookups for O(degree) instead of O(E) per call.
 func (e *Engine) checkHandshakes(station *domain.Station) error {
 	// Case 1: This station is upstream (non-Split) — its outputReady may have just turned ON
 	if station.Type != domain.StationTypeSplit && station.IsOutputReady() && station.GetWork() != nil && !e.pendingDepartures[station.ID] {
-		for _, conn := range e.scenario.Connections {
-			if conn.From != station.ID {
-				continue
-			}
+		for _, conn := range e.scenario.GetConnectionsFrom(station.ID) {
 			toStation := e.scenario.GetStation(conn.To)
 			if toStation == nil {
 				continue
@@ -1351,7 +1359,6 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 
 			// Check downstream readiness
 			if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
-				// Merge downstream: check per-port inputReady
 				resKey := e.portReservationKey(toStation.ID, conn.ToPortIndex)
 				if toStation.IsPortInputReady(conn.ToPortIndex) && !e.reservedStations[resKey] {
 					e.pendingDepartures[station.ID] = true
@@ -1359,7 +1366,6 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 					break
 				}
 			} else {
-				// Normal downstream: check station-level inputReady
 				if toStation.IsInputReady() && !e.reservedStations[toStation.ID] {
 					e.pendingDepartures[station.ID] = true
 					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
@@ -1388,7 +1394,6 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 				continue
 			}
 
-			// Check downstream readiness
 			ready := false
 			if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
 				resKey := e.portReservationKey(toStation.ID, conn.ToPortIndex)
@@ -1406,25 +1411,19 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 
 	// Case 2: This station is downstream (non-Merge) — its inputReady may have just turned ON
 	if station.Type != domain.StationTypeMerge && station.IsInputReady() && !e.reservedStations[station.ID] {
-		for _, conn := range e.scenario.Connections {
-			if conn.To != station.ID {
-				continue
-			}
+		for _, conn := range e.scenario.GetConnectionsTo(station.ID) {
 			fromStation := e.scenario.GetStation(conn.From)
 			if fromStation == nil {
 				continue
 			}
 
-			// Check upstream readiness
 			if fromStation.Type == domain.StationTypeSplit && conn.FromPortIndex >= 0 {
-				// Split upstream: check per-port outputReady
 				depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
 				if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
 					e.pendingDepartures[depKey] = true
 					e.eventQueue.Push(NewPortEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil, conn.FromPortIndex))
 				}
 			} else {
-				// Normal upstream: check station-level outputReady
 				if fromStation.IsOutputReady() && fromStation.GetWork() != nil && !e.pendingDepartures[fromStation.ID] {
 					e.pendingDepartures[fromStation.ID] = true
 					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil))
