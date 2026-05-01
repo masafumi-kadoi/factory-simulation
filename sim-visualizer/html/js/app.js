@@ -1,8 +1,6 @@
 // Main application logic
 import { fetchSimulation, fetchScenario, fetchLogs } from './api.js';
 import { Visualizer3D } from './visualizer.js';
-import { ModulerModal } from './moduler-modal.js';
-
 let MouseConfig, MouseConfigModal, injectMouseConfigCSS;
 try {
     const mod = await import('../shared/js/mouse-config.js');
@@ -28,9 +26,11 @@ class App {
 
         this.flatScenario = null;
         this.modulerMap = new Map();   // internal stationID → direct parent moduler ID
-        this.openModals = [];          // ModulerModal[]
+        this.openViewers = new Map();  // modulerId → { window, ready }
         this._rawActiveWorks = new Map();
         this._rawSignalStates = new Map();
+
+        window.addEventListener('message', (e) => this._onViewerMessage(e));
 
         this._buildMenuBar();
         this._init();
@@ -179,7 +179,7 @@ class App {
             this.visualizer.loadScenario(layer1Scenario);
 
             this.visualizer.setOnWorkClick((workId) => this._showWorkModal(workId));
-            this.visualizer.setOnModulerDoubleClick((stationId) => this._openModulerModal(stationId));
+            this.visualizer.setOnModulerDoubleClick((stationId) => this._openModulerViewer(stationId));
 
             this._setupControls();
             this._updateSimulation();
@@ -439,11 +439,14 @@ class App {
         };
     }
 
-    // --- Modal management ---
+    // --- Viewer window management ---
 
-    _openModulerModal(modulerId) {
-        const existing = this.openModals.find(m => m.modulerId === modulerId);
-        if (existing && existing.isOpen()) return;
+    _openModulerViewer(modulerId) {
+        const existing = this.openViewers.get(modulerId);
+        if (existing && !existing.window.closed) {
+            existing.window.focus();
+            return;
+        }
 
         const internalScenario = this._buildInternalScenario(this.flatScenario, modulerId);
         if (internalScenario.stations.length === 0) return;
@@ -451,20 +454,70 @@ class App {
         const modulerStation = this.flatScenario.stations.find(s => s.id === modulerId);
         const modulerName = modulerStation?.name || modulerId;
 
-        const zIndex = 10000 + this.openModals.length * 10;
-        const modal = new ModulerModal(document.body, zIndex);
+        const w = window.open(
+            'moduler-viewer.html',
+            `moduler-${modulerId}`,
+            'width=900,height=650,resizable=yes'
+        );
 
-        modal.setOnOpenNestedModal((nestedStationId, parentModal) => {
-            const fullId = modulerId + '.' + nestedStationId;
-            this._openModulerModal(fullId);
+        if (!w) {
+            alert('ポップアップがブロックされました。ブラウザの設定を確認してください。');
+            return;
+        }
+
+        this.openViewers.set(modulerId, {
+            window: w,
+            ready: false,
+            scenario: internalScenario,
+            modulerName: modulerName
         });
+    }
 
-        modal.setOnClose((closedModal) => {
-            this.openModals = this.openModals.filter(m => m !== closedModal);
-        });
+    _onViewerMessage(event) {
+        const data = event.data;
+        if (!data || !data.type) return;
 
-        modal.open(internalScenario, modulerName, modulerId, this.mouseConfig);
-        this.openModals.push(modal);
+        switch (data.type) {
+            case 'moduler-viewer-ready': {
+                for (const [modulerId, viewer] of this.openViewers) {
+                    if (viewer.window === event.source) {
+                        viewer.ready = true;
+                        viewer.window.postMessage({
+                            type: 'init',
+                            scenario: viewer.scenario,
+                            modulerName: viewer.modulerName,
+                            modulerId: modulerId
+                        }, '*');
+                        this._sendViewerUpdate(modulerId, viewer);
+                        break;
+                    }
+                }
+                break;
+            }
+            case 'moduler-viewer-closed': {
+                if (data.modulerId) {
+                    this.openViewers.delete(data.modulerId);
+                }
+                break;
+            }
+            case 'open-nested-moduler': {
+                const fullId = data.parentModulerId + '.' + data.stationId;
+                this._openModulerViewer(fullId);
+                break;
+            }
+        }
+    }
+
+    _sendViewerUpdate(modulerId, viewer) {
+        if (!viewer.ready || viewer.window.closed) return;
+        const modalWorks = this._filterForModuler(this._rawActiveWorks, modulerId);
+        const modalSignals = this._filterSignalsForModuler(this._rawSignalStates, modulerId);
+        viewer.window.postMessage({
+            type: 'update',
+            works: [...modalWorks],
+            signalStates: [...modalSignals].map(([k, v]) => [k, [...v]]),
+            currentTime: this.currentTime
+        }, '*');
     }
 
     // --- Time & animation ---
@@ -643,12 +696,13 @@ class App {
             this.visualizer.updateInterlockStates(rawSignalStates);
         }
 
-        // Update open modals
-        for (const modal of this.openModals) {
-            if (!modal.isOpen()) continue;
-            const modalWorks = this._filterForModuler(rawActiveWorks, modal.modulerId);
-            const modalSignals = this._filterSignalsForModuler(rawSignalStates, modal.modulerId);
-            modal.update(modalWorks, modalSignals, this.currentTime);
+        // Update open viewer windows
+        for (const [modulerId, viewer] of this.openViewers) {
+            if (viewer.window.closed) {
+                this.openViewers.delete(modulerId);
+                continue;
+            }
+            this._sendViewerUpdate(modulerId, viewer);
         }
     }
 

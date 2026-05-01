@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moduler Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a;
+            color: #cdd6f4;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #header {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            background: #16213e;
+            border-bottom: 1px solid #2a3f5f;
+        }
+        #moduler-name {
+            color: #89b4fa;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        #container-3d { flex: 1; position: relative; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="header">
+        <span id="moduler-name">Loading...</span>
+    </div>
+    <div id="container-3d"></div>
+    <script type="module" src="js/moduler-viewer-app.js"></script>
+</body>
+</html>
