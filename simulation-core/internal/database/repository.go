@@ -111,8 +111,8 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 	}
 
 	query := `
-		INSERT INTO work_events (simulation_run_id, work_id, work_friendly_name, station_id, timestamp, event_type, work_type, port_index)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO work_events (simulation_run_id, work_id, work_friendly_name, station_id, timestamp, event_type, work_type, port_index, quality_status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
 	tx, err := r.db.GetConnection().Begin()
@@ -128,6 +128,10 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 	defer stmt.Close()
 
 	for _, log := range logs {
+		var qualityStatus *string
+		if log.QualityStatus != "" {
+			qualityStatus = &log.QualityStatus
+		}
 		_, err := stmt.Exec(
 			simulationID,
 			log.WorkID,
@@ -137,6 +141,7 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 			log.EventType,
 			log.WorkType,
 			log.PortIndex,
+			qualityStatus,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert work event: %w", err)
@@ -153,7 +158,7 @@ func (r *Repository) SaveWorkEvents(simulationID string, logs []simulation.WorkE
 // GetSimulation retrieves a simulation run from the database
 func (r *Repository) GetSimulation(id string) (*domain.Simulation, error) {
 	query := `
-		SELECT id, friendly_name, scenario_id, simulation_end_time, end_reason, status
+		SELECT id, friendly_name, scenario_id, simulation_end_time, end_reason, status, created_at
 		FROM simulation_runs
 		WHERE id = $1
 	`
@@ -170,6 +175,7 @@ func (r *Repository) GetSimulation(id string) (*domain.Simulation, error) {
 		&endTime,
 		&endReason,
 		&status,
+		&sim.CreatedAt,
 	)
 
 	if err != nil {
@@ -221,7 +227,7 @@ func (r *Repository) GetStationStatusLogs(simulationID string) ([]simulation.Sta
 // GetWorkEvents retrieves work events from the database
 func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventLog, error) {
 	query := `
-		SELECT work_id, work_friendly_name, station_id, timestamp, event_type, COALESCE(work_type, ''), COALESCE(port_index, -1)
+		SELECT work_id, work_friendly_name, station_id, timestamp, event_type, COALESCE(work_type, ''), COALESCE(port_index, -1), COALESCE(quality_status, '')
 		FROM work_events
 		WHERE simulation_run_id = $1
 		ORDER BY timestamp ASC
@@ -236,7 +242,7 @@ func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventL
 	var logs []simulation.WorkEventLog
 	for rows.Next() {
 		var log simulation.WorkEventLog
-		if err := rows.Scan(&log.WorkID, &log.WorkFriendlyName, &log.StationID, &log.Timestamp, &log.EventType, &log.WorkType, &log.PortIndex); err != nil {
+		if err := rows.Scan(&log.WorkID, &log.WorkFriendlyName, &log.StationID, &log.Timestamp, &log.EventType, &log.WorkType, &log.PortIndex, &log.QualityStatus); err != nil {
 			return nil, fmt.Errorf("failed to scan work event: %w", err)
 		}
 		logs = append(logs, log)

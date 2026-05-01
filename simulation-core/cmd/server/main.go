@@ -29,6 +29,11 @@ func main() {
 	defer db.Close()
 	log.Println("Database connection established")
 
+	// Run schema migrations
+	if _, err := db.GetConnection().Exec(`ALTER TABLE work_events ADD COLUMN IF NOT EXISTS quality_status character varying`); err != nil {
+		log.Printf("Warning: failed to add quality_status column: %v", err)
+	}
+
 	// Create repository
 	repo := database.NewRepository(db)
 
@@ -97,6 +102,8 @@ func main() {
 			handler.HandleGetLogs(w, r)
 		} else if len(r.URL.Path) > 8 && r.URL.Path[len(r.URL.Path)-8:] == "/lineage" {
 			handler.HandleGetLineage(w, r)
+		} else if len(r.URL.Path) > 11 && r.URL.Path[len(r.URL.Path)-11:] == "/export-wdh" {
+			handler.HandleExportWDH(w, r)
 		} else {
 			handler.HandleGetSimulation(w, r)
 		}

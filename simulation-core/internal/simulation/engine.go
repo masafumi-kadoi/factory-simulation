@@ -34,6 +34,7 @@ type WorkEventLog struct {
 	WorkType         string // Work type (e.g. "partA", "partB")
 	PortIndex      int    // Port slot index (-1 = no port)
 	ModulerID      string // Parent Moduler station ID (empty for top-level stations)
+	QualityStatus  string // Quality status at event time (OK, NG, etc.)
 }
 
 // WorkLineageLog represents a log entry for work lineage (traceability)
@@ -540,6 +541,7 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 	work := station.GetWork()
 	if work != nil {
 		e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventProcessingCompleted), work.Type, -1)
+		e.workEventLogs[len(e.workEventLogs)-1].QualityStatus = string(work.QualityStatus)
 	}
 
 	e.logStationStatus(station, "処理完了")
