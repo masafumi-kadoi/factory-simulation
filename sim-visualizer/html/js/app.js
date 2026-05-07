@@ -1358,6 +1358,10 @@ class App {
         const container = document.getElementById('container-3d');
         if (this.visualizer) { this.visualizer.dispose(); this.visualizer = null; }
         if (this._liveClient) { this._liveClient.unsubscribe(); this._liveClient = null; }
+        for (const [, viewer] of this.openViewers) {
+            if (viewer.window && !viewer.window.closed) viewer.window.close();
+        }
+        this.openViewers.clear();
         this.isPlaying = false;
         this._controlsBound = false;
         this._liveBtnBound = false;

@@ -208,7 +208,12 @@ export class Visualizer3D {
         if (this.gridHelper) {
             this.scene.remove(this.gridHelper);
             this.gridHelper.geometry.dispose();
-            this.gridHelper.material.dispose();
+            // GridHelper uses an array of materials
+            if (Array.isArray(this.gridHelper.material)) {
+                this.gridHelper.material.forEach(m => m.dispose());
+            } else if (this.gridHelper.material) {
+                this.gridHelper.material.dispose();
+            }
         }
 
         const groundGeometry = new THREE.PlaneGeometry(size, size);
@@ -1156,5 +1161,22 @@ export class Visualizer3D {
             indicator.mesh.material.dispose();
         });
         this.interlockIndicators = [];
+
+        if (this.ground) {
+            this.scene.remove(this.ground);
+            this.ground.geometry.dispose();
+            this.ground.material.dispose();
+            this.ground = null;
+        }
+        if (this.gridHelper) {
+            this.scene.remove(this.gridHelper);
+            this.gridHelper.geometry.dispose();
+            if (Array.isArray(this.gridHelper.material)) {
+                this.gridHelper.material.forEach(m => m.dispose());
+            } else if (this.gridHelper.material) {
+                this.gridHelper.material.dispose();
+            }
+            this.gridHelper = null;
+        }
     }
 }
