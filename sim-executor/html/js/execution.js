@@ -257,7 +257,7 @@ async function fetchInitialConditions() {
         return;
     }
 
-    const startTimeISO = `${startDate}T${startTime}:00`;
+    const startTimeISO = `${startDate}T${startTime}:00Z`;
 
     btn.disabled = true;
     btn.textContent = 'Fetching...';
@@ -341,7 +341,7 @@ async function executeSimulation() {
 
     const startDate = document.getElementById('start-date').value;
     const startTime = document.getElementById('start-time').value;
-    const startTimeISO = `${startDate}T${startTime}:00`;
+    const startTimeISO = `${startDate}T${startTime}:00Z`;
 
     // Get end condition
     const endType = document.querySelector('input[name="end-type"]:checked').value;
@@ -356,7 +356,7 @@ async function executeSimulation() {
             resultContainer.innerHTML = '<div class="error-message">Please set end date and time</div>';
             return;
         }
-        endCondition = { type: 'absolute', value: `${endDate}T${endTime}:00` };
+        endCondition = { type: 'absolute', value: `${endDate}T${endTime}:00Z` };
     }
 
     // Collect conditions from editable table if in manual mode

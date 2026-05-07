@@ -802,8 +802,14 @@ func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, s
 			mins, _ := strconv.ParseFloat(req.EndCondition.Value, 64)
 			simTime = mins * 60
 		} else if req.EndCondition.Type == "absolute" {
-			startT, err1 := time.Parse("2006-01-02T15:04:05", req.StartTime)
-			endT, err2 := time.Parse("2006-01-02T15:04:05", req.EndCondition.Value)
+			parseFlexible := func(s string) (time.Time, error) {
+				if t, err := time.Parse(time.RFC3339, s); err == nil {
+					return t, nil
+				}
+				return time.Parse("2006-01-02T15:04:05", s)
+			}
+			startT, err1 := parseFlexible(req.StartTime)
+			endT, err2 := parseFlexible(req.EndCondition.Value)
 			if err1 == nil && err2 == nil {
 				simTime = endT.Sub(startT).Seconds()
 			}

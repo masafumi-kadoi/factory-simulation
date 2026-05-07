@@ -39,11 +39,13 @@ func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
 		req.SimulationTime = 86400 // default 24h
 	}
 
-	// Parse baseTime
+	// Parse baseTime — accept RFC3339 (with timezone) or bare datetime (treated as UTC)
 	baseTime := time.Now()
 	if req.StartDatetime != "" {
 		if t, err := time.Parse(time.RFC3339, req.StartDatetime); err == nil {
 			baseTime = t
+		} else if t, err := time.Parse("2006-01-02T15:04:05", req.StartDatetime); err == nil {
+			baseTime = t.UTC()
 		}
 	}
 
