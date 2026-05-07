@@ -520,16 +520,19 @@ func (h *Handler) HandleTestConnection(w http.ResponseWriter, r *http.Request) {
 
 // --- Helper functions ---
 
-// parseTime parses a time string in ISO 8601 format
+// parseTime parses an ISO 8601 / RFC3339 time string.
+// Accepts: RFC3339 (e.g. "2024-03-15T09:30:00Z"), bare datetime, or bare datetime without seconds.
 func parseTime(s string) (time.Time, error) {
-	t, err := time.Parse("2006-01-02T15:04:05", s)
-	if err != nil {
-		t, err = time.Parse("2006-01-02T15:04", s)
-		if err != nil {
-			return time.Time{}, fmt.Errorf("invalid time format: %s", s)
-		}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
 	}
-	return t, nil
+	if t, err := time.Parse("2006-01-02T15:04:05", s); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse("2006-01-02T15:04", s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("invalid time format: %s", s)
 }
 
 // getScenarioFromCore fetches a scenario from simulation-core API
