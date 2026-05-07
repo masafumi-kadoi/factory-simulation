@@ -69,6 +69,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleExecutions(w, r)
 	case strings.HasPrefix(path, "/api/executions/"):
 		h.handleExecution(w, r, strings.TrimPrefix(path, "/api/executions/"))
+	// sim-executor-backend 互換レイヤー
+	case strings.HasPrefix(path, "/api/executor/"):
+		h.handleExecutorCompat(w, r, strings.TrimPrefix(path, "/api/executor/"))
 	default:
 		http.NotFound(w, r)
 	}
@@ -364,22 +367,19 @@ func (h *Handler) handleScenarios(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		factoryID := r.URL.Query().Get("factory_id")
-		var (
-			scenarios []database.Scenario
-			err       error
-		)
 		if factoryID != "" {
-			scenarios, err = h.repo.ListScenariosByFactory(factoryID)
+			// Factory絞り込み: ローカルDBから返す（realtime-gateway独自）
+			scenarios, err := h.repo.ListScenariosByFactory(factoryID)
+			if err != nil {
+				respondError(w, 500, err.Error())
+				return
+			}
+			respondJSON(w, 200, scenarios)
 		} else {
-			scenarios, err = h.repo.ListScenarios()
+			// 全件: simulation-coreへプロキシ（stationCount等を含む正式フォーマット）
+			h.proxyToSimCore(w, r, "/api/scenarios")
 		}
-		if err != nil {
-			respondError(w, 500, err.Error())
-			return
-		}
-		respondJSON(w, 200, scenarios)
 	case http.MethodPost:
-		// Proxy to simulation-core
 		h.proxyToSimCore(w, r, "/api/scenarios")
 	default:
 		respondError(w, 405, "method not allowed")
@@ -387,17 +387,9 @@ func (h *Handler) handleScenarios(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleScenario(w http.ResponseWriter, r *http.Request, id string) {
+	// GET/PUT/DELETE はすべてsimulation-coreへプロキシ（stations/connections含む完全データ）
 	switch r.Method {
-	case http.MethodGet:
-		s, err := h.repo.GetScenario(id)
-		if err != nil {
-			respondError(w, 404, err.Error())
-			return
-		}
-		respondJSON(w, 200, s)
-	case http.MethodPut:
-		h.proxyToSimCore(w, r, "/api/scenarios/"+id)
-	case http.MethodDelete:
+	case http.MethodGet, http.MethodPut, http.MethodDelete:
 		h.proxyToSimCore(w, r, "/api/scenarios/"+id)
 	default:
 		respondError(w, 405, "method not allowed")
@@ -450,6 +442,10 @@ func (h *Handler) handleDataSources(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondError(w, 400, err.Error())
+			return
+		}
+		if body.SourceType != "simulation" && body.SourceType != "realtime" {
+			respondError(w, 400, "sourceType must be 'simulation' or 'realtime'")
 			return
 		}
 		var ds interface{}
@@ -675,6 +671,168 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 
 	h.repo.UpdateExecutionStatus(execID, "completed", &dataSourceID, nil)
 	log.Printf("[gateway] simulation completed: exec=%s ds=%s", execID, dataSourceID)
+}
+
+// ---- Executor compat (sim-executor-backend互換レイヤー) ----
+
+func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, sub string) {
+	switch {
+	case sub == "scenarios" && r.Method == http.MethodGet:
+		req, err := http.NewRequest("GET", h.simCoreURL+"/api/scenarios", nil)
+		if err != nil {
+			respondError(w, 500, "failed to create request")
+			return
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			respondError(w, 502, "upstream error: "+err.Error())
+			return
+		}
+		defer resp.Body.Close()
+		var simCoreResp struct {
+			Scenarios []map[string]interface{} `json:"scenarios"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&simCoreResp); err != nil {
+			respondError(w, 500, "failed to parse upstream response")
+			return
+		}
+		if simCoreResp.Scenarios == nil {
+			simCoreResp.Scenarios = make([]map[string]interface{}, 0)
+		}
+		execs, _ := h.repo.ListExecutions()
+		countByScenario := make(map[string]int)
+		for _, e := range execs {
+			countByScenario[e.ScenarioID]++
+		}
+		for i, s := range simCoreResp.Scenarios {
+			if sid, ok := s["scenarioId"].(string); ok {
+				simCoreResp.Scenarios[i]["executionCount"] = countByScenario[sid]
+			}
+		}
+		respondJSON(w, 200, map[string]interface{}{"scenarios": simCoreResp.Scenarios})
+
+	case sub == "executions" && r.Method == http.MethodGet:
+		scenarioID := r.URL.Query().Get("scenarioId")
+		allExecs, err := h.repo.ListExecutions()
+		if err != nil {
+			respondError(w, 500, err.Error())
+			return
+		}
+		type execResult struct {
+			ID                string    `json:"id"`
+			ScenarioID        string    `json:"scenarioId"`
+			StartTime         time.Time `json:"startTime"`
+			EndConditionType  string    `json:"endConditionType"`
+			EndConditionValue string    `json:"endConditionValue"`
+			Status            string    `json:"status"`
+			SimulationID      *string   `json:"simulationId,omitempty"`
+			ErrorMessage      *string   `json:"errorMessage,omitempty"`
+			CreatedAt         time.Time `json:"createdAt"`
+			UpdatedAt         time.Time `json:"updatedAt"`
+		}
+		filtered := make([]execResult, 0)
+		for _, e := range allExecs {
+			if scenarioID != "" && e.ScenarioID != scenarioID {
+				continue
+			}
+			filtered = append(filtered, execResult{
+				ID:                e.ID,
+				ScenarioID:        e.ScenarioID,
+				StartTime:         e.StartTime,
+				EndConditionType:  e.EndConditionType,
+				EndConditionValue: e.EndConditionValue,
+				Status:            e.Status,
+				SimulationID:      e.DataSourceID,
+				ErrorMessage:      e.ErrorMessage,
+				CreatedAt:         e.CreatedAt,
+				UpdatedAt:         e.UpdatedAt,
+			})
+		}
+		respondJSON(w, 200, map[string]interface{}{"executions": filtered})
+
+	case strings.HasPrefix(sub, "executions/") && r.Method == http.MethodDelete:
+		execID := strings.TrimPrefix(sub, "executions/")
+		if err := h.repo.DeleteExecution(execID); err != nil {
+			respondError(w, 404, err.Error())
+			return
+		}
+		respondJSON(w, 200, map[string]string{"status": "deleted"})
+
+	case sub == "execute" && r.Method == http.MethodPost:
+		var req struct {
+			ScenarioID   string `json:"scenarioId"`
+			StartTime    string `json:"startTime"`
+			EndCondition struct {
+				Type  string `json:"type"`
+				Value string `json:"value"`
+			} `json:"endCondition"`
+			InitialConditions json.RawMessage `json:"initialConditions"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, 400, err.Error())
+			return
+		}
+		if req.ScenarioID == "" {
+			respondError(w, 400, "scenarioId is required")
+			return
+		}
+		var simTime float64
+		if req.EndCondition.Type == "duration" {
+			mins, _ := strconv.ParseFloat(req.EndCondition.Value, 64)
+			simTime = mins * 60
+		} else if req.EndCondition.Type == "absolute" {
+			startT, err1 := time.Parse("2006-01-02T15:04:05", req.StartTime)
+			endT, err2 := time.Parse("2006-01-02T15:04:05", req.EndCondition.Value)
+			if err1 == nil && err2 == nil {
+				simTime = endT.Sub(startT).Seconds()
+			}
+		}
+		if simTime <= 0 {
+			simTime = 3600
+		}
+		friendlyName := fmt.Sprintf("Simulation_%s", time.Now().Format("2006-01-02T15:04:05"))
+		ds, err := h.repo.CreateDataSource("simulation", req.ScenarioID, friendlyName, nil)
+		if err != nil {
+			respondError(w, 500, "failed to create data source: "+err.Error())
+			return
+		}
+		now := time.Now()
+		ic := req.InitialConditions
+		if ic == nil {
+			ic = json.RawMessage("{}")
+		}
+		ec := &database.ExecutionConfig{
+			ID:                uuid.New().String(),
+			ScenarioID:        req.ScenarioID,
+			StartTime:         now,
+			EndConditionType:  req.EndCondition.Type,
+			EndConditionValue: req.EndCondition.Value,
+			InitialConditions: ic,
+			Status:            "pending",
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		}
+		if err := h.repo.CreateExecution(ec); err != nil {
+			respondError(w, 500, err.Error())
+			return
+		}
+		go h.runSimulation(ec.ID, ds.ID, req.ScenarioID, req.StartTime, simTime, ic)
+		respondJSON(w, 202, map[string]interface{}{
+			"executionId":  ec.ID,
+			"simulationId": ds.ID,
+			"dataSourceId": ds.ID,
+			"status":       "pending",
+		})
+
+	case sub == "initial-conditions" && r.Method == http.MethodPost:
+		h.proxyToSimCore(w, r, "/api/simdb/initial-conditions")
+
+	case strings.HasPrefix(sub, "simdb/") && r.Method == http.MethodPost:
+		h.proxyToSimCore(w, r, "/api/"+sub)
+
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 // helpers
