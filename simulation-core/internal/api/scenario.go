@@ -411,7 +411,6 @@ type ScenarioListResponse struct {
 
 // HandleListScenarios handles GET /api/scenarios
 func (h *Handler) HandleListScenarios(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("HandleListScenarios called: Method=%s, Path=%s\n", r.Method, r.URL.Path)
 	if r.Method != http.MethodGet {
 		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
