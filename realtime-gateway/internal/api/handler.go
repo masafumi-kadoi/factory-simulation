@@ -137,7 +137,10 @@ func (h *Handler) handleFactory(w http.ResponseWriter, r *http.Request, rest str
 				Name        string `json:"name"`
 				Description string `json:"description"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+				respondError(w, 400, "name is required")
+				return
+			}
 			if err := h.repo.UpdateFactory(id, body.Name, body.Description); err != nil {
 				respondError(w, 500, err.Error())
 				return
@@ -493,7 +496,10 @@ func (h *Handler) handleDataSource(w http.ResponseWriter, r *http.Request, rest 
 			var body struct {
 				EndedAt *string `json:"endedAt"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				respondError(w, 400, "invalid JSON body")
+				return
+			}
 			var endedAt *time.Time
 			if body.EndedAt != nil {
 				t, err := time.Parse(time.RFC3339, *body.EndedAt)
