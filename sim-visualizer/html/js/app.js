@@ -701,6 +701,26 @@ class App {
                         portIndex: event.PortIndex != null ? event.PortIndex : -1
                     });
                 } else if (event.EventType === 'WorkDeparted') {
+                    // WDH Split: outputs depart with portIndex>=0; the original input work
+                    // (portIndex<0) was consumed at the same station — remove it.
+                    if (event.PortIndex >= 0) {
+                        for (const [wId, wInfo] of rawActiveWorks) {
+                            if (wInfo.stationId === stationId && wInfo.portIndex < 0 && wId !== workId) {
+                                rawActiveWorks.delete(wId);
+                                break;
+                            }
+                        }
+                    } else {
+                        // WDH Merge: output departs with portIndex<0; consumed merge inputs
+                        // (portIndex>=0) at the same station — remove them.
+                        const toDelete = [];
+                        for (const [wId, wInfo] of rawActiveWorks) {
+                            if (wInfo.stationId === stationId && wInfo.portIndex >= 0 && wId !== workId) {
+                                toDelete.push(wId);
+                            }
+                        }
+                        toDelete.forEach(wId => rawActiveWorks.delete(wId));
+                    }
                     const nextIdx = this._departureNextMap.get(i);
                     if (nextIdx !== undefined) {
                         const nextEvent = events[nextIdx];
@@ -797,7 +817,7 @@ class App {
 
         const eventRows = events.map(e => `
             <tr>
-                <td style="padding:4px 8px">${e.Timestamp.toFixed(2)}s</td>
+                <td style="padding:4px 8px">${this._tsToDisplayTime(e.Timestamp)}</td>
                 <td style="padding:4px 8px">${e.EventType}</td>
                 <td style="padding:4px 8px">${e.StationID}</td>
                 <td style="padding:4px 8px">${e.PortIndex >= 0 ? 'B' + e.PortIndex : '-'}</td>
@@ -970,8 +990,29 @@ class App {
     }
 
     _updateUI() {
-        document.getElementById('current-time').textContent = this.currentTime.toFixed(2) + 's';
+        let timeText;
+        if (this._dsStartTime) {
+            const absMs = new Date(this._dsStartTime).getTime() + this.currentTime * 1000;
+            timeText = new Date(absMs).toLocaleString('ja-JP', {
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        } else {
+            timeText = this.currentTime.toFixed(2) + 's';
+        }
+        document.getElementById('current-time').textContent = timeText;
         document.getElementById('timeline-slider').value = this.currentTime;
+    }
+
+    _tsToDisplayTime(ts) {
+        if (this._dsStartTime) {
+            const absMs = new Date(this._dsStartTime).getTime() + ts * 1000;
+            return new Date(absMs).toLocaleString('ja-JP', {
+                month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        }
+        return ts.toFixed(2) + 's';
     }
 
     async _showSimulationList() {
@@ -1080,6 +1121,7 @@ class App {
             const layer1Scenario = this._buildLayer1Scenario(this.flatScenario);
             this.visualizer.loadScenario(layer1Scenario);
             this.visualizer.setOnModulerDoubleClick((sid) => this._openModulerViewer(sid));
+            this.visualizer.setOnWorkClick((workId) => this._showWorkModal(workId));
 
             // Load all events for this data source (use wide range from epoch to far future)
             const rawEvents = await fetchEvents(dsId, new Date(0), new Date('2100-01-01'));
@@ -1120,14 +1162,35 @@ class App {
     }
 
     _layoutToScenario(layout) {
-        const stations = (layout.locations || []).map(loc => ({
-            id: loc.name,
-            name: loc.name,
-            type: loc.stationType || 'processing',
-            positionX: loc.posX || 0,
-            positionY: loc.posY || 0,
-            config: {},
-        }));
+        const locById = new Map((layout.locations || []).map(l => [l.id, l]));
+
+        // Sub-station pos_x/pos_y in WDH are relative to the parent moduler.
+        // Resolve to absolute by summing the parent chain.
+        const getAbsPos = (loc) => {
+            let x = loc.posX || 0;
+            let y = loc.posY || 0;
+            if (loc.parentLocationId != null) {
+                const parent = locById.get(loc.parentLocationId);
+                if (parent) {
+                    const p = getAbsPos(parent);
+                    x += p.x;
+                    y += p.y;
+                }
+            }
+            return { x, y };
+        };
+
+        const stations = (layout.locations || []).map(loc => {
+            const { x, y } = getAbsPos(loc);
+            return {
+                id: loc.name,
+                name: loc.name,
+                type: loc.stationType || 'processing',
+                positionX: x,
+                positionY: y,
+                config: {},
+            };
+        });
         const nameMap = new Map((layout.locations || []).map(l => [l.id, l.name]));
         const connections = (layout.connections || []).map(conn => ({
             from: nameMap.get(conn.fromLocationId) || String(conn.fromLocationId),
