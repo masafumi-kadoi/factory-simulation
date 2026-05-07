@@ -595,6 +595,9 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 		station.ExitCount = exitCount
 		stations = append(stations, *station)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate stations: %w", err)
+	}
 
 	// Get connections
 	connRows, err := r.db.GetConnection().Query(`
@@ -622,6 +625,9 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 			FromPortIndex: fromPortIndex,
 			ToPortIndex:   toPortIndex,
 		})
+	}
+	if err := connRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate connections: %w", err)
 	}
 
 	// Build scenario

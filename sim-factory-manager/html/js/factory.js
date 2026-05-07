@@ -72,7 +72,7 @@ async function loadScenarios() {
         }
         tbody.innerHTML = scenarios.map(s => `
             <tr>
-                <td style="font-size:12px;color:#757575">${s.id.substring(0,8)}...</td>
+                <td style="font-size:12px;color:#757575">${(s.id || '').substring(0,8)}...</td>
                 <td>${escapeHtml(s.name)}</td>
                 <td><span class="badge badge-inactive">${escapeHtml(s.scenarioType || 'simulation')}</span></td>
                 <td style="font-size:12px;color:#757575">${s.updatedAt ? new Date(s.updatedAt).toLocaleString('ja-JP') : '-'}</td>
@@ -104,7 +104,7 @@ async function loadDataSources() {
             <thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>${ds.map(d => `
                 <tr>
-                    <td style="font-size:12px;color:#757575">${d.id.substring(0,8)}...</td>
+                    <td style="font-size:12px;color:#757575">${(d.id || '').substring(0,8)}...</td>
                     <td>${escapeHtml(d.label || d.id)}</td>
                     <td>${escapeHtml(d.sourceType)}</td>
                     <td>${d.endedAt ? `<span class="badge badge-inactive">Ended</span>` : `<span class="badge badge-live"><span class="live-dot"></span>Live</span>`}</td>

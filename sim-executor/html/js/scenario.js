@@ -93,10 +93,11 @@ function getSortedExecutions() {
         case 'oldest':
             sorted.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
             break;
-        case 'status':
+        case 'status': {
             const order = { 'running': 0, 'pending': 1, 'completed': 2, 'error': 3 };
             sorted.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
             break;
+        }
     }
     return sorted;
 }
