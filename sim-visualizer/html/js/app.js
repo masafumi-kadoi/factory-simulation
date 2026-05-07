@@ -1105,7 +1105,12 @@ class App {
             this._updateSimulation();
             this._updateUI();
 
-            if (startLive) this._activateLive();
+            // Auto-play for completed simulations so users immediately see animation
+            if (!startLive && ds.endedAt && this.maxTime > 0) {
+                this.play();
+            } else if (startLive) {
+                this._activateLive();
+            }
 
         } catch (err) {
             console.error('[App] initDataSource failed:', err);
@@ -1141,6 +1146,7 @@ class App {
             liveBtn = document.createElement('button');
             liveBtn.id = 'live-btn';
             liveBtn.textContent = 'LIVE';
+            liveBtn.title = 'リアルタイム受信（実行中シミュレーション用）';
             liveBtn.style.cssText = 'background:#444;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-weight:bold';
             controls.querySelector('.buttons').appendChild(liveBtn);
         }
