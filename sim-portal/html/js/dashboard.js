@@ -144,7 +144,7 @@ async function loadRecentExecutions() {
 
         container.innerHTML = '<div class="recent-list">' +
             recent.map(exec => {
-                const statusClass = `status-${escapeHtml(exec.status)}`;
+                const statusClass = `status-${escapeHtml(exec.status || 'unknown')}`;
                 const time = formatDateTime(exec.createdAt);
                 const dsId = exec.dataSourceId || exec.simulationId;
                 const viewLink = exec.status === 'completed' && dsId
@@ -154,7 +154,7 @@ async function loadRecentExecutions() {
                 return `
                     <div class="recent-item">
                         <span class="recent-scenario">${escapeHtml(exec.scenarioName)}</span>
-                        <span class="status-badge ${statusClass}">${escapeHtml(exec.status)}</span>
+                        <span class="status-badge ${statusClass}">${escapeHtml(exec.status || 'unknown')}</span>
                         <span class="recent-time">${time}</span>
                         <span class="recent-actions">${viewLink}</span>
                     </div>

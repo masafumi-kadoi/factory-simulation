@@ -101,7 +101,7 @@ function renderExecutions() {
 }
 
 function renderExecutionRow(exec) {
-    const statusClass = `status-${escapeHtml(exec.status)}`;
+    const statusClass = `status-${escapeHtml(exec.status || 'unknown')}`;
     const startTime = formatDateTime(exec.startTime);
     const createdAt = formatDateTime(exec.createdAt);
 
@@ -125,7 +125,7 @@ function renderExecutionRow(exec) {
     return `
         <tr>
             <td>${escapeHtml(exec.scenarioName)}</td>
-            <td><span class="status-badge ${statusClass}">${escapeHtml(exec.status)}</span>${errorHtml}</td>
+            <td><span class="status-badge ${statusClass}">${escapeHtml(exec.status || 'unknown')}</span>${errorHtml}</td>
             <td>${startTime}</td>
             <td>${endInfo}</td>
             <td>${createdAt}</td>
