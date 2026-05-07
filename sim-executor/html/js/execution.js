@@ -182,7 +182,7 @@ function renderEditableConditionsTable(conditions) {
                 <td>
                     <span class="station-id-label">${station.name ? escapeHtml(station.name) : escapeHtml(station.id)}</span>
                     ${station.name ? `<span style="color:#6c757d;font-size:0.75rem;margin-left:0.25rem">(${escapeHtml(station.id)})</span>` : ''}
-                    <span class="station-type-tag type-${station.type}">${station.type}</span>
+                    <span class="station-type-tag type-${escapeHtml(station.type)}">${escapeHtml(station.type)}</span>
                 </td>
                 <td><input type="text" class="condition-input" data-field="workId" value="${escapeHtml(workId)}" placeholder="(empty)"></td>
                 <td><input type="number" class="condition-input" data-field="elapsed" value="${hasWork ? elapsed : ''}" placeholder="0" min="0" step="1"></td>
@@ -315,7 +315,7 @@ function renderConditionsTable(conditions) {
                 <td>${escapeHtml(stationId)}</td>
                 <td>${workId ? escapeHtml(workId) : '<span class="no-work">(none)</span>'}</td>
                 <td>${workId ? elapsed.toFixed(0) : '<span class="no-work">-</span>'}</td>
-                <td>${quality || '<span class="no-work">-</span>'}</td>
+                <td>${quality ? escapeHtml(quality) : '<span class="no-work">-</span>'}</td>
             </tr>
         `;
     }).join('');
@@ -385,7 +385,7 @@ async function executeSimulation() {
                     <span class="info-label">Simulation ID:</span>
                     <span class="info-value">${escapeHtml(result.simulationId)}</span>
                     <span class="info-label">Status:</span>
-                    <span class="info-value"><span class="status-badge status-${result.status}">${result.status}</span></span>
+                    <span class="info-value"><span class="status-badge status-${escapeHtml(result.status)}">${escapeHtml(result.status)}</span></span>
                 </div>
                 <div style="margin-top: 1rem; display: flex; gap: 0.5rem">
                     <a href="/visualizer/?simulationId=${encodeURIComponent(result.simulationId)}" target="_blank" class="btn btn-primary btn-sm">View in sim-visualizer</a>

@@ -137,13 +137,13 @@ function renderExecutions() {
 }
 
 function renderExecutionItem(exec, number) {
-    const statusClass = `status-${exec.status}`;
-    const statusLabel = {
+    const statusClass = `status-${escapeHtml(exec.status)}`;
+    const statusLabel = escapeHtml({
         'completed': 'Completed',
         'running': 'Running',
         'error': 'Error',
         'pending': 'Pending'
-    }[exec.status] || exec.status;
+    }[exec.status] || exec.status);
 
     const startTime = formatDateTime(exec.startTime);
     const endInfo = exec.endConditionType === 'duration'

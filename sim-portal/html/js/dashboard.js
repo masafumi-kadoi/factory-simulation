@@ -144,7 +144,7 @@ async function loadRecentExecutions() {
 
         container.innerHTML = '<div class="recent-list">' +
             recent.map(exec => {
-                const statusClass = `status-${exec.status}`;
+                const statusClass = `status-${escapeHtml(exec.status)}`;
                 const time = formatDateTime(exec.createdAt);
                 const viewLink = exec.status === 'completed' && exec.simulationId
                     ? `<a href="${SERVICE_URLS['sim-visualizer']}/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">View</a>`
@@ -153,7 +153,7 @@ async function loadRecentExecutions() {
                 return `
                     <div class="recent-item">
                         <span class="recent-scenario">${escapeHtml(exec.scenarioName)}</span>
-                        <span class="status-badge ${statusClass}">${exec.status}</span>
+                        <span class="status-badge ${statusClass}">${escapeHtml(exec.status)}</span>
                         <span class="recent-time">${time}</span>
                         <span class="recent-actions">${viewLink}</span>
                     </div>
