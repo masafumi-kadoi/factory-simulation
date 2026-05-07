@@ -168,6 +168,7 @@ export function wdhEventToInternal(event, locationMap, startTime) {
             };
         }
     } else if (event.table === 'machine_signal') {
+        if (event.machine_id == null || event.signal_name == null || event.value == null) return null;
         return {
             StationID: event.machine_id,
             Timestamp: ts,

@@ -827,8 +827,8 @@ class ScenarioEditor {
         if (item && item.type === 'station') {
             this.selectedStationIds.add(item.id);
         }
-        this.propertiesPanel.render();
-        this.canvas.render();
+        this.propertiesPanel?.render();
+        this.canvas?.render();
     }
 
     // Multi-select: add a station to selection
@@ -839,8 +839,8 @@ class ScenarioEditor {
         } else {
             this.selectedItem = { type: 'multi', ids: [...this.selectedStationIds] };
         }
-        this.propertiesPanel.render();
-        this.canvas.render();
+        this.propertiesPanel?.render();
+        this.canvas?.render();
     }
 
     // Multi-select: toggle a station in selection
@@ -857,8 +857,8 @@ class ScenarioEditor {
         } else {
             this.selectedItem = { type: 'multi', ids: [...this.selectedStationIds] };
         }
-        this.propertiesPanel.render();
-        this.canvas.render();
+        this.propertiesPanel?.render();
+        this.canvas?.render();
     }
 
     // Multi-select: set selection to a set of station IDs
@@ -871,8 +871,8 @@ class ScenarioEditor {
         } else {
             this.selectedItem = { type: 'multi', ids: [...this.selectedStationIds] };
         }
-        this.propertiesPanel.render();
-        this.canvas.render();
+        this.propertiesPanel?.render();
+        this.canvas?.render();
     }
 
     selectAll() {

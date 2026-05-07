@@ -1192,6 +1192,7 @@ class App {
             // Use the earliest event_time as the simulation base time for correct relative timestamps
             if (rawEvents && rawEvents.length > 0) {
                 const minMs = rawEvents.reduce((min, e) => {
+                    if (!e.event_time) return min;
                     const t = new Date(e.event_time).getTime();
                     return t < min ? t : min;
                 }, Infinity);

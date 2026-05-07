@@ -818,7 +818,7 @@ export class Visualizer3D {
             if (!stationSignals) return;
 
             const value = stationSignals.get(indicator.signalName);
-            if (value === undefined) return;
+            if (value == null) return;
 
             const color = value ? 0x28a745 : 0xdc3545;
             indicator.mesh.material.color.setHex(color);
