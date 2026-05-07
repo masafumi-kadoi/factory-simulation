@@ -611,6 +611,7 @@ func (h *Handler) handleExecutions(w http.ResponseWriter, r *http.Request) {
 			ec.InitialConditions = json.RawMessage("{}")
 		}
 		if err := h.repo.CreateExecution(ec); err != nil {
+			h.repo.DeleteDataSource(ds.ID)
 			respondError(w, 500, err.Error())
 			return
 		}
@@ -857,6 +858,7 @@ func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, s
 			UpdatedAt:         now,
 		}
 		if err := h.repo.CreateExecution(ec); err != nil {
+			h.repo.DeleteDataSource(ds.ID)
 			respondError(w, 500, err.Error())
 			return
 		}

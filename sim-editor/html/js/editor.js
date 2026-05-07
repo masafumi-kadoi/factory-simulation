@@ -1602,7 +1602,7 @@ class ScenarioEditor {
             // Show station name instead of ID
             const parentScenario = i === 0 ? this._editStack[0].scenario : this._editStack[i].scenario;
             const station = parentScenario?.stations?.find(s => s.id === stationId);
-            item.textContent = (station?.config?.name) || stationId;
+            item.textContent = station?.name || stationId;
             item.dataset.depth = String(i + 1);
             item.addEventListener('click', () => this.drillToDepth(i + 1));
             breadcrumb.appendChild(item);

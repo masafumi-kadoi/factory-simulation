@@ -306,6 +306,11 @@ func (r *Repository) PatchDataSource(id string, endedAt *time.Time) error {
 	return err
 }
 
+func (r *Repository) DeleteDataSource(id string) error {
+	_, err := r.db.Conn().Exec(`DELETE FROM data_sources WHERE id=$1`, id)
+	return err
+}
+
 // --- Events ---
 
 type EventRecord struct {
