@@ -30,10 +30,13 @@ class App {
         this.openViewers = new Map();  // modulerId → { window, ready }
         this._rawActiveWorks = new Map();
         this._rawSignalStates = new Map();
+        this._controlsBound = false;
+        this._keyboardBound = false;
 
         window.addEventListener('message', (e) => this._onViewerMessage(e));
 
         this._buildMenuBar();
+        this._setupKeyboardShortcuts();
         this._init();
     }
 
@@ -547,7 +550,42 @@ class App {
         return max || 100;
     }
 
+    _setupKeyboardShortcuts() {
+        if (this._keyboardBound) return;
+        this._keyboardBound = true;
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+            if (!this.maxTime) return;
+            const seekStep = Math.max(1, this.maxTime * 0.01);
+            switch (e.key) {
+                case ' ':
+                    e.preventDefault();
+                    this.isPlaying ? this.pause() : this.play();
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    this.seek(this.currentTime + seekStep);
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    this.seek(this.currentTime - seekStep);
+                    break;
+                case 'Home':
+                    e.preventDefault();
+                    this.reset();
+                    break;
+                case 'End':
+                    e.preventDefault();
+                    this.seek(this.maxTime);
+                    break;
+            }
+        });
+    }
+
     _setupControls() {
+        if (this._controlsBound) return;
+        this._controlsBound = true;
+
         document.getElementById('play-btn').addEventListener('click', () => this.play());
         document.getElementById('pause-btn').addEventListener('click', () => this.pause());
         document.getElementById('reset-btn').addEventListener('click', () => this.reset());
