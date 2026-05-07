@@ -91,7 +91,8 @@ export class Visualizer3D {
             this._mouseConfig.onChange(() => this._applyMouseConfig());
         }
 
-        window.addEventListener('resize', () => this._onResize());
+        this._resizeHandler = () => this._onResize();
+        window.addEventListener('resize', this._resizeHandler);
 
         this.renderer.domElement.addEventListener('click', (event) => this._handleClick(event));
     }
@@ -264,11 +265,30 @@ export class Visualizer3D {
     }
 
     _animate() {
-        requestAnimationFrame(() => this._animate());
+        this._animFrameId = requestAnimationFrame(() => this._animate());
         if (this.controls) this.controls.update();
         if (this.renderer && this.scene && this.camera) {
             this.renderer.render(this.scene, this.camera);
         }
+    }
+
+    dispose() {
+        if (this._animFrameId) {
+            cancelAnimationFrame(this._animFrameId);
+            this._animFrameId = null;
+        }
+        if (this._resizeHandler) {
+            window.removeEventListener('resize', this._resizeHandler);
+        }
+        if (this.controls) {
+            this.controls.dispose();
+        }
+        if (this.renderer) {
+            this.renderer.dispose();
+            this.renderer.forceContextLoss();
+            this.renderer = null;
+        }
+        this.scene = null;
     }
 
     loadScenario(scenario) {

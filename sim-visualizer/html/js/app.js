@@ -183,6 +183,7 @@ class App {
             slider.step = this.maxTime > 0 ? Math.max(0.1, this.maxTime / 1000) : 1;
 
             const container = document.getElementById('container-3d');
+            if (this.visualizer) { this.visualizer.dispose(); this.visualizer = null; }
             container.innerHTML = '';
             this.visualizer = new Visualizer3D(container, this.mouseConfig);
 
@@ -1155,6 +1156,7 @@ class App {
             document.getElementById('sim-info').textContent = ds.friendlyName || dsId.substring(0, 8);
 
             const container = document.getElementById('container-3d');
+            if (this.visualizer) { this.visualizer.dispose(); this.visualizer = null; }
             container.innerHTML = '';
             this.visualizer = new Visualizer3D(container, this.mouseConfig);
 
@@ -1327,6 +1329,9 @@ class App {
 
     async _showDataSourceList() {
         const container = document.getElementById('container-3d');
+        if (this.visualizer) { this.visualizer.dispose(); this.visualizer = null; }
+        this.isPlaying = false;
+        this._controlsBound = false;
         document.getElementById('controls').style.display = 'none';
         container.style.overflow = 'auto';
         container.style.background = '#f5f5f5';
