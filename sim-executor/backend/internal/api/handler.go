@@ -298,8 +298,9 @@ func (h *Handler) HandleExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Call simulation-core API
-	resp, err := http.Post(
+	// Call simulation-core API (long-running — use 30-minute timeout)
+	simClient := &http.Client{Timeout: 30 * time.Minute}
+	resp, err := simClient.Post(
 		h.simulationCoreURL+"/api/simulations",
 		"application/json",
 		bytes.NewReader(simReqJSON),
