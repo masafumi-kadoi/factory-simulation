@@ -159,7 +159,7 @@ class App {
         }
 
         if (!simId) {
-            await this._showSimulationList();
+            await this._showDataSourceList();
             return;
         }
 
@@ -1042,7 +1042,6 @@ class App {
             `;
         }
     }
-}
 
     // --- Data Source (WDH) mode ---
 
@@ -1082,10 +1081,13 @@ class App {
             this.visualizer.loadScenario(layer1Scenario);
             this.visualizer.setOnModulerDoubleClick((sid) => this._openModulerViewer(sid));
 
-            // Load initial events (last hour)
-            const now = new Date();
-            const from = new Date(now.getTime() - 3600 * 1000);
-            const rawEvents = await fetchEvents(dsId, from, now);
+            // Load all events for this data source (use wide range from epoch to far future)
+            const rawEvents = await fetchEvents(dsId, new Date(0), new Date('2100-01-01'));
+            // Use the earliest event_time as the simulation base time for correct relative timestamps
+            if (rawEvents && rawEvents.length > 0) {
+                const minMs = Math.min(...rawEvents.map(e => new Date(e.event_time).getTime()));
+                this._dsStartTime = new Date(minMs).toISOString();
+            }
             this._dsEvents = (rawEvents || []).map(ev => wdhEventToInternal(ev, this._locationMap, this._dsStartTime)).filter(Boolean);
             this._dsSignals = [];
 
@@ -1204,24 +1206,48 @@ class App {
         const container = document.getElementById('container-3d');
         document.getElementById('controls').style.display = 'none';
         container.style.overflow = 'auto';
+        container.style.background = '#f5f5f5';
+        document.getElementById('sim-info').textContent = 'シミュレーション結果一覧';
 
         try {
             container.innerHTML = '<div style="padding:40px;text-align:center">読み込み中...</div>';
             const dsList = await fetchDataSources();
-            if (!dsList || dsList.length === 0) {
-                container.innerHTML = '<div style="padding:60px;text-align:center"><h2>データソースがありません</h2></div>';
+            const simList = (dsList || []).filter(ds => ds.sourceType === 'simulation');
+            if (simList.length === 0) {
+                container.innerHTML = '<div style="padding:60px;text-align:center"><h2>シミュレーション結果がありません</h2><p>シミュレーションを実行してください。</p></div>';
                 return;
             }
-            const rows = dsList.map(ds => `
-                <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:20px;margin-bottom:12px;cursor:pointer"
+            simList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            const rows = simList.map(ds => {
+                const scenarioShort = ds.scenarioId ? ds.scenarioId.substring(0, 8) + '...' : '—';
+                const startedAt = ds.startedAt ? new Date(ds.startedAt).toLocaleString('ja-JP') : '—';
+                const statusBadge = ds.endedAt
+                    ? `<span style="background:#4caf5020;color:#4caf50;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600">完了</span>`
+                    : `<span style="background:#2196f320;color:#2196f3;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600">● 実行中</span>`;
+                return `
+                <div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:20px;margin-bottom:12px;cursor:pointer;transition:box-shadow 0.2s"
+                     onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'"
+                     onmouseout="this.style.boxShadow='none'"
                      onclick="window.location.href='?ds=${ds.id}'">
-                    <h3>${ds.friendlyName || ds.id}</h3>
-                    <div style="color:#6c757d;font-size:14px">
-                        Type: ${ds.sourceType} | Scenario: ${ds.scenarioId.substring(0, 8)}
-                        | ${ds.endedAt ? 'Ended: ' + new Date(ds.endedAt).toLocaleString('ja-JP') : '<b style="color:#4caf50">● Running</b>'}
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <h3 style="margin:0;color:#333">${ds.friendlyName || ds.id}</h3>
+                        ${statusBadge}
                     </div>
-                </div>`).join('');
-            container.innerHTML = `<div style="padding:20px"><h2>データソース一覧</h2>${rows}</div>`;
+                    <div style="color:#6c757d;font-size:13px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px">
+                        <div>シナリオID: ${scenarioShort}</div>
+                        <div>開始: ${startedAt}</div>
+                        <div>データソースID: ${ds.id.substring(0, 8)}...</div>
+                    </div>
+                </div>`;
+            }).join('');
+            container.innerHTML = `
+                <div style="padding:20px">
+                    <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
+                        <h2 style="color:#333">シミュレーション結果一覧 (${simList.length}件)</h2>
+                        <button onclick="location.reload()" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:14px">更新</button>
+                    </div>
+                    ${rows}
+                </div>`;
         } catch (err) {
             container.innerHTML = `<div style="padding:40px;text-align:center;color:#d32f2f">${err.message}</div>`;
         }
