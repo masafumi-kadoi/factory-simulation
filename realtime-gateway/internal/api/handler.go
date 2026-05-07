@@ -657,7 +657,7 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 	defer func() {
 		if rec := recover(); rec != nil {
 			errMsg := fmt.Sprintf("panic: %v", rec)
-			h.repo.UpdateExecutionStatus(execID, "failed", &dataSourceID, &errMsg)
+			h.repo.UpdateExecutionStatus(execID, "error", &dataSourceID, &errMsg)
 			endDataSource()
 			log.Printf("[gateway] runSimulation panic: %v", rec)
 		}
@@ -680,7 +680,7 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 	req, err := http.NewRequest("POST", h.simCoreURL+"/run", bytes.NewReader(b))
 	if err != nil {
 		errMsg := err.Error()
-		h.repo.UpdateExecutionStatus(execID, "failed", &dataSourceID, &errMsg)
+		h.repo.UpdateExecutionStatus(execID, "error", &dataSourceID, &errMsg)
 		endDataSource()
 		return
 	}
@@ -688,7 +688,7 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 	resp, err := simClient.Do(req)
 	if err != nil {
 		errMsg := err.Error()
-		h.repo.UpdateExecutionStatus(execID, "failed", &dataSourceID, &errMsg)
+		h.repo.UpdateExecutionStatus(execID, "error", &dataSourceID, &errMsg)
 		endDataSource()
 		log.Printf("[gateway] simulation call failed: %v", err)
 		return
@@ -698,7 +698,7 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		errMsg := string(bodyBytes)
-		h.repo.UpdateExecutionStatus(execID, "failed", &dataSourceID, &errMsg)
+		h.repo.UpdateExecutionStatus(execID, "error", &dataSourceID, &errMsg)
 		endDataSource()
 		log.Printf("[gateway] simulation returned %d: %s", resp.StatusCode, errMsg)
 		return
@@ -762,6 +762,7 @@ func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, s
 			EndConditionValue string    `json:"endConditionValue"`
 			Status            string    `json:"status"`
 			SimulationID      *string   `json:"simulationId,omitempty"`
+			DataSourceID      *string   `json:"dataSourceId,omitempty"`
 			ErrorMessage      *string   `json:"errorMessage,omitempty"`
 			CreatedAt         time.Time `json:"createdAt"`
 			UpdatedAt         time.Time `json:"updatedAt"`
@@ -779,6 +780,7 @@ func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, s
 				EndConditionValue: e.EndConditionValue,
 				Status:            e.Status,
 				SimulationID:      e.DataSourceID,
+				DataSourceID:      e.DataSourceID,
 				ErrorMessage:      e.ErrorMessage,
 				CreatedAt:         e.CreatedAt,
 				UpdatedAt:         e.UpdatedAt,

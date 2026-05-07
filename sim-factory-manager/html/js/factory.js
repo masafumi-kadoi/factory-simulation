@@ -33,12 +33,12 @@ async function loadStations() {
         }
         tbody.innerHTML = stations.map(s => `
             <tr>
-                <td><code>${escapeHtml(s.station_id)}</code></td>
+                <td><code>${escapeHtml(s.stationId)}</code></td>
                 <td>${escapeHtml(s.name || '')}</td>
-                <td><span class="badge badge-inactive">${escapeHtml(s.station_type)}</span></td>
+                <td><span class="badge badge-inactive">${escapeHtml(s.stationType)}</span></td>
                 <td style="font-size:12px;color:#757575">${formatPos(s)}</td>
                 <td>
-                    <button class="btn btn-danger btn-sm" onclick="deleteStation(${JSON.stringify(s.station_id)})">Delete</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteStation(${JSON.stringify(s.stationId)})">Delete</button>
                 </td>
             </tr>`).join('');
     } catch (err) {
@@ -47,8 +47,8 @@ async function loadStations() {
 }
 
 function formatPos(s) {
-    if (s.pos_x == null) return '-';
-    return `(${+s.pos_x.toFixed(1)}, ${+s.pos_y.toFixed(1)}, ${+s.pos_z.toFixed(1)})`;
+    if (s.positionX == null) return '-';
+    return `(${+s.positionX.toFixed(1)}, ${+s.positionY.toFixed(1)})`;
 }
 
 async function deleteStation(stationId) {
@@ -89,12 +89,12 @@ async function loadDataSources() {
     const el = document.getElementById('datasource-list');
     try {
         const all = await FactoryAPI.listDataSources();
-        const ds = (all || []).filter(d => d.factory_id === FACTORY_ID);
+        const ds = (all || []).filter(d => d.factoryId === FACTORY_ID);
         if (ds.length === 0) {
             el.innerHTML = `<div style="text-align:center;color:#757575;padding:24px">No data sources for this factory.</div>`;
             return;
         }
-        const liveDs = ds.find(d => !d.ended_at);
+        const liveDs = ds.find(d => !d.endedAt);
         if (liveDs) {
             currentDataSourceId = liveDs.id;
             updateLiveUI(true);
@@ -106,8 +106,8 @@ async function loadDataSources() {
                 <tr>
                     <td style="font-size:12px;color:#757575">${d.id.substring(0,8)}...</td>
                     <td>${escapeHtml(d.label || d.id)}</td>
-                    <td>${escapeHtml(d.source_type)}</td>
-                    <td>${d.ended_at ? `<span class="badge badge-inactive">Ended</span>` : `<span class="badge badge-live"><span class="live-dot"></span>Live</span>`}</td>
+                    <td>${escapeHtml(d.sourceType)}</td>
+                    <td>${d.endedAt ? `<span class="badge badge-inactive">Ended</span>` : `<span class="badge badge-live"><span class="live-dot"></span>Live</span>`}</td>
                     <td>
                         <a href="${viewerBase}?ds=${d.id}" class="btn btn-outline btn-sm" target="_blank">View</a>
                     </td>
@@ -146,7 +146,7 @@ async function stopMonitoring() {
     if (!currentDataSourceId) return;
     if (!confirm('Stop this monitoring session?')) return;
     try {
-        await FactoryAPI.patchDataSource(currentDataSourceId, { ended_at: new Date().toISOString() });
+        await FactoryAPI.patchDataSource(currentDataSourceId, { endedAt: new Date().toISOString() });
         currentDataSourceId = null;
         updateLiveUI(false);
         await loadDataSources();

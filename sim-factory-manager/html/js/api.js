@@ -74,7 +74,7 @@ const FactoryAPI = {
         const r = await fetch(`${API}/data-sources`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ factory_id: factoryId, source_type: 'realtime', label }),
+            body: JSON.stringify({ factoryId, sourceType: 'realtime', label }),
         });
         if (!r.ok) throw new Error(await r.text());
         return r.json();

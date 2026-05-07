@@ -166,10 +166,10 @@ class ScenarioList {
                         <h3 class="scenario-card-title">${this._escapeHtml(scenario.name)}</h3>
                     </div>
                     <div class="scenario-card-meta">
-                        作成日: ${new Date(scenario.createdAt).toLocaleString('ja-JP')}
+                        作成日: ${this._formatDate(scenario.createdAt)}
                     </div>
                     <div class="scenario-card-meta">
-                        Stations: ${scenario.stations.length} | Connections: ${scenario.connections.length}
+                        Stations: ${(scenario.stations || []).length} | Connections: ${(scenario.connections || []).length}
                     </div>
                     <div class="scenario-card-actions">
                         <button class="btn-primary edit-btn" data-index="${origIndex}">Edit</button>
