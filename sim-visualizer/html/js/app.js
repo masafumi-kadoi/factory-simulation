@@ -1231,10 +1231,16 @@ class App {
         const ev = wdhEventToInternal(rawEvent, this._locationMap, this._dsStartTime);
         if (!ev) return;
 
+        let needRebuildIndices = false;
         if (ev.EventType) {
             this.logs.workEvents.push(ev);
+            needRebuildIndices = true;
         } else if (ev.StatusType) {
             this.logs.stationStatusLogs.push(ev);
+        }
+
+        if (needRebuildIndices) {
+            this._buildEventIndices();
         }
 
         const newMax = Math.max(this.maxTime, ev.Timestamp || 0);
