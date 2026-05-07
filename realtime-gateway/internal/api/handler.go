@@ -650,10 +650,15 @@ func (h *Handler) handleExecution(w http.ResponseWriter, r *http.Request, id str
 
 // runSimulation calls simulation-core /run endpoint
 func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime string, simTime float64, initialConditions json.RawMessage) {
+	endDataSource := func() {
+		now := time.Now()
+		h.repo.PatchDataSource(dataSourceID, &now)
+	}
 	defer func() {
 		if rec := recover(); rec != nil {
 			errMsg := fmt.Sprintf("panic: %v", rec)
-			h.repo.UpdateExecutionStatus(execID, "failed", nil, &errMsg)
+			h.repo.UpdateExecutionStatus(execID, "failed", &dataSourceID, &errMsg)
+			endDataSource()
 			log.Printf("[gateway] runSimulation panic: %v", rec)
 		}
 	}()
@@ -675,14 +680,16 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 	req, err := http.NewRequest("POST", h.simCoreURL+"/run", bytes.NewReader(b))
 	if err != nil {
 		errMsg := err.Error()
-		h.repo.UpdateExecutionStatus(execID, "failed", nil, &errMsg)
+		h.repo.UpdateExecutionStatus(execID, "failed", &dataSourceID, &errMsg)
+		endDataSource()
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := simClient.Do(req)
 	if err != nil {
 		errMsg := err.Error()
-		h.repo.UpdateExecutionStatus(execID, "failed", nil, &errMsg)
+		h.repo.UpdateExecutionStatus(execID, "failed", &dataSourceID, &errMsg)
+		endDataSource()
 		log.Printf("[gateway] simulation call failed: %v", err)
 		return
 	}
@@ -691,12 +698,14 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 	if resp.StatusCode != 200 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		errMsg := string(bodyBytes)
-		h.repo.UpdateExecutionStatus(execID, "failed", nil, &errMsg)
+		h.repo.UpdateExecutionStatus(execID, "failed", &dataSourceID, &errMsg)
+		endDataSource()
 		log.Printf("[gateway] simulation returned %d: %s", resp.StatusCode, errMsg)
 		return
 	}
 
 	h.repo.UpdateExecutionStatus(execID, "completed", &dataSourceID, nil)
+	endDataSource()
 	log.Printf("[gateway] simulation completed: exec=%s ds=%s", execID, dataSourceID)
 }
 

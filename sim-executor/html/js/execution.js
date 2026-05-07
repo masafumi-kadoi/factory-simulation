@@ -376,9 +376,13 @@ async function executeSimulation() {
             currentInitialConditions || {}
         );
 
+        const isAsync = result.status === 'pending';
+        const vizParam = result.dataSourceId
+            ? `ds=${encodeURIComponent(result.dataSourceId)}`
+            : `ds=${encodeURIComponent(result.simulationId)}`;
         resultContainer.innerHTML = `
             <div class="info-panel" style="border-color: #28a745">
-                <strong>Simulation completed</strong>
+                <strong>${isAsync ? 'Simulation started (running in background)' : 'Simulation completed'}</strong>
                 <div class="info-grid" style="margin-top: 0.5rem">
                     <span class="info-label">Execution ID:</span>
                     <span class="info-value">${escapeHtml(result.executionId)}</span>
@@ -388,7 +392,7 @@ async function executeSimulation() {
                     <span class="info-value"><span class="status-badge status-${escapeHtml(result.status)}">${escapeHtml(result.status)}</span></span>
                 </div>
                 <div style="margin-top: 1rem; display: flex; gap: 0.5rem">
-                    <a href="/visualizer/?simulationId=${encodeURIComponent(result.simulationId)}" target="_blank" class="btn btn-primary btn-sm">View in sim-visualizer</a>
+                    <a href="/visualizer/?${vizParam}" target="_blank" class="btn btn-primary btn-sm">View in sim-visualizer</a>
                     <a href="scenario.html?id=${encodeURIComponent(currentScenarioId)}" class="btn btn-outline btn-sm">Back to Scenario</a>
                 </div>
             </div>

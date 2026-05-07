@@ -241,6 +241,13 @@ CREATE TABLE machine_status_2026_07 PARTITION OF machine_status
 CREATE TABLE machine_status_2026_08 PARTITION OF machine_status
     FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
 
+-- DEFAULT partitions to catch any date not covered by the range partitions above
+CREATE TABLE item_movement_default PARTITION OF item_movement DEFAULT;
+CREATE TABLE item_lineage_default PARTITION OF item_lineage DEFAULT;
+CREATE TABLE item_status_default PARTITION OF item_status DEFAULT;
+CREATE TABLE machine_signal_default PARTITION OF machine_signal DEFAULT;
+CREATE TABLE machine_status_default PARTITION OF machine_status DEFAULT;
+
 -- ============================================================
 -- Phase 1.4: 複合インデックス設定
 -- ============================================================

@@ -110,8 +110,9 @@ function renderExecutionRow(exec) {
         : formatDateTime(exec.endConditionValue);
 
     let actions = '';
-    if (exec.status === 'completed' && exec.simulationId) {
-        actions = `<a href="${SERVICE_URLS['sim-visualizer']}/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">Visualize</a>`;
+    if (exec.status === 'completed' && (exec.dataSourceId || exec.simulationId)) {
+        const dsId = exec.dataSourceId || exec.simulationId;
+        actions = `<a href="${SERVICE_URLS['sim-visualizer']}/?ds=${encodeURIComponent(dsId)}" target="_blank" class="btn btn-outline btn-sm">Visualize</a>`;
     }
 
     let errorHtml = '';

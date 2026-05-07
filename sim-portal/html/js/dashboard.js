@@ -146,8 +146,9 @@ async function loadRecentExecutions() {
             recent.map(exec => {
                 const statusClass = `status-${escapeHtml(exec.status)}`;
                 const time = formatDateTime(exec.createdAt);
-                const viewLink = exec.status === 'completed' && exec.simulationId
-                    ? `<a href="${SERVICE_URLS['sim-visualizer']}/?simulationId=${encodeURIComponent(exec.simulationId)}" target="_blank" class="btn btn-outline btn-sm">View</a>`
+                const dsId = exec.dataSourceId || exec.simulationId;
+                const viewLink = exec.status === 'completed' && dsId
+                    ? `<a href="${SERVICE_URLS['sim-visualizer']}/?ds=${encodeURIComponent(dsId)}" target="_blank" class="btn btn-outline btn-sm">View</a>`
                     : '';
 
                 return `
