@@ -838,7 +838,7 @@ func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, s
 // helpers
 
 func respondJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
