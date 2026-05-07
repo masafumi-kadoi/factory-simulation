@@ -821,7 +821,8 @@ export class Visualizer3D {
 
         if (stationData.stationType === 'moduler') {
             const matching = stationData.portSlots.filter(s => s.portType === portType);
-            return matching[portIndex] || null;
+            if (portIndex < 0 || portIndex >= matching.length) return null;
+            return matching[portIndex];
         }
 
         if (portIndex < 0 || portIndex >= stationData.portSlots.length) return null;
