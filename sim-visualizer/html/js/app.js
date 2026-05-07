@@ -32,6 +32,7 @@ class App {
         this._rawSignalStates = new Map();
         this._controlsBound = false;
         this._keyboardBound = false;
+        this._liveBtnBound = false;
 
         window.addEventListener('message', (e) => this._onViewerMessage(e));
 
@@ -1130,6 +1131,10 @@ class App {
     // --- Data Source (WDH) mode ---
 
     async _initDataSource(dsId, startLive) {
+        if (this._liveClient) {
+            this._liveClient.unsubscribe();
+            this._liveClient = null;
+        }
         this._dsId = dsId;
         this._liveClient = new LiveClient({
             onEvent: (ev) => this._onLiveEvent(ev),
@@ -1267,13 +1272,16 @@ class App {
             liveBtn.style.cssText = 'background:#444;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-weight:bold';
             controls.querySelector('.buttons').appendChild(liveBtn);
         }
-        liveBtn.addEventListener('click', () => {
-            if (this._liveClient && this._liveClient.mode !== LiveMode.LIVE) {
-                this._activateLive();
-            } else if (this._liveClient) {
-                this._liveClient.unsubscribe();
-            }
-        });
+        if (!this._liveBtnBound) {
+            this._liveBtnBound = true;
+            liveBtn.addEventListener('click', () => {
+                if (this._liveClient && this._liveClient.mode !== LiveMode.LIVE) {
+                    this._activateLive();
+                } else if (this._liveClient) {
+                    this._liveClient.unsubscribe();
+                }
+            });
+        }
     }
 
     _activateLive() {
@@ -1334,8 +1342,10 @@ class App {
     async _showDataSourceList() {
         const container = document.getElementById('container-3d');
         if (this.visualizer) { this.visualizer.dispose(); this.visualizer = null; }
+        if (this._liveClient) { this._liveClient.unsubscribe(); this._liveClient = null; }
         this.isPlaying = false;
         this._controlsBound = false;
+        this._liveBtnBound = false;
         document.getElementById('controls').style.display = 'none';
         container.style.overflow = 'auto';
         container.style.background = '#f5f5f5';
