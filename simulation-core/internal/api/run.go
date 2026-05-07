@@ -77,7 +77,11 @@ func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
 
 	// Run simulation
 	simID := req.DataSourceID // use data_source_id as simulation ID
-	friendlyName := fmt.Sprintf("sim_%s", req.DataSourceID[:8])
+	dsShort := req.DataSourceID
+	if len(dsShort) > 8 {
+		dsShort = dsShort[:8]
+	}
+	friendlyName := fmt.Sprintf("sim_%s", dsShort)
 	engine := simulation.NewEngineWithInitialConditions(scenario, workIDsByStation, initialWorks)
 	_, statusLogs, workEvents, lineageLogs, err := engine.Run(simID, friendlyName, req.SimulationTime)
 	if err != nil {
