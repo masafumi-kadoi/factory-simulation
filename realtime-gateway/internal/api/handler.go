@@ -502,9 +502,11 @@ func (h *Handler) handleDataSource(w http.ResponseWriter, r *http.Request, rest 
 			var endedAt *time.Time
 			if body.EndedAt != nil {
 				t, err := time.Parse(time.RFC3339, *body.EndedAt)
-				if err == nil {
-					endedAt = &t
+				if err != nil {
+					respondError(w, 400, "invalid endedAt format, expected RFC3339")
+					return
 				}
+				endedAt = &t
 			}
 			if err := h.repo.PatchDataSource(id, endedAt); err != nil {
 				respondError(w, 500, err.Error())
