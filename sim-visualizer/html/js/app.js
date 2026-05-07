@@ -175,7 +175,9 @@ class App {
                 `${simulation.friendlyName || simulation.simulationId}`;
 
             this.maxTime = this._calculateMaxTime();
-            document.getElementById('timeline-slider').max = this.maxTime;
+            const slider = document.getElementById('timeline-slider');
+            slider.max = this.maxTime;
+            slider.step = this.maxTime > 0 ? Math.max(0.1, this.maxTime / 1000) : 1;
 
             const container = document.getElementById('container-3d');
             container.innerHTML = '';
@@ -1140,7 +1142,9 @@ class App {
             };
             this._buildEventIndices();
             this.maxTime = this._calculateMaxTime();
-            document.getElementById('timeline-slider').max = this.maxTime;
+            const dsSlider = document.getElementById('timeline-slider');
+            dsSlider.max = this.maxTime;
+            dsSlider.step = this.maxTime > 0 ? Math.max(0.1, this.maxTime / 1000) : 1;
 
             this._setupControls();
             this._setupLiveControls();
