@@ -322,7 +322,8 @@ type EventRecord struct {
 }
 
 func (r *Repository) GetEvents(dataSourceID string, from, to time.Time) ([]EventRecord, error) {
-	events := make([]EventRecord, 0)
+	movEvents := make([]EventRecord, 0)
+	sigEvents := make([]EventRecord, 0)
 
 	movRows, err := r.db.Conn().Query(
 		`SELECT event_time, item_id, from_location_id, to_location_id, movement_type, port_index
@@ -338,7 +339,7 @@ func (r *Repository) GetEvents(dataSourceID string, from, to time.Time) ([]Event
 		if err := movRows.Scan(&e.EventTime, &e.ItemID, &e.FromLocationID, &e.ToLocationID, &e.MovementType, &e.PortIndex); err != nil {
 			return nil, err
 		}
-		events = append(events, e)
+		movEvents = append(movEvents, e)
 	}
 
 	sigRows, err := r.db.Conn().Query(
@@ -355,10 +356,25 @@ func (r *Repository) GetEvents(dataSourceID string, from, to time.Time) ([]Event
 		if err := sigRows.Scan(&e.EventTime, &e.MachineID, &e.SignalName, &e.Value); err != nil {
 			return nil, err
 		}
-		events = append(events, e)
+		sigEvents = append(sigEvents, e)
 	}
 
-	return events, nil
+	// Merge two sorted slices into one sorted result
+	merged := make([]EventRecord, 0, len(movEvents)+len(sigEvents))
+	i, j := 0, 0
+	for i < len(movEvents) && j < len(sigEvents) {
+		if !movEvents[i].EventTime.After(sigEvents[j].EventTime) {
+			merged = append(merged, movEvents[i])
+			i++
+		} else {
+			merged = append(merged, sigEvents[j])
+			j++
+		}
+	}
+	merged = append(merged, movEvents[i:]...)
+	merged = append(merged, sigEvents[j:]...)
+
+	return merged, nil
 }
 
 // --- Layout ---
