@@ -1111,9 +1111,9 @@ class App {
                     onmouseout="this.style.background='#f8f9fa';this.style.boxShadow='none'"
                     onclick="window.location.href='?sim=${esc(sim.simulationId)}'">
                         <h3 style="color:#495057;font-size:18px;margin-bottom:12px">${esc(sim.friendlyName || sim.simulationId)}</h3>
-                        <div style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;background:${statusColor}20;color:${statusColor};margin-bottom:10px">${esc(sim.status.toUpperCase())}</div>
+                        <div style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;background:${statusColor}20;color:${statusColor};margin-bottom:10px">${esc((sim.status || 'unknown').toUpperCase())}</div>
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;color:#6c757d;font-size:14px;margin-top:10px">
-                            <div>ID: ${esc(sim.simulationId.substring(0, 8))}...</div>
+                            <div>ID: ${esc((sim.simulationId || '').substring(0, 8))}...</div>
                             <div>実行日時: ${esc(createdAt)}</div>
                             <div>終了時刻: ${esc(endTime)}</div>
                             <div>終了理由: ${esc(sim.endReason || 'N/A')}</div>

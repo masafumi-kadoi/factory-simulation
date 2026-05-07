@@ -142,7 +142,8 @@ export class LiveClient {
 // Converts WDH event to internal format compatible with state builder
 export function wdhEventToInternal(event, locationMap, startTime) {
     const baseMs = startTime ? new Date(startTime).getTime() : 0;
-    const evMs = new Date(event.event_time).getTime();
+    const evMs = event.event_time ? new Date(event.event_time).getTime() : NaN;
+    if (isNaN(evMs)) return null;
     const ts = baseMs > 0 ? (evMs - baseMs) / 1000 : evMs / 1000;
 
     if (event.table === 'item_movement') {

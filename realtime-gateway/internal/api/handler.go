@@ -264,7 +264,6 @@ func (h *Handler) handleCSVImport(w http.ResponseWriter, r *http.Request, factor
 		seq := 0
 		if dotIdx >= 0 {
 			equipmentID = stationID[:dotIdx]
-			strconv.Atoi(stationID[dotIdx+1:])
 		}
 
 		// Validate station_id format
