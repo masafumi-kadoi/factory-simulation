@@ -199,7 +199,7 @@ func (r *Repository) GetStationStatusLogs(simulationID string) ([]simulation.Sta
 		SELECT station_id, timestamp, status_type, value, COALESCE(signal_name, ''), COALESCE(old_value, FALSE), COALESCE(rule_id, '')
 		FROM station_status_logs
 		WHERE simulation_run_id = $1
-		ORDER BY timestamp ASC
+		ORDER BY timestamp ASC, id ASC
 	`
 
 	rows, err := r.db.GetConnection().Query(query, simulationID)
@@ -230,7 +230,7 @@ func (r *Repository) GetWorkEvents(simulationID string) ([]simulation.WorkEventL
 		SELECT work_id, work_friendly_name, station_id, timestamp, event_type, COALESCE(work_type, ''), COALESCE(port_index, -1), COALESCE(quality_status, '')
 		FROM work_events
 		WHERE simulation_run_id = $1
-		ORDER BY timestamp ASC
+		ORDER BY timestamp ASC, id ASC
 	`
 
 	rows, err := r.db.GetConnection().Query(query, simulationID)

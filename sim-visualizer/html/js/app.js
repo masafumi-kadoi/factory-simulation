@@ -161,6 +161,7 @@ class App {
             const simulation = await fetchSimulation(simId);
             const scenario = await fetchScenario(simulation.scenarioId);
             this.logs = await fetchLogs(simId);
+            this._buildEventIndices();
 
             document.getElementById('sim-info').textContent =
                 `${simulation.friendlyName || simulation.simulationId}`;
@@ -605,15 +606,67 @@ class App {
         requestAnimationFrame(() => this._animate());
     }
 
+    _buildEventIndices() {
+        this._departureNextMap = new Map();
+        this._cachedWorkState = new Map();
+        this._cachedSignalState = new Map();
+        this._lastWorkEventIdx = -1;
+        this._lastSignalIdx = -1;
+        this._lastCachedTime = -1;
+
+        if (!this.logs.workEvents) return;
+
+        const events = this.logs.workEvents;
+        const lastEventByWork = new Map();
+
+        for (let i = events.length - 1; i >= 0; i--) {
+            const ev = events[i];
+            if (ev.EventType === 'WorkArrived' || ev.EventType === 'WorkDestroyed') {
+                lastEventByWork.set(ev.WorkID, i);
+            } else if (ev.EventType === 'WorkDeparted') {
+                const nextIdx = lastEventByWork.get(ev.WorkID);
+                if (nextIdx !== undefined) {
+                    this._departureNextMap.set(i, nextIdx);
+                }
+                lastEventByWork.set(ev.WorkID, i);
+            } else {
+                lastEventByWork.set(ev.WorkID, i);
+            }
+        }
+    }
+
+    _binarySearchUpperBound(events, time) {
+        let lo = 0, hi = events.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (events[mid].Timestamp <= time) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo;
+    }
+
     _updateSimulation() {
-        // Build raw work states from event log
-        const rawActiveWorks = new Map();
+        const events = this.logs.workEvents;
+        const signalLogs = this.logs.stationStatusLogs;
+        const time = this.currentTime;
 
-        if (this.logs.workEvents) {
-            for (let i = 0; i < this.logs.workEvents.length; i++) {
-                const event = this.logs.workEvents[i];
-                if (event.Timestamp > this.currentTime) break;
+        const canIncrement = this._lastCachedTime >= 0 && time >= this._lastCachedTime;
 
+        let rawActiveWorks;
+        let startIdx;
+
+        if (canIncrement) {
+            rawActiveWorks = this._cachedWorkState;
+            startIdx = this._lastWorkEventIdx;
+        } else {
+            rawActiveWorks = new Map();
+            startIdx = 0;
+        }
+
+        if (events) {
+            const endIdx = this._binarySearchUpperBound(events, time);
+            for (let i = startIdx; i < endIdx; i++) {
+                const event = events[i];
                 const workId = event.WorkID;
                 const stationId = event.StationID;
 
@@ -640,24 +693,17 @@ class App {
                         portIndex: event.PortIndex != null ? event.PortIndex : -1
                     });
                 } else if (event.EventType === 'WorkDeparted') {
-                    let nextArrival = null;
-                    for (let j = i + 1; j < this.logs.workEvents.length; j++) {
-                        const nextEvent = this.logs.workEvents[j];
-                        if (nextEvent.WorkID === workId &&
-                            (nextEvent.EventType === 'WorkArrived' || nextEvent.EventType === 'WorkDestroyed')) {
-                            nextArrival = nextEvent;
-                            break;
-                        }
-                    }
-                    if (nextArrival) {
+                    const nextIdx = this._departureNextMap.get(i);
+                    if (nextIdx !== undefined) {
+                        const nextEvent = events[nextIdx];
                         rawActiveWorks.set(workId, {
                             state: 'moving',
                             fromStation: stationId,
-                            toStation: nextArrival.StationID,
+                            toStation: nextEvent.StationID,
                             departTime: event.Timestamp,
-                            arriveTime: nextArrival.Timestamp,
+                            arriveTime: nextEvent.Timestamp,
                             fromPortIndex: event.PortIndex != null ? event.PortIndex : -1,
-                            toPortIndex: nextArrival.PortIndex != null ? nextArrival.PortIndex : -1
+                            toPortIndex: nextEvent.PortIndex != null ? nextEvent.PortIndex : -1
                         });
                     } else {
                         rawActiveWorks.delete(workId);
@@ -666,13 +712,24 @@ class App {
                     rawActiveWorks.delete(workId);
                 }
             }
+            this._lastWorkEventIdx = endIdx;
         }
 
-        // Build signal states
-        const rawSignalStates = new Map();
-        if (this.logs.stationStatusLogs) {
-            for (const log of this.logs.stationStatusLogs) {
-                if (log.Timestamp > this.currentTime) break;
+        let rawSignalStates;
+        let signalStartIdx;
+
+        if (canIncrement) {
+            rawSignalStates = this._cachedSignalState;
+            signalStartIdx = this._lastSignalIdx;
+        } else {
+            rawSignalStates = new Map();
+            signalStartIdx = 0;
+        }
+
+        if (signalLogs) {
+            const endIdx = this._binarySearchUpperBound(signalLogs, time);
+            for (let i = signalStartIdx; i < endIdx; i++) {
+                const log = signalLogs[i];
                 if (log.StatusType === 'signal_change') {
                     if (!rawSignalStates.has(log.StationID)) {
                         rawSignalStates.set(log.StationID, new Map());
@@ -680,19 +737,22 @@ class App {
                     rawSignalStates.get(log.StationID).set(log.SignalName, log.Value);
                 }
             }
+            this._lastSignalIdx = endIdx;
         }
+
+        this._cachedWorkState = rawActiveWorks;
+        this._cachedSignalState = rawSignalStates;
+        this._lastCachedTime = time;
 
         this._rawActiveWorks = rawActiveWorks;
         this._rawSignalStates = rawSignalStates;
 
-        // Update main visualizer with layer1 data
         if (this.visualizer) {
             const layer1Works = this._transformForLayer1(rawActiveWorks);
             this.visualizer.updateWorks(layer1Works, this.currentTime);
             this.visualizer.updateInterlockStates(rawSignalStates);
         }
 
-        // Update open viewer windows
         for (const [modulerId, viewer] of this.openViewers) {
             if (viewer.window.closed) {
                 this.openViewers.delete(modulerId);
