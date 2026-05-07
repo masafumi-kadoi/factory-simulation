@@ -1171,7 +1171,10 @@ class App {
             const rawEvents = await fetchEvents(dsId, new Date(0), new Date('2100-01-01'));
             // Use the earliest event_time as the simulation base time for correct relative timestamps
             if (rawEvents && rawEvents.length > 0) {
-                const minMs = Math.min(...rawEvents.map(e => new Date(e.event_time).getTime()));
+                const minMs = rawEvents.reduce((min, e) => {
+                    const t = new Date(e.event_time).getTime();
+                    return t < min ? t : min;
+                }, Infinity);
                 this._dsStartTime = new Date(minMs).toISOString();
             }
             this._dsEvents = (rawEvents || []).map(ev => wdhEventToInternal(ev, this._locationMap, this._dsStartTime)).filter(Boolean);
@@ -1215,14 +1218,15 @@ class App {
         const locById = new Map((layout.locations || []).map(l => [l.id, l]));
 
         // Sub-station pos_x/pos_y in WDH are relative to the parent moduler.
-        // Resolve to absolute by summing the parent chain.
-        const getAbsPos = (loc) => {
+        // Resolve to absolute by summing the parent chain. Visited set prevents infinite loop on cycles.
+        const getAbsPos = (loc, visited = new Set()) => {
             let x = loc.posX || 0;
             let y = loc.posY || 0;
-            if (loc.parentLocationId != null) {
+            if (loc.parentLocationId != null && !visited.has(loc.id)) {
+                visited.add(loc.id);
                 const parent = locById.get(loc.parentLocationId);
                 if (parent) {
-                    const p = getAbsPos(parent);
+                    const p = getAbsPos(parent, visited);
                     x += p.x;
                     y += p.y;
                 }
