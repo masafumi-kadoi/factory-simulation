@@ -1,12 +1,11 @@
 // System status page logic
 
 const SERVICE_DISPLAY = {
-    'simulation-core': { label: 'Simulation Core (API)', icon: '\u2699\uFE0F' },
-    'sim-executor-backend': { label: 'Executor Backend', icon: '\u25B6\uFE0F' },
+    'realtime-gateway': { label: 'Realtime Gateway (API)', icon: '\u2699\uFE0F' },
+    'sim-factory-manager': { label: 'Factory Manager (Frontend)', icon: '\uD83C\uDFED' },
     'sim-editor': { label: 'Scenario Editor (Frontend)', icon: '\u270F\uFE0F' },
     'sim-executor': { label: 'Simulation Executor (Frontend)', icon: '\uD83D\uDCCB' },
     'sim-visualizer': { label: 'Result Visualizer (Frontend)', icon: '\uD83D\uDCCA' },
-    'PostgreSQL': { label: 'PostgreSQL Database', icon: '\uD83D\uDDC4\uFE0F' }
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -45,7 +44,7 @@ async function checkServices() {
             const statusColor = svc.status === 'up' ? '#28a745'
                 : svc.status === 'unknown' ? '#ffc107'
                 : '#dc3545';
-            const urlText = svc.url ? `Port ${svc.port}` : `Port ${svc.port} (not checkable)`;
+            const urlText = svc.url ? svc.url : '(not directly checkable)';
 
             return `
                 <div class="service-card">

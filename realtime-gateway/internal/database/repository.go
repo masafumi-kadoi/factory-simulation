@@ -427,6 +427,9 @@ func (r *Repository) GetLayout(dataSourceID string) ([]LocationRecord, []Connect
 		}
 		locs = append(locs, l)
 	}
+	if err := locRows.Err(); err != nil {
+		return nil, nil, err
+	}
 
 	connRows, err := r.db.Conn().Query(
 		`SELECT id, from_location_id, to_location_id, from_port_index, to_port_index, condition
@@ -443,6 +446,9 @@ func (r *Repository) GetLayout(dataSourceID string) ([]LocationRecord, []Connect
 			return nil, nil, err
 		}
 		conns = append(conns, c)
+	}
+	if err := connRows.Err(); err != nil {
+		return nil, nil, err
 	}
 	return locs, conns, nil
 }

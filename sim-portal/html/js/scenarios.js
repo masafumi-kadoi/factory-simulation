@@ -58,8 +58,8 @@ function renderScenarioRow(scenario) {
     return `
         <tr>
             <td><strong>${escapeHtml(scenario.name)}</strong></td>
-            <td>${scenario.stationCount}</td>
-            <td>${scenario.connectionCount}</td>
+            <td>${scenario.stationCount || 0}</td>
+            <td>${scenario.connectionCount || 0}</td>
             <td>${simdbBadge}</td>
             <td>${execCount}</td>
             <td>
