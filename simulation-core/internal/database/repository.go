@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"factory-simulation/simulation-core/internal/domain"
 	"factory-simulation/simulation-core/internal/simulation"
@@ -16,6 +17,11 @@ type Repository struct {
 // NewRepository creates a new repository
 func NewRepository(db *DB) *Repository {
 	return &Repository{db: db}
+}
+
+// GetDBConn returns the underlying sql.DB for direct use (e.g., WDH export)
+func (r *Repository) GetDBConn() *sql.DB {
+	return r.db.GetConnection()
 }
 
 // SaveSimulationRun saves a simulation run to the database

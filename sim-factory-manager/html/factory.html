@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Factory Detail - Factory Manager</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="header">
+        <h1 id="page-title">Factory Manager</h1>
+        <nav>
+            <a href="index.html">Factories</a>
+            <a href="/portal/" target="_top">Portal</a>
+        </nav>
+    </header>
+
+    <main class="main">
+        <!-- Factory Info -->
+        <div class="card">
+            <div class="card-header">
+                <h2 id="factory-name">Loading...</h2>
+                <span id="factory-description" style="font-size:13px;color:#757575;flex:1;margin-left:8px"></span>
+                <div id="live-session-controls" class="flex">
+                    <span id="live-indicator" class="hidden"><span class="live-dot"></span>Live</span>
+                    <button id="btn-start-live" class="btn btn-success btn-sm" onclick="startMonitoring()">Start Monitoring</button>
+                    <button id="btn-stop-live" class="btn btn-danger btn-sm hidden" onclick="stopMonitoring()">Stop Monitoring</button>
+                    <a id="btn-open-viewer" href="#" class="btn btn-outline btn-sm hidden" target="_blank">Open Viewer</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stations -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Stations</h2>
+                <button class="btn btn-outline btn-sm" onclick="showImportModal()">Import CSV</button>
+                <button class="btn btn-primary btn-sm" onclick="showAddStationModal()">+ Add Station</button>
+            </div>
+            <div class="card-body">
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Station ID</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Position</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stations-tbody">
+                            <tr><td colspan="5" style="text-align:center;color:#757575;padding:24px">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Sources -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Data Sources</h2>
+                <a id="btn-open-viewer-ds" href="#" class="btn btn-outline btn-sm hidden" target="_blank">View in Visualizer</a>
+            </div>
+            <div class="card-body">
+                <div id="datasource-list">
+                    <div style="text-align:center;color:#757575;padding:24px">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Add Station Modal -->
+    <div id="modal-add-station" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Add Station</h3>
+                <button class="modal-close" onclick="hideModal('modal-add-station')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="add-station-error" class="hidden"></div>
+                <div class="form-group">
+                    <label>Station ID (format: {equip_id}.{3digits})</label>
+                    <input type="text" id="station-id" placeholder="e.g. MC001.001">
+                </div>
+                <div class="form-group">
+                    <label>Station Name</label>
+                    <input type="text" id="station-name" placeholder="e.g. Machine 1">
+                </div>
+                <div class="form-group">
+                    <label>Station Type</label>
+                    <select id="station-type">
+                        <option value="machine">machine</option>
+                        <option value="conveyor">conveyor</option>
+                        <option value="buffer">buffer</option>
+                        <option value="input">input</option>
+                        <option value="output">output</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Position X</label>
+                    <input type="text" id="station-x" placeholder="0.0">
+                </div>
+                <div class="form-group">
+                    <label>Position Y</label>
+                    <input type="text" id="station-y" placeholder="0.0">
+                </div>
+                <div class="form-group">
+                    <label>Position Z</label>
+                    <input type="text" id="station-z" placeholder="0.0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="hideModal('modal-add-station')">Cancel</button>
+                <button class="btn btn-primary" onclick="addStation()">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CSV Import Modal -->
+    <div id="modal-import" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Import Stations from CSV</h3>
+                <button class="modal-close" onclick="hideModal('modal-import')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    CSV format: station_id, station_name, station_type, x, y, z<br>
+                    Existing stations will be replaced.
+                </div>
+                <div id="import-result" class="hidden"></div>
+                <div class="form-group mt">
+                    <label>CSV File</label>
+                    <input type="file" id="csv-file" accept=".csv">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="hideModal('modal-import')">Cancel</button>
+                <button class="btn btn-primary" onclick="importCSV()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Validate Modal -->
+    <div id="modal-validate" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>SimDB Validation</h3>
+                <button class="modal-close" onclick="hideModal('modal-validate')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="validate-result">
+                    <div style="text-align:center;padding:24px;color:#757575">Running validation...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="hideModal('modal-validate')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/factory.js"></script>
+</body>
+</html>

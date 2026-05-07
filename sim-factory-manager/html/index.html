@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Factory Manager</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header class="header">
+        <h1>Factory Manager</h1>
+        <nav>
+            <a href="index.html" class="active">Factories</a>
+            <a href="/portal/" target="_top">Portal</a>
+        </nav>
+    </header>
+
+    <main class="main">
+        <div class="card">
+            <div class="card-header">
+                <h2>Factories</h2>
+                <button class="btn btn-primary btn-sm" onclick="showNewFactoryModal()">+ New Factory</button>
+            </div>
+            <div class="card-body">
+                <div id="factory-list">
+                    <div class="empty"><h3>Loading...</h3></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- New Factory Modal -->
+    <div id="modal-new-factory" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>New Factory</h3>
+                <button class="modal-close" onclick="hideModal('modal-new-factory')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="new-factory-error" class="hidden"></div>
+                <div class="form-group">
+                    <label>Factory Name</label>
+                    <input type="text" id="new-factory-name" placeholder="e.g. Line A">
+                </div>
+                <div class="form-group">
+                    <label>Description (optional)</label>
+                    <textarea id="new-factory-desc" rows="3" placeholder="Factory description"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="hideModal('modal-new-factory')">Cancel</button>
+                <button class="btn btn-primary" onclick="createFactory()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/index.js"></script>
+</body>
+</html>

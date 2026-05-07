@@ -8,6 +8,7 @@ const SERVICE_URLS = {
     'sim-editor': '/editor',
     'sim-executor': '/executor',
     'sim-visualizer': '/visualizer',
+    'sim-factory-manager': '/factory',
 };
 
 const HEALTH_CHECK_TIMEOUT = 3000;
@@ -56,12 +57,11 @@ const PortalAPI = {
 
     async checkAllServices() {
         const services = [
-            { name: 'simulation-core', url: '/api/scenarios', port: null },
-            { name: 'sim-executor-backend', url: '/api/executor/scenarios', port: null },
+            { name: 'realtime-gateway', url: '/api/data-sources', port: null },
+            { name: 'sim-factory-manager', url: '/factory/', port: null },
             { name: 'sim-editor', url: '/editor/', port: null },
             { name: 'sim-executor', url: '/executor/', port: null },
             { name: 'sim-visualizer', url: '/visualizer/', port: null },
-            { name: 'PostgreSQL', url: null, port: 5432 }
         ];
 
         const results = await Promise.all(

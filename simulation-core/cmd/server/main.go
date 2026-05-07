@@ -29,11 +29,6 @@ func main() {
 	defer db.Close()
 	log.Println("Database connection established")
 
-	// Run schema migrations
-	if _, err := db.GetConnection().Exec(`ALTER TABLE work_events ADD COLUMN IF NOT EXISTS quality_status character varying`); err != nil {
-		log.Printf("Warning: failed to add quality_status column: %v", err)
-	}
-
 	// Create repository
 	repo := database.NewRepository(db)
 
@@ -108,6 +103,9 @@ func main() {
 			handler.HandleGetSimulation(w, r)
 		}
 	}))
+
+	// Internal endpoint: POST /run (called by realtime-gateway)
+	mux.HandleFunc("/run", corsMiddleware(handler.HandleRun))
 
 	// Create HTTP server
 	port := getEnv("PORT", "8080")

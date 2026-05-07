@@ -296,7 +296,9 @@ export class Visualizer3D {
                 mesh, position: pos, label,
                 stationType: station.type,
                 portSlots,
-                portConfig: station.config?.ports || []
+                portConfig: station.config?.ports || [],
+                bufferSlots: station.type === 'moduler' ? (station.config?.bufferSlots || null) : null,
+                stationName: station.name || station.id,
             });
         });
 
@@ -1021,6 +1023,33 @@ export class Visualizer3D {
                     work.mesh.position.set(x, y, z);
                     if (work.label) work.label.position.set(x, y + 20, z);
                 }
+            }
+        });
+
+        this._updateModulerOccupancy(activeWorks);
+    }
+
+    _updateModulerOccupancy(activeWorks) {
+        this.stations.forEach((stationData, stationId) => {
+            if (stationData.stationType !== 'moduler' || !stationData.bufferSlots) return;
+            // Count child slots that have a work at them
+            let occupied = 0;
+            activeWorks.forEach((workInfo) => {
+                if (workInfo.state === 'at_station' && workInfo.stationId) {
+                    const parentId = this._getParentModulerId(workInfo.stationId);
+                    if (parentId === stationId) occupied++;
+                }
+            });
+            const ratio = Math.min(1, occupied / stationData.bufferSlots);
+            // Lerp color: green (0x4caf50) → red (0xe53935)
+            const r = Math.round(0x4c + (0xe5 - 0x4c) * ratio);
+            const g = Math.round(0xaf + (0x39 - 0xaf) * ratio);
+            const b = Math.round(0x50 + (0x35 - 0x50) * ratio);
+            const newColor = (r << 16) | (g << 8) | b;
+            const discMesh = stationData.mesh.children[0];
+            if (discMesh?.material) {
+                discMesh.material.color.setHex(newColor);
+                discMesh.material.emissive.setHex(newColor);
             }
         });
     }

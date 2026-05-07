@@ -1,0 +1,111 @@
+package api
+
+import (
+	"factory-simulation/simulation-core/internal/domain"
+	"factory-simulation/simulation-core/internal/simulation"
+	"factory-simulation/simulation-core/internal/wdhexport"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
+)
+
+// RunRequest is the internal request from realtime-gateway
+type RunRequest struct {
+	ScenarioID        string                             `json:"scenarioId"`
+	DataSourceID      string                             `json:"dataSourceId"`
+	SimulationTime    float64                            `json:"simulationTime"`
+	StartDatetime     string                             `json:"startDatetime"`
+	InitialConditions map[string]InitialConditionStation `json:"initialConditions"`
+}
+
+// HandleRun handles POST /run (internal endpoint called by realtime-gateway)
+func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req RunRequest
+	if err := parseJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.ScenarioID == "" || req.DataSourceID == "" {
+		respondError(w, http.StatusBadRequest, "scenarioId and dataSourceId are required")
+		return
+	}
+	if req.SimulationTime <= 0 {
+		req.SimulationTime = 86400 // default 24h
+	}
+
+	// Parse baseTime
+	baseTime := time.Now()
+	if req.StartDatetime != "" {
+		if t, err := time.Parse(time.RFC3339, req.StartDatetime); err == nil {
+			baseTime = t
+		}
+	}
+
+	// Fetch scenario
+	scenario, err := h.GetScenario(req.ScenarioID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// Apply migrations
+	domain.MigrateScenario(scenario)
+
+	// Build initial conditions
+	workIDsByStation := make(map[string][]string)
+	initialWorks := make(map[string]simulation.InitialWorkCondition)
+	for stationID, cond := range req.InitialConditions {
+		if len(cond.WorkIDs) > 0 {
+			workIDsByStation[stationID] = cond.WorkIDs
+		}
+		if cond.CurrentWork != nil && cond.CurrentWork.ID != "" {
+			initialWorks[stationID] = simulation.InitialWorkCondition{
+				WorkID:        cond.CurrentWork.ID,
+				QualityStatus: cond.CurrentWork.QualityStatus,
+				ElapsedTime:   cond.ElapsedTime,
+			}
+		}
+	}
+
+	// Run simulation
+	simID := req.DataSourceID // use data_source_id as simulation ID
+	friendlyName := fmt.Sprintf("sim_%s", req.DataSourceID[:8])
+	engine := simulation.NewEngineWithInitialConditions(scenario, workIDsByStation, initialWorks)
+	_, statusLogs, workEvents, lineageLogs, err := engine.Run(simID, friendlyName, req.SimulationTime)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("simulation failed: %v", err))
+		return
+	}
+
+	// Flatten scenario for WDH export
+	flatScenario := simulation.FlattenScenario(scenario)
+
+	// Write to WDH tables
+	writer := wdhexport.NewDirectWriter(h.repo.GetDBConn(), req.DataSourceID, baseTime)
+	input := wdhexport.WriteInput{
+		Scenario:          flatScenario,
+		WorkEvents:        workEvents,
+		LineageLogs:       lineageLogs,
+		StationStatusLogs: statusLogs,
+	}
+	if err := writer.Write(input); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write WDH: %v", err))
+		return
+	}
+
+	log.Printf("[run] completed: dataSourceId=%s events=%d signals=%d",
+		req.DataSourceID, len(workEvents), len(statusLogs))
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"dataSourceId": req.DataSourceID,
+		"status":       "completed",
+		"workEvents":   len(workEvents),
+		"signalEvents": len(statusLogs),
+	})
+}

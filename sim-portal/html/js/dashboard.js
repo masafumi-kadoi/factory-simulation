@@ -2,6 +2,14 @@
 
 const TOOLS = [
     {
+        name: 'sim-factory-manager',
+        icon: '\uD83C\uDFED',
+        title: 'Factory Manager',
+        desc: 'Manage factory layouts, stations, and live monitoring sessions.',
+        url: SERVICE_URLS['sim-factory-manager'],
+        status: 'online'
+    },
+    {
         name: 'sim-editor',
         icon: '\u270F\uFE0F',
         title: 'Scenario Editor',
@@ -21,7 +29,7 @@ const TOOLS = [
         name: 'sim-visualizer',
         icon: '\uD83D\uDCCA',
         title: 'Result Visualizer',
-        desc: 'Visualize simulation results with 3D timeline view.',
+        desc: 'Visualize simulation results and live factory data.',
         url: SERVICE_URLS['sim-visualizer'],
         status: 'online'
     },

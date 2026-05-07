@@ -11,6 +11,7 @@ import { Clipboard } from './clipboard.js';
 import { ContextMenu } from './context-menu.js';
 import { Minimap } from './minimap.js';
 import { SearchBar } from './search.js';
+import { BufferConveyorDialog } from './buffer-conveyor-dialog.js';
 // MouseConfig is loaded dynamically to avoid blocking the editor if the shared module is unavailable
 let MouseConfig, MouseConfigModal, injectMouseConfigCSS;
 try {
@@ -291,6 +292,15 @@ class ScenarioEditor {
             });
         }
 
+        // Buffer conveyor template button
+        const bufferConveyorBtn = document.getElementById('buffer-conveyor-btn');
+        if (bufferConveyorBtn) {
+            bufferConveyorBtn.addEventListener('click', () => {
+                const dialog = new BufferConveyorDialog(this);
+                dialog.open();
+            });
+        }
+
         // Prevent accidental page leave
         window.addEventListener('beforeunload', (e) => {
             if (this.dirty) {
@@ -382,6 +392,18 @@ class ScenarioEditor {
         const command = new AddStationCommand(this, station);
         this.commandManager.execute(command);
         return station;
+    }
+
+    addStationFull(station) {
+        const command = new AddStationCommand(this, station);
+        this.commandManager.execute(command);
+        return station;
+    }
+
+    getViewCenter() {
+        if (!this.canvas) return { x: 500, y: 300 };
+        const vb = this.canvas.viewBox;
+        return { x: vb.x + vb.width / 2, y: vb.y + vb.height / 2 };
     }
 
     _getDefaultConfig(type) {

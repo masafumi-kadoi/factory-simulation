@@ -1,5 +1,6 @@
 // Main application logic
-import { fetchSimulation, fetchScenario, fetchLogs } from './api.js';
+import { fetchSimulation, fetchScenario, fetchLogs, fetchDataSource, fetchLayout, fetchEvents, fetchDataSources } from './api.js';
+import { LiveClient, LiveMode, wdhEventToInternal } from './live-client.js';
 import { Visualizer3D } from './visualizer.js';
 let MouseConfig, MouseConfigModal, injectMouseConfigCSS;
 try {
@@ -149,6 +150,13 @@ class App {
     async _init() {
         const params = new URLSearchParams(window.location.search);
         const simId = params.get('sim');
+        const dsId = params.get('ds');
+        const liveMode = params.get('live') === '1';
+
+        if (dsId) {
+            await this._initDataSource(dsId, liveMode);
+            return;
+        }
 
         if (!simId) {
             await this._showSimulationList();
@@ -1032,6 +1040,190 @@ class App {
                     <p style="color: #666;">${error.message}</p>
                 </div>
             `;
+        }
+    }
+}
+
+    // --- Data Source (WDH) mode ---
+
+    async _initDataSource(dsId, startLive) {
+        this._dsId = dsId;
+        this._liveClient = new LiveClient({
+            onEvent: (ev) => this._onLiveEvent(ev),
+            onHeartbeat: (t) => this._onHeartbeat(t),
+            onModeChange: (m) => this._onModeChange(m),
+        });
+
+        try {
+            document.getElementById('container-3d').innerHTML = '<div class="loading">Loading...</div>';
+
+            const ds = await fetchDataSource(dsId);
+            const layout = await fetchLayout(dsId);
+
+            // Build location ID → name map
+            this._locationMap = new Map();
+            for (const loc of (layout.locations || [])) {
+                this._locationMap.set(loc.id, loc.name);
+            }
+
+            // Build scenario from layout
+            const scenario = this._layoutToScenario(layout);
+            this._dsStartTime = ds.startedAt;
+
+            document.getElementById('sim-info').textContent = ds.friendlyName || dsId.substring(0, 8);
+
+            const container = document.getElementById('container-3d');
+            container.innerHTML = '';
+            this.visualizer = new Visualizer3D(container, this.mouseConfig);
+
+            this.flatScenario = this._flattenScenario(scenario);
+            this._buildModulerMap(this.flatScenario);
+            const layer1Scenario = this._buildLayer1Scenario(this.flatScenario);
+            this.visualizer.loadScenario(layer1Scenario);
+            this.visualizer.setOnModulerDoubleClick((sid) => this._openModulerViewer(sid));
+
+            // Load initial events (last hour)
+            const now = new Date();
+            const from = new Date(now.getTime() - 3600 * 1000);
+            const rawEvents = await fetchEvents(dsId, from, now);
+            this._dsEvents = (rawEvents || []).map(ev => wdhEventToInternal(ev, this._locationMap, this._dsStartTime)).filter(Boolean);
+            this._dsSignals = [];
+
+            // Separate work events and signal logs
+            this.logs = {
+                workEvents: this._dsEvents.filter(e => e.EventType),
+                stationStatusLogs: this._dsEvents.filter(e => e.StatusType),
+            };
+            this._buildEventIndices();
+            this.maxTime = this._calculateMaxTime();
+            document.getElementById('timeline-slider').max = this.maxTime;
+
+            this._setupControls();
+            this._setupLiveControls();
+            this._updateSimulation();
+            this._updateUI();
+
+            if (startLive) this._activateLive();
+
+        } catch (err) {
+            console.error('[App] initDataSource failed:', err);
+            document.getElementById('container-3d').innerHTML =
+                `<div style="padding:40px;text-align:center;color:#d32f2f"><h2>Failed to load data source</h2><p>${err.message}</p></div>`;
+        }
+    }
+
+    _layoutToScenario(layout) {
+        const stations = (layout.locations || []).map(loc => ({
+            id: loc.name,
+            name: loc.name,
+            type: loc.stationType || 'processing',
+            positionX: loc.posX || 0,
+            positionY: loc.posY || 0,
+            config: {},
+        }));
+        const nameMap = new Map((layout.locations || []).map(l => [l.id, l.name]));
+        const connections = (layout.connections || []).map(conn => ({
+            from: nameMap.get(conn.fromLocationId) || String(conn.fromLocationId),
+            to: nameMap.get(conn.toLocationId) || String(conn.toLocationId),
+            condition: conn.condition || 'default',
+            fromPortIndex: conn.fromPortIndex != null ? conn.fromPortIndex : -1,
+            toPortIndex: conn.toPortIndex != null ? conn.toPortIndex : -1,
+        }));
+        return { id: 'layout', name: 'Live Layout', stations, connections };
+    }
+
+    _setupLiveControls() {
+        const controls = document.getElementById('controls');
+        let liveBtn = document.getElementById('live-btn');
+        if (!liveBtn) {
+            liveBtn = document.createElement('button');
+            liveBtn.id = 'live-btn';
+            liveBtn.textContent = 'LIVE';
+            liveBtn.style.cssText = 'background:#444;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-weight:bold';
+            controls.querySelector('.buttons').appendChild(liveBtn);
+        }
+        liveBtn.addEventListener('click', () => {
+            if (this._liveClient && this._liveClient.mode !== LiveMode.LIVE) {
+                this._activateLive();
+            } else if (this._liveClient) {
+                this._liveClient.unsubscribe();
+            }
+        });
+    }
+
+    _activateLive() {
+        if (!this._dsId) return;
+        this._liveClient.subscribe(this._dsId);
+    }
+
+    _onLiveEvent(rawEvent) {
+        const ev = wdhEventToInternal(rawEvent, this._locationMap, this._dsStartTime);
+        if (!ev) return;
+
+        if (ev.EventType) {
+            this.logs.workEvents.push(ev);
+        } else if (ev.StatusType) {
+            this.logs.stationStatusLogs.push(ev);
+        }
+
+        const newMax = Math.max(this.maxTime, ev.Timestamp || 0);
+        if (newMax > this.maxTime) {
+            this.maxTime = newMax;
+            document.getElementById('timeline-slider').max = this.maxTime;
+        }
+
+        if (this._liveClient && this._liveClient.mode === LiveMode.LIVE) {
+            this.seek(this.maxTime);
+        }
+    }
+
+    _onHeartbeat(serverTime) {
+        const liveBtn = document.getElementById('live-btn');
+        if (liveBtn) liveBtn.style.background = '#e53935';
+    }
+
+    _onModeChange(mode) {
+        const liveBtn = document.getElementById('live-btn');
+        if (!liveBtn) return;
+        switch (mode) {
+            case LiveMode.LIVE:
+                liveBtn.textContent = '● LIVE';
+                liveBtn.style.background = '#e53935';
+                break;
+            case LiveMode.LIVE_LOST:
+                liveBtn.textContent = '⚠ LIVE LOST';
+                liveBtn.style.background = '#ff9800';
+                break;
+            default:
+                liveBtn.textContent = 'LIVE';
+                liveBtn.style.background = '#444';
+        }
+    }
+
+    async _showDataSourceList() {
+        const container = document.getElementById('container-3d');
+        document.getElementById('controls').style.display = 'none';
+        container.style.overflow = 'auto';
+
+        try {
+            container.innerHTML = '<div style="padding:40px;text-align:center">読み込み中...</div>';
+            const dsList = await fetchDataSources();
+            if (!dsList || dsList.length === 0) {
+                container.innerHTML = '<div style="padding:60px;text-align:center"><h2>データソースがありません</h2></div>';
+                return;
+            }
+            const rows = dsList.map(ds => `
+                <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:20px;margin-bottom:12px;cursor:pointer"
+                     onclick="window.location.href='?ds=${ds.id}'">
+                    <h3>${ds.friendlyName || ds.id}</h3>
+                    <div style="color:#6c757d;font-size:14px">
+                        Type: ${ds.sourceType} | Scenario: ${ds.scenarioId.substring(0, 8)}
+                        | ${ds.endedAt ? 'Ended: ' + new Date(ds.endedAt).toLocaleString('ja-JP') : '<b style="color:#4caf50">● Running</b>'}
+                    </div>
+                </div>`).join('');
+            container.innerHTML = `<div style="padding:20px"><h2>データソース一覧</h2>${rows}</div>`;
+        } catch (err) {
+            container.innerHTML = `<div style="padding:40px;text-align:center;color:#d32f2f">${err.message}</div>`;
         }
     }
 }
