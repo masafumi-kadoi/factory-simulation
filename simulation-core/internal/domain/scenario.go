@@ -33,6 +33,7 @@ type SimDBConfig struct {
 type Scenario struct {
 	ID          string
 	Name        string
+	FactoryID   *string
 	SimDBConfig *SimDBConfig
 	Stations    []Station
 	Connections []Connection

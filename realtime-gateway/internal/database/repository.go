@@ -198,6 +198,25 @@ func (r *Repository) ListScenarios() ([]Scenario, error) {
 	return result, rows.Err()
 }
 
+func (r *Repository) ListScenariosByFactory(factoryID string) ([]Scenario, error) {
+	rows, err := r.db.Conn().Query(
+		`SELECT id, name, factory_id, scenario_type, created_at, updated_at FROM scenarios WHERE factory_id=$1 ORDER BY updated_at DESC`,
+		factoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]Scenario, 0)
+	for rows.Next() {
+		var s Scenario
+		if err := rows.Scan(&s.ID, &s.Name, &s.FactoryID, &s.ScenarioType, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+	}
+	return result, rows.Err()
+}
+
 func (r *Repository) GetScenario(id string) (*Scenario, error) {
 	var s Scenario
 	err := r.db.Conn().QueryRow(

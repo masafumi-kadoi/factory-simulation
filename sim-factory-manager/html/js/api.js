@@ -89,4 +89,11 @@ const FactoryAPI = {
         if (!r.ok) throw new Error(await r.text());
         return r.json();
     },
+
+    async listScenarios(factoryId) {
+        const url = factoryId ? `${API}/scenarios?factory_id=${encodeURIComponent(factoryId)}` : `${API}/scenarios`;
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(await r.text());
+        return r.json();
+    },
 };

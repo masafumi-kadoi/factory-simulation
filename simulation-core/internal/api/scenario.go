@@ -59,6 +59,7 @@ type SimDBConfigRequest struct {
 // ScenarioRequest represents a POST /api/scenarios request
 type ScenarioRequest struct {
 	Name        string              `json:"name"`
+	FactoryID   *string             `json:"factoryId,omitempty"`
 	SimDBConfig *SimDBConfigRequest `json:"simdbConfig,omitempty"`
 	Stations    []StationRequest    `json:"stations"`
 	Connections []ConnectionRequest `json:"connections"`
@@ -236,6 +237,7 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	scenarioID := uuid.New().String()
 
 	scenario := domain.NewScenario(scenarioID, req.Name, stations, connections)
+	scenario.FactoryID = req.FactoryID
 
 	// Set SimDB config if provided
 	if req.SimDBConfig != nil {
@@ -299,6 +301,7 @@ func (h *Handler) HandleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	connections := convertConnectionRequests(req.Connections)
 
 	scenario := domain.NewScenario(scenarioID, req.Name, stations, connections)
+	scenario.FactoryID = req.FactoryID
 
 	// Set SimDB config if provided
 	if req.SimDBConfig != nil {

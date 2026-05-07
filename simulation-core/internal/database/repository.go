@@ -400,17 +400,18 @@ func (r *Repository) SaveScenario(scenario *domain.Scenario) error {
 		simdbPassword = &scenario.SimDBConfig.Password
 	}
 	_, err = tx.Exec(`
-		INSERT INTO scenarios (id, name, simdb_host, simdb_port, simdb_database, simdb_user, simdb_password)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO scenarios (id, name, factory_id, simdb_host, simdb_port, simdb_database, simdb_user, simdb_password)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
+			factory_id = EXCLUDED.factory_id,
 			simdb_host = EXCLUDED.simdb_host,
 			simdb_port = EXCLUDED.simdb_port,
 			simdb_database = EXCLUDED.simdb_database,
 			simdb_user = EXCLUDED.simdb_user,
 			simdb_password = EXCLUDED.simdb_password,
 			updated_at = CURRENT_TIMESTAMP
-	`, scenario.ID, scenario.Name, simdbHost, simdbPort, simdbDatabase, simdbUser, simdbPassword)
+	`, scenario.ID, scenario.Name, scenario.FactoryID, simdbHost, simdbPort, simdbDatabase, simdbUser, simdbPassword)
 	if err != nil {
 		return fmt.Errorf("failed to insert scenario: %w", err)
 	}

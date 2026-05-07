@@ -361,29 +361,71 @@ func (h *Handler) handleValidate(w http.ResponseWriter, r *http.Request, factory
 // ---- Scenarios ----
 
 func (h *Handler) handleScenarios(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		scenarios, err := h.repo.ListScenarios()
+	switch r.Method {
+	case http.MethodGet:
+		factoryID := r.URL.Query().Get("factory_id")
+		var (
+			scenarios []database.Scenario
+			err       error
+		)
+		if factoryID != "" {
+			scenarios, err = h.repo.ListScenariosByFactory(factoryID)
+		} else {
+			scenarios, err = h.repo.ListScenarios()
+		}
 		if err != nil {
 			respondError(w, 500, err.Error())
 			return
 		}
 		respondJSON(w, 200, scenarios)
-		return
+	case http.MethodPost:
+		// Proxy to simulation-core
+		h.proxyToSimCore(w, r, "/api/scenarios")
+	default:
+		respondError(w, 405, "method not allowed")
 	}
-	respondError(w, 405, "method not allowed")
 }
 
 func (h *Handler) handleScenario(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method == http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
 		s, err := h.repo.GetScenario(id)
 		if err != nil {
 			respondError(w, 404, err.Error())
 			return
 		}
 		respondJSON(w, 200, s)
+	case http.MethodPut:
+		h.proxyToSimCore(w, r, "/api/scenarios/"+id)
+	case http.MethodDelete:
+		h.proxyToSimCore(w, r, "/api/scenarios/"+id)
+	default:
+		respondError(w, 405, "method not allowed")
+	}
+}
+
+func (h *Handler) proxyToSimCore(w http.ResponseWriter, r *http.Request, path string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		respondError(w, 500, "failed to read request body")
 		return
 	}
-	respondError(w, 405, "method not allowed")
+	req, err := http.NewRequest(r.Method, h.simCoreURL+path, bytes.NewReader(body))
+	if err != nil {
+		respondError(w, 500, "failed to create proxy request")
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		respondError(w, 502, "upstream error: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(respBody)
 }
 
 // ---- DataSources ----

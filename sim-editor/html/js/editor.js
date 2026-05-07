@@ -74,9 +74,30 @@ class ScenarioEditor {
 
     async _init() {
         // Get scenario ID from URL
-        // 'id' = localStorage scenario, 'scenarioId' = API scenario
+        // 'id' = localStorage scenario, 'scenarioId' = API scenario, 'new=1' = create blank
         const params = new URLSearchParams(window.location.search);
+        const isNew = params.get('new') === '1';
         this.scenarioId = params.get('id') || params.get('scenarioId');
+
+        if (isNew && !this.scenarioId) {
+            // Create a blank scenario in localStorage and redirect
+            const newId = 'scenario-' + Date.now();
+            const factoryId = params.get('factoryId');
+            const blank = {
+                id: newId,
+                name: '新規シナリオ',
+                factoryId: factoryId || null,
+                stations: [],
+                connections: [],
+                updatedAt: new Date().toISOString()
+            };
+            const scenarios = JSON.parse(localStorage.getItem('sim-editor-scenarios') || '[]');
+            scenarios.push(blank);
+            localStorage.setItem('sim-editor-scenarios', JSON.stringify(scenarios));
+            const redirect = `editor.html?id=${newId}${factoryId ? '&factoryId=' + encodeURIComponent(factoryId) : ''}`;
+            window.location.href = redirect;
+            return;
+        }
 
         if (!this.scenarioId) {
             alert('シナリオIDが指定されていません');
@@ -136,10 +157,12 @@ class ScenarioEditor {
         try {
             const data = await apiClient.getScenario(apiScenarioId);
             this.scenarioId = apiScenarioId;
+            const urlParams = new URLSearchParams(window.location.search);
             this.scenario = {
                 id: apiScenarioId,
                 apiScenarioId: apiScenarioId,
                 name: data.name,
+                factoryId: data.factoryId || urlParams.get('factoryId') || null,
                 simdbConfig: data.simdbConfig || null,
                 stations: (data.stations || []).map((s, i) => this._stationFromAPIData(s, i)),
                 connections: (data.connections || []).map(c => ({
@@ -1178,8 +1201,11 @@ class ScenarioEditor {
             this._updateBreadcrumb();
 
             // Prepare scenario data for API
+            const urlParams = new URLSearchParams(window.location.search);
+            const factoryId = urlParams.get('factoryId') || this.scenario.factoryId || undefined;
             const scenarioData = {
                 name: this.scenario.name,
+                factoryId: factoryId || undefined,
                 simdbConfig: this.scenario.simdbConfig || undefined,
                 stations: this.scenario.stations.map(s => this._stationToAPIData(s)),
                 connections: this.scenario.connections.map(c => ({
