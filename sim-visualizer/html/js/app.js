@@ -618,29 +618,25 @@ class App {
                 const stationId = event.StationID;
 
                 if (event.EventType === 'WorkCreated' || event.EventType === 'WorkArrived') {
-                    rawActiveWorks.set(workId, { state: 'at_station', stationId });
-                } else if (event.EventType === 'WorkPortEntered') {
                     rawActiveWorks.set(workId, {
                         state: 'at_station', stationId,
-                        isInPort: true,
-                        portIndex: event.PortIndex != null ? event.PortIndex : -1
+                        portIndex: event.PortIndex != null && event.PortIndex >= 0 ? event.PortIndex : -1
                     });
                 } else if (event.EventType === 'WorkMerged') {
                     for (const [wId, wInfo] of rawActiveWorks) {
-                        if (wInfo.stationId === stationId && wInfo.isInPort) {
+                        if (wInfo.stationId === stationId && wInfo.portIndex >= 0) {
                             rawActiveWorks.delete(wId);
                         }
                     }
                     rawActiveWorks.set(workId, { state: 'at_station', stationId });
                 } else if (event.EventType === 'WorkSplit') {
                     for (const [wId, wInfo] of rawActiveWorks) {
-                        if (wInfo.stationId === stationId && !wInfo.isInPort) {
+                        if (wInfo.stationId === stationId && wInfo.portIndex < 0) {
                             rawActiveWorks.delete(wId);
                         }
                     }
                     rawActiveWorks.set(workId, {
                         state: 'at_station', stationId,
-                        isInPort: true,
                         portIndex: event.PortIndex != null ? event.PortIndex : -1
                     });
                 } else if (event.EventType === 'WorkDeparted') {
@@ -648,7 +644,7 @@ class App {
                     for (let j = i + 1; j < this.logs.workEvents.length; j++) {
                         const nextEvent = this.logs.workEvents[j];
                         if (nextEvent.WorkID === workId &&
-                            (nextEvent.EventType === 'WorkArrived' || nextEvent.EventType === 'WorkPortEntered' || nextEvent.EventType === 'WorkDestroyed')) {
+                            (nextEvent.EventType === 'WorkArrived' || nextEvent.EventType === 'WorkDestroyed')) {
                             nextArrival = nextEvent;
                             break;
                         }
@@ -720,7 +716,7 @@ class App {
         let stationText = '-';
         if (workInfo) {
             if (workInfo.state === 'at_station') {
-                stateText = workInfo.isInPort ? 'バッファ内' : 'ステーション内';
+                stateText = workInfo.portIndex >= 0 ? 'バッファ内' : 'ステーション内';
                 stationText = workInfo.stationId || '-';
             } else if (workInfo.state === 'moving') {
                 stateText = '移動中';

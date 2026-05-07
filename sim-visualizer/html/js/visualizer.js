@@ -972,7 +972,7 @@ export class Visualizer3D {
                     let z = station.position.z;
                     const y = 40;
 
-                    if (workInfo.isInPort && workInfo.portIndex >= 0) {
+                    if (workInfo.portIndex >= 0) {
                         const slotPos = this._getPortSlotPosition(station, workInfo.portIndex);
                         if (slotPos) {
                             x = slotPos.x;

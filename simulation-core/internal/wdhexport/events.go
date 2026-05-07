@@ -46,7 +46,7 @@ func (e *Exporter) exportItemMovement(workEvents []simulation.WorkEventLog) (int
 
 	workHistory := make(map[string][]actionRecord)
 	for _, ev := range workEvents {
-		if ev.EventType == "WorkArrived" || ev.EventType == "WorkDeparted" || ev.EventType == "WorkCreated" || ev.EventType == "WorkDestroyed" || ev.EventType == "WorkPortEntered" {
+		if ev.EventType == "WorkArrived" || ev.EventType == "WorkDeparted" || ev.EventType == "WorkCreated" || ev.EventType == "WorkDestroyed" {
 			workHistory[ev.WorkID] = append(workHistory[ev.WorkID], actionRecord{
 				timestamp: ev.Timestamp,
 				itemID:    ev.WorkID,
@@ -102,7 +102,7 @@ func (e *Exporter) exportItemMovement(workEvents []simulation.WorkEventLog) (int
 		} else {
 			var toLocID *int64
 			for _, h := range history {
-				if h.timestamp >= ev.Timestamp && h.stationID != ev.StationID && (h.eventType == "WorkArrived" || h.eventType == "WorkPortEntered" || h.eventType == "WorkDestroyed") {
+				if h.timestamp >= ev.Timestamp && h.stationID != ev.StationID && (h.eventType == "WorkArrived" || h.eventType == "WorkDestroyed") {
 					if lid, ok := e.locationMap[h.stationID]; ok {
 						toLocID = &lid
 					}
