@@ -26,6 +26,15 @@ func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Disable the per-connection WriteTimeout for this long-running handler.
+	// The global WriteTimeout (5 min) would fire before a long simulation finishes,
+	// causing the gateway to mark the execution "failed" even though simulation data
+	// was successfully written to DB.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		log.Printf("[run] warning: failed to clear write deadline: %v", err)
+	}
+
 	var req RunRequest
 	if err := parseJSON(r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
