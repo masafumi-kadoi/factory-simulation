@@ -386,7 +386,7 @@ export class Visualizer3D {
     }
 
     _getParentModulerId(stationId) {
-        const dotIdx = stationId.indexOf('.');
+        const dotIdx = stationId.lastIndexOf('.');
         if (dotIdx === -1) return null;
         const parentId = stationId.substring(0, dotIdx);
         return this.modulerHierarchy.has(parentId) ? parentId : null;
