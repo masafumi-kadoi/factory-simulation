@@ -193,6 +193,7 @@ export class Visualizer3D {
     _onResize() {
         const width = this.container.clientWidth;
         const height = this.container.clientHeight;
+        if (width === 0 || height === 0) return;
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
@@ -758,7 +759,6 @@ export class Visualizer3D {
 
     _createInterlockIndicators(connData, fromStationData, toStationData) {
         const cubeSize = 8;
-        const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
 
         const fromPos = connData.from;
         const toPos = connData.to;
@@ -771,7 +771,7 @@ export class Visualizer3D {
             color: 0x28a745, emissive: 0x28a745, emissiveIntensity: 0.5,
             transparent: true, opacity: 0.9
         });
-        const outMesh = new THREE.Mesh(geometry, outMaterial);
+        const outMesh = new THREE.Mesh(new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize), outMaterial);
         outMesh.position.set(outX, cubeSize / 2 + 1, outZ);
         outMesh.visible = this.showInterlocks;
         this.scene.add(outMesh);
@@ -788,7 +788,7 @@ export class Visualizer3D {
             color: 0x28a745, emissive: 0x28a745, emissiveIntensity: 0.5,
             transparent: true, opacity: 0.9
         });
-        const inMesh = new THREE.Mesh(geometry, inMaterial);
+        const inMesh = new THREE.Mesh(new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize), inMaterial);
         inMesh.position.set(inX, cubeSize / 2 + 1, inZ);
         inMesh.visible = this.showInterlocks;
         this.scene.add(inMesh);
@@ -1095,7 +1095,8 @@ export class Visualizer3D {
 
     _disposeMesh(mesh) {
         if (!mesh) return;
-        if (mesh.geometry) mesh.geometry.dispose();
+        // Sprite geometry is shared internally by Three.js — do not dispose it
+        if (mesh.geometry && !(mesh instanceof THREE.Sprite)) mesh.geometry.dispose();
         if (mesh.material) {
             if (mesh.material.map) mesh.material.map.dispose();
             mesh.material.dispose();

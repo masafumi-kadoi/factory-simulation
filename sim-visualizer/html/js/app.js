@@ -203,11 +203,12 @@ class App {
         } catch (error) {
             console.error('[App] Failed to load:', error);
             const container = document.getElementById('container-3d');
+            const _esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             container.innerHTML = `
                 <div style="padding: 40px; text-align: center; color: #d32f2f;">
                     <h2>データの読み込みに失敗しました</h2>
-                    <p style="margin-top: 20px; color: #666;">${error.message}</p>
-                    <p style="margin-top: 20px; font-size: 14px; color: #999;">シミュレーションID: ${simId}</p>
+                    <p style="margin-top: 20px; color: #666;">${_esc(error.message)}</p>
+                    <p style="margin-top: 20px; font-size: 14px; color: #999;">シミュレーションID: ${_esc(simId)}</p>
                     <button onclick="window.location.href=window.location.pathname" style="margin-top:24px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">一覧に戻る</button>
                 </div>
             `;
@@ -842,7 +843,7 @@ class App {
         const events = [];
         if (this.logs.workEvents) {
             for (const e of this.logs.workEvents) {
-                if (e.WorkID === workId) events.push(e);
+                if (e.WorkID === workId && e.Timestamp <= this.currentTime) events.push(e);
             }
         }
 
@@ -858,15 +859,19 @@ class App {
             }
         }
 
-        const workType = events.length > 0 ? (events[events.length - 1].WorkType || '-') : '-';
-        const friendlyName = events.length > 0 ? (events[0].WorkFriendlyName || workId) : workId;
+        const workTypeRaw = events.length > 0 ? (events[events.length - 1].WorkType || '-') : '-';
+        const friendlyNameRaw = events.length > 0 ? (events[0].WorkFriendlyName || workId) : workId;
+        const workType = this._escHtml(workTypeRaw);
+        const friendlyName = this._escHtml(friendlyNameRaw);
+        const stateTextEsc = this._escHtml(stateText);
+        const stationTextEsc = this._escHtml(stationText);
 
         const eventRows = events.map(e => `
             <tr>
-                <td style="padding:4px 8px">${this._tsToDisplayTime(e.Timestamp)}</td>
-                <td style="padding:4px 8px">${e.EventType}</td>
-                <td style="padding:4px 8px">${e.StationID}</td>
-                <td style="padding:4px 8px">${e.PortIndex >= 0 ? 'B' + e.PortIndex : '-'}</td>
+                <td style="padding:4px 8px">${this._escHtml(this._tsToDisplayTime(e.Timestamp))}</td>
+                <td style="padding:4px 8px">${this._escHtml(e.EventType)}</td>
+                <td style="padding:4px 8px">${this._escHtml(e.StationID)}</td>
+                <td style="padding:4px 8px">${e.PortIndex >= 0 ? 'B' + this._escHtml(e.PortIndex) : '-'}</td>
             </tr>
         `).join('');
 
@@ -883,11 +888,11 @@ class App {
                     <button id="work-modal-close" style="background:none;border:none;color:#6c7086;font-size:24px;cursor:pointer;padding:0 4px">&times;</button>
                 </div>
                 <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:14px">
-                    <tr><td style="padding:4px 8px;color:#a6adc8">ワークID</td><td style="padding:4px 8px" title="${workId}">${workId.length > 12 ? workId.substring(0, 12) + '...' : workId}</td></tr>
+                    <tr><td style="padding:4px 8px;color:#a6adc8">ワークID</td><td style="padding:4px 8px" title="${this._escHtml(workId)}">${this._escHtml(workId.length > 12 ? workId.substring(0, 12) + '...' : workId)}</td></tr>
                     <tr><td style="padding:4px 8px;color:#a6adc8">表示名</td><td style="padding:4px 8px">${friendlyName}</td></tr>
                     <tr><td style="padding:4px 8px;color:#a6adc8">ワーク種類</td><td style="padding:4px 8px">${workType}</td></tr>
-                    <tr><td style="padding:4px 8px;color:#a6adc8">現在状態</td><td style="padding:4px 8px">${stateText}</td></tr>
-                    <tr><td style="padding:4px 8px;color:#a6adc8">場所</td><td style="padding:4px 8px">${stationText}</td></tr>
+                    <tr><td style="padding:4px 8px;color:#a6adc8">現在状態</td><td style="padding:4px 8px">${stateTextEsc}</td></tr>
+                    <tr><td style="padding:4px 8px;color:#a6adc8">場所</td><td style="padding:4px 8px">${stationTextEsc}</td></tr>
                 </table>
                 <h3 style="font-size:14px;color:#89b4fa;margin-bottom:8px">イベント履歴</h3>
                 <div style="max-height:300px;overflow-y:auto">
@@ -1051,6 +1056,7 @@ class App {
     }
 
     _tsToDisplayTime(ts) {
+        if (ts == null) return '-';
         if (this._dsStartTime) {
             const absMs = new Date(this._dsStartTime).getTime() + ts * 1000;
             return new Date(absMs).toLocaleString('ja-JP', {
@@ -1059,6 +1065,11 @@ class App {
             });
         }
         return ts.toFixed(2) + 's';
+    }
+
+    _escHtml(str) {
+        if (str == null) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     async _showSimulationList() {
@@ -1092,19 +1103,20 @@ class App {
                 const createdAt = sim.createdAt ? new Date(sim.createdAt).toLocaleString('ja-JP') : 'N/A';
                 const endTime = sim.endTime ? sim.endTime.toFixed(2) + 's' : 'N/A';
                 const statusColor = sim.status === 'completed' ? '#4caf50' : '#f44336';
+                const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
                 return `
                     <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:20px;margin-bottom:15px;cursor:pointer;transition:all 0.2s ease"
                     onmouseover="this.style.background='#e9ecef';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'"
                     onmouseout="this.style.background='#f8f9fa';this.style.boxShadow='none'"
-                    onclick="window.location.href='?sim=${sim.simulationId}'">
-                        <h3 style="color:#495057;font-size:18px;margin-bottom:12px">${sim.friendlyName || sim.simulationId}</h3>
-                        <div style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;background:${statusColor}20;color:${statusColor};margin-bottom:10px">${sim.status.toUpperCase()}</div>
+                    onclick="window.location.href='?sim=${esc(sim.simulationId)}'">
+                        <h3 style="color:#495057;font-size:18px;margin-bottom:12px">${esc(sim.friendlyName || sim.simulationId)}</h3>
+                        <div style="display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;background:${statusColor}20;color:${statusColor};margin-bottom:10px">${esc(sim.status.toUpperCase())}</div>
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;color:#6c757d;font-size:14px;margin-top:10px">
-                            <div>ID: ${sim.simulationId.substring(0, 8)}...</div>
-                            <div>実行日時: ${createdAt}</div>
-                            <div>終了時刻: ${endTime}</div>
-                            <div>終了理由: ${sim.endReason || 'N/A'}</div>
+                            <div>ID: ${esc(sim.simulationId.substring(0, 8))}...</div>
+                            <div>実行日時: ${esc(createdAt)}</div>
+                            <div>終了時刻: ${esc(endTime)}</div>
+                            <div>終了理由: ${esc(sim.endReason || 'N/A')}</div>
                         </div>
                     </div>
                 `;
@@ -1124,7 +1136,7 @@ class App {
             container.innerHTML = `
                 <div style="padding: 60px 40px; text-align: center; color: #d32f2f;">
                     <h2>エラーが発生しました</h2>
-                    <p style="color: #666;">${error.message}</p>
+                    <p style="color: #666;">${this._escHtml(error.message)}</p>
                     <button onclick="location.reload()" style="margin-top:24px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">再読み込み</button>
                 </div>
             `;
@@ -1216,7 +1228,7 @@ class App {
             document.getElementById('container-3d').innerHTML = `
                 <div style="padding:40px;text-align:center;color:#d32f2f">
                     <h2>データソースの読み込みに失敗しました</h2>
-                    <p style="color:#666;margin-top:12px">${err.message}</p>
+                    <p style="color:#666;margin-top:12px">${this._escHtml(err.message)}</p>
                     <button onclick="window.location.href=window.location.pathname" style="margin-top:24px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">一覧に戻る</button>
                 </div>`;
         }
@@ -1363,6 +1375,7 @@ class App {
                 return;
             }
             simList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             const rows = simList.map(ds => {
                 const scenarioShort = ds.scenarioId ? ds.scenarioId.substring(0, 8) + '...' : '—';
                 const startedAt = ds.startedAt ? new Date(ds.startedAt).toLocaleString('ja-JP') : '—';
@@ -1373,15 +1386,15 @@ class App {
                 <div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:20px;margin-bottom:12px;cursor:pointer;transition:box-shadow 0.2s"
                      onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'"
                      onmouseout="this.style.boxShadow='none'"
-                     onclick="window.location.href='?ds=${ds.id}'">
+                     onclick="window.location.href='?ds=${esc(ds.id)}'">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                        <h3 style="margin:0;color:#333">${ds.friendlyName || ds.id}</h3>
+                        <h3 style="margin:0;color:#333">${esc(ds.friendlyName || ds.id)}</h3>
                         ${statusBadge}
                     </div>
                     <div style="color:#6c757d;font-size:13px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px">
-                        <div>シナリオID: ${scenarioShort}</div>
-                        <div>開始: ${startedAt}</div>
-                        <div>データソースID: ${ds.id.substring(0, 8)}...</div>
+                        <div>シナリオID: ${esc(scenarioShort)}</div>
+                        <div>開始: ${esc(startedAt)}</div>
+                        <div>データソースID: ${esc(ds.id.substring(0, 8))}...</div>
                     </div>
                 </div>`;
             }).join('');
@@ -1397,7 +1410,7 @@ class App {
             container.innerHTML = `
                 <div style="padding:40px;text-align:center;color:#d32f2f">
                     <h2>一覧の読み込みに失敗しました</h2>
-                    <p style="color:#666;margin-top:12px">${err.message}</p>
+                    <p style="color:#666;margin-top:12px">${this._escHtml(err.message)}</p>
                     <button onclick="location.reload()" style="margin-top:24px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">再試行</button>
                 </div>`;
         }

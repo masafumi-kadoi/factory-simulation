@@ -22,10 +22,16 @@ type Handler struct {
 	repo        *database.Repository
 	hub         *notify.Hub
 	simCoreURL  string
+	httpClient  *http.Client
 }
 
 func NewHandler(repo *database.Repository, hub *notify.Hub, simCoreURL string) *Handler {
-	return &Handler{repo: repo, hub: hub, simCoreURL: simCoreURL}
+	return &Handler{
+		repo:       repo,
+		hub:        hub,
+		simCoreURL: simCoreURL,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -408,7 +414,7 @@ func (h *Handler) proxyToSimCore(w http.ResponseWriter, r *http.Request, path st
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		respondError(w, 502, "upstream error: "+err.Error())
 		return
@@ -638,6 +644,13 @@ func (h *Handler) handleExecution(w http.ResponseWriter, r *http.Request, id str
 
 // runSimulation calls simulation-core /run endpoint
 func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime string, simTime float64, initialConditions json.RawMessage) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			errMsg := fmt.Sprintf("panic: %v", rec)
+			h.repo.UpdateExecutionStatus(execID, "failed", nil, &errMsg)
+			log.Printf("[gateway] runSimulation panic: %v", rec)
+		}
+	}()
 	log.Printf("[gateway] starting simulation: exec=%s ds=%s", execID, dataSourceID)
 
 	payload := map[string]interface{}{
@@ -652,7 +665,15 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 	}
 
 	b, _ := json.Marshal(payload)
-	resp, err := http.Post(h.simCoreURL+"/run", "application/json", bytes.NewReader(b))
+	simClient := &http.Client{Timeout: 10 * time.Minute}
+	req, err := http.NewRequest("POST", h.simCoreURL+"/run", bytes.NewReader(b))
+	if err != nil {
+		errMsg := err.Error()
+		h.repo.UpdateExecutionStatus(execID, "failed", nil, &errMsg)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := simClient.Do(req)
 	if err != nil {
 		errMsg := err.Error()
 		h.repo.UpdateExecutionStatus(execID, "failed", nil, &errMsg)
@@ -683,7 +704,7 @@ func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, s
 			respondError(w, 500, "failed to create request")
 			return
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := h.httpClient.Do(req)
 		if err != nil {
 			respondError(w, 502, "upstream error: "+err.Error())
 			return

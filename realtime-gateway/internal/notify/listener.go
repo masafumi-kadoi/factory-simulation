@@ -98,9 +98,8 @@ func (h *Hub) loop() {
 
 func (h *Hub) broadcast(dataSourceID, payload string) {
 	h.mu.RLock()
-	subs := h.subscribers[dataSourceID]
-	h.mu.RUnlock()
-	for ch := range subs {
+	defer h.mu.RUnlock()
+	for ch := range h.subscribers[dataSourceID] {
 		select {
 		case ch <- payload:
 		default:

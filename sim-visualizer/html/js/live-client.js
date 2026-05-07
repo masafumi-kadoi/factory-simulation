@@ -34,7 +34,9 @@ export class LiveClient {
         this._clearRetry();
         this._clearHeartbeatTimer();
         if (this._ws) {
-            this._ws.send(JSON.stringify({ type: 'unsubscribe' }));
+            if (this._ws.readyState === WebSocket.OPEN) {
+                this._ws.send(JSON.stringify({ type: 'unsubscribe' }));
+            }
             this._ws.close();
             this._ws = null;
         }
