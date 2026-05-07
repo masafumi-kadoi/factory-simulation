@@ -280,6 +280,9 @@ export class Visualizer3D {
         if (this._resizeHandler) {
             window.removeEventListener('resize', this._resizeHandler);
         }
+        if (this.scene) {
+            this.clear();
+        }
         if (this.controls) {
             this.controls.dispose();
         }
@@ -598,6 +601,7 @@ export class Visualizer3D {
                 const dx = p2.x - p1.x;
                 const dz = p2.z - p1.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist < 0.001) return;
                 const force = dist * 0.015;
                 const f1 = forces.get(conn.from);
                 const f2 = forces.get(conn.to);
@@ -946,7 +950,11 @@ export class Visualizer3D {
         this.works.forEach((work, workId) => {
             if (!activeWorks.has(workId)) {
                 this.scene.remove(work.mesh);
-                if (work.label) this.scene.remove(work.label);
+                this._disposeObject3D(work.mesh);
+                if (work.label) {
+                    this.scene.remove(work.label);
+                    this._disposeMesh(work.label);
+                }
                 toRemove.push(workId);
             }
         });
@@ -1085,15 +1093,40 @@ export class Visualizer3D {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
 
+    _disposeMesh(mesh) {
+        if (!mesh) return;
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) {
+            if (mesh.material.map) mesh.material.map.dispose();
+            mesh.material.dispose();
+        }
+    }
+
+    _disposeObject3D(obj) {
+        if (!obj) return;
+        obj.traverse(child => this._disposeMesh(child));
+    }
+
     clear() {
         this.stations.forEach(station => {
             this.scene.remove(station.mesh);
-            if (station.label) this.scene.remove(station.label);
+            this._disposeObject3D(station.mesh);
+            if (station.label) {
+                this.scene.remove(station.label);
+                this._disposeMesh(station.label);
+            }
             if (station.portSlots) {
                 station.portSlots.forEach(slot => {
                     this.scene.remove(slot.mesh);
-                    if (slot.label) this.scene.remove(slot.label);
-                    if (slot.connLine) this.scene.remove(slot.connLine);
+                    this._disposeObject3D(slot.mesh);
+                    if (slot.label) {
+                        this.scene.remove(slot.label);
+                        this._disposeMesh(slot.label);
+                    }
+                    if (slot.connLine) {
+                        this.scene.remove(slot.connLine);
+                        this._disposeMesh(slot.connLine);
+                    }
                 });
             }
         });
@@ -1101,13 +1134,18 @@ export class Visualizer3D {
 
         this.works.forEach(work => {
             this.scene.remove(work.mesh);
-            if (work.label) this.scene.remove(work.label);
+            this._disposeObject3D(work.mesh);
+            if (work.label) {
+                this.scene.remove(work.label);
+                this._disposeMesh(work.label);
+            }
         });
         this.works.clear();
 
         this.connections.forEach(conn => {
-            if (conn.line) this.scene.remove(conn.line);
-            else this.scene.remove(conn);
+            const line = conn.line || conn;
+            this.scene.remove(line);
+            this._disposeMesh(line);
         });
         this.connections = [];
 
