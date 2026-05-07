@@ -998,7 +998,7 @@ export class Visualizer3D {
                 const toStation = this.stations.get(workInfo.toStation);
 
                 if (fromStation && toStation) {
-                    const duration = workInfo.arriveTime - workInfo.departTime;
+                    const duration = Math.max(0.001, workInfo.arriveTime - workInfo.departTime);
                     const elapsed = currentTime - workInfo.departTime;
                     const progress = Math.max(0, Math.min(1, elapsed / duration));
 
