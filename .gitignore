@@ -6,3 +6,4 @@ original-skills/
 vendor/
 .githooks/
 docs/ideas/
+.DS_Store
