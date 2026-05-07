@@ -203,6 +203,7 @@ class App {
                     <h2>データの読み込みに失敗しました</h2>
                     <p style="margin-top: 20px; color: #666;">${error.message}</p>
                     <p style="margin-top: 20px; font-size: 14px; color: #999;">シミュレーションID: ${simId}</p>
+                    <button onclick="window.location.href=window.location.pathname" style="margin-top:24px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">一覧に戻る</button>
                 </div>
             `;
         }
@@ -1081,6 +1082,7 @@ class App {
                 <div style="padding: 60px 40px; text-align: center; color: #d32f2f;">
                     <h2>エラーが発生しました</h2>
                     <p style="color: #666;">${error.message}</p>
+                    <button onclick="location.reload()" style="margin-top:24px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">再読み込み</button>
                 </div>
             `;
         }
@@ -1160,8 +1162,12 @@ class App {
 
         } catch (err) {
             console.error('[App] initDataSource failed:', err);
-            document.getElementById('container-3d').innerHTML =
-                `<div style="padding:40px;text-align:center;color:#d32f2f"><h2>Failed to load data source</h2><p>${err.message}</p></div>`;
+            document.getElementById('container-3d').innerHTML = `
+                <div style="padding:40px;text-align:center;color:#d32f2f">
+                    <h2>データソースの読み込みに失敗しました</h2>
+                    <p style="color:#666;margin-top:12px">${err.message}</p>
+                    <button onclick="window.location.href=window.location.pathname" style="margin-top:24px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">一覧に戻る</button>
+                </div>`;
         }
     }
 
