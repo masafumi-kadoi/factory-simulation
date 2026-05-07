@@ -175,8 +175,12 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 		SimulationID: sim.ID,
 		FriendlyName: sim.FriendlyName,
 		Status:       string(sim.Status),
-		EndTime:      *sim.EndTime,
-		EndReason:    string(*sim.EndReason),
+	}
+	if sim.EndTime != nil {
+		response.EndTime = *sim.EndTime
+	}
+	if sim.EndReason != nil {
+		response.EndReason = string(*sim.EndReason)
 	}
 
 	respondJSON(w, http.StatusOK, response)

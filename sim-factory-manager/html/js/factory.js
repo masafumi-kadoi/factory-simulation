@@ -47,7 +47,7 @@ async function loadStations() {
 }
 
 function formatPos(s) {
-    if (s.positionX == null) return '-';
+    if (s.positionX == null || s.positionY == null) return '-';
     return `(${+s.positionX.toFixed(1)}, ${+s.positionY.toFixed(1)})`;
 }
 

@@ -346,6 +346,9 @@ func (r *Repository) GetEvents(dataSourceID string, from, to time.Time) ([]Event
 		}
 		movEvents = append(movEvents, e)
 	}
+	if err := movRows.Err(); err != nil {
+		return nil, err
+	}
 
 	sigRows, err := r.db.Conn().Query(
 		`SELECT event_time, machine_id, signal_name, value
@@ -362,6 +365,9 @@ func (r *Repository) GetEvents(dataSourceID string, from, to time.Time) ([]Event
 			return nil, err
 		}
 		sigEvents = append(sigEvents, e)
+	}
+	if err := sigRows.Err(); err != nil {
+		return nil, err
 	}
 
 	// Merge two sorted slices into one sorted result
