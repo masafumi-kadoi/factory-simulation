@@ -1000,7 +1000,7 @@ class App {
 
             if (fromStation && fromStation.type === 'moduler') {
                 const sub = fromStation.subScenario || fromStation.config?.subScenario;
-                const exits = sub ? sub.stations.filter(s => s.type === 'exit') : [];
+                const exits = (sub && sub.stations) ? sub.stations.filter(s => s.type === 'exit') : [];
                 const exitIdx = Math.max(0, newFromPortIndex);
                 if (exits.length > 0) {
                     const exitSt = exits[exitIdx < exits.length ? exitIdx : 0];
@@ -1013,7 +1013,7 @@ class App {
 
             if (toStation && toStation.type === 'moduler') {
                 const sub = toStation.subScenario || toStation.config?.subScenario;
-                const entries = sub ? sub.stations.filter(s => s.type === 'entry') : [];
+                const entries = (sub && sub.stations) ? sub.stations.filter(s => s.type === 'entry') : [];
                 const entryIdx = Math.max(0, newToPortIndex);
                 if (entries.length > 0) {
                     const entrySt = entries[entryIdx < entries.length ? entryIdx : 0];

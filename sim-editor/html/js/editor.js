@@ -1619,8 +1619,8 @@ class ScenarioEditor {
 
         const entries = this.scenario.stations.filter(s => s.type === 'entry').length;
         const exits = this.scenario.stations.filter(s => s.type === 'exit').length;
-        const expectedIn = parentStation.config?.inputCount || 1;
-        const expectedOut = parentStation.config?.outputCount || 1;
+        const expectedIn = parentStation.config?.entryCount || 1;
+        const expectedOut = parentStation.config?.exitCount || 1;
 
         if (entries !== expectedIn || exits !== expectedOut) {
             const warn = document.createElement('span');
