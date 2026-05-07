@@ -613,6 +613,9 @@ class App {
 
     play() {
         if (this.isPlaying) return;
+        if (this.currentTime >= this.maxTime && this.maxTime > 0) {
+            this.currentTime = 0;
+        }
         this.isPlaying = true;
         this.lastFrameTime = performance.now();
         document.getElementById('play-btn').disabled = true;
@@ -1391,7 +1394,12 @@ class App {
                     ${rows}
                 </div>`;
         } catch (err) {
-            container.innerHTML = `<div style="padding:40px;text-align:center;color:#d32f2f">${err.message}</div>`;
+            container.innerHTML = `
+                <div style="padding:40px;text-align:center;color:#d32f2f">
+                    <h2>一覧の読み込みに失敗しました</h2>
+                    <p style="color:#666;margin-top:12px">${err.message}</p>
+                    <button onclick="location.reload()" style="margin-top:24px;padding:10px 24px;background:#1565c0;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">再試行</button>
+                </div>`;
         }
     }
 }
