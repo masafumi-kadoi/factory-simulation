@@ -1032,13 +1032,11 @@ export class Visualizer3D {
     _updateModulerOccupancy(activeWorks) {
         this.stations.forEach((stationData, stationId) => {
             if (stationData.stationType !== 'moduler' || !stationData.bufferSlots) return;
-            // Count child slots that have a work at them
+            // In layer-1 view, sub-station works are already mapped to the moduler's own ID.
+            // Count works whose stationId IS this moduler (works physically inside it).
             let occupied = 0;
             activeWorks.forEach((workInfo) => {
-                if (workInfo.state === 'at_station' && workInfo.stationId) {
-                    const parentId = this._getParentModulerId(workInfo.stationId);
-                    if (parentId === stationId) occupied++;
-                }
+                if (workInfo.state === 'at_station' && workInfo.stationId === stationId) occupied++;
             });
             const ratio = Math.min(1, occupied / stationData.bufferSlots);
             // Lerp color: green (0x4caf50) → red (0xe53935)
