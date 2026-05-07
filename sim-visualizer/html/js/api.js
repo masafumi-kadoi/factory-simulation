@@ -1,57 +1,65 @@
 // API client - unified gateway at /api/
 const API_BASE = '/api';
 
+async function _checkOk(res, label) {
+    if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`${label}: ${res.status} ${res.statusText}${body ? ' — ' + body.substring(0, 200) : ''}`);
+    }
+    return res;
+}
+
+async function _fetchWithRetry(url, label, retries = 2) {
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const res = await fetch(url);
+            await _checkOk(res, label);
+            return res.json();
+        } catch (err) {
+            if (i === retries) throw err;
+            await new Promise(r => setTimeout(r, 500 * (i + 1)));
+        }
+    }
+}
+
 // --- Legacy simulation endpoints (backward compat) ---
 
 export async function fetchSimulation(simulationId) {
-    const res = await fetch(`${API_BASE}/simulations/${simulationId}`);
-    if (!res.ok) throw new Error(`Failed to fetch simulation: ${res.statusText}`);
-    return res.json();
+    return _fetchWithRetry(`${API_BASE}/simulations/${simulationId}`, 'fetchSimulation');
 }
 
 export async function fetchScenario(scenarioId) {
-    const res = await fetch(`${API_BASE}/scenarios/${scenarioId}`);
-    if (!res.ok) throw new Error(`Failed to fetch scenario: ${res.statusText}`);
-    return res.json();
+    return _fetchWithRetry(`${API_BASE}/scenarios/${scenarioId}`, 'fetchScenario');
 }
 
 export async function fetchLogs(simulationId) {
-    const res = await fetch(`${API_BASE}/simulations/${simulationId}/logs`);
-    if (!res.ok) throw new Error(`Failed to fetch logs: ${res.statusText}`);
-    return res.json();
+    return _fetchWithRetry(`${API_BASE}/simulations/${simulationId}/logs`, 'fetchLogs');
 }
 
 // --- New WDH data source endpoints ---
 
 export async function fetchDataSources() {
-    const res = await fetch(`${API_BASE}/data-sources`);
-    if (!res.ok) throw new Error(`Failed to fetch data sources: ${res.statusText}`);
-    return res.json();
+    return _fetchWithRetry(`${API_BASE}/data-sources`, 'fetchDataSources');
 }
 
 export async function fetchDataSource(id) {
-    const res = await fetch(`${API_BASE}/data-sources/${id}`);
-    if (!res.ok) throw new Error(`Failed to fetch data source: ${res.statusText}`);
-    return res.json();
+    return _fetchWithRetry(`${API_BASE}/data-sources/${id}`, 'fetchDataSource');
 }
 
 export async function fetchLayout(dataSourceId) {
-    const res = await fetch(`${API_BASE}/data-sources/${dataSourceId}/layout`);
-    if (!res.ok) throw new Error(`Failed to fetch layout: ${res.statusText}`);
-    return res.json();
+    return _fetchWithRetry(`${API_BASE}/data-sources/${dataSourceId}/layout`, 'fetchLayout');
 }
 
 export async function fetchEvents(dataSourceId, from, to) {
     const params = new URLSearchParams();
-    if (from) params.set('from', from instanceof Date ? from.toISOString() : from);
-    if (to) params.set('to', to instanceof Date ? to.toISOString() : to);
-    const res = await fetch(`${API_BASE}/data-sources/${dataSourceId}/events?${params}`);
-    if (!res.ok) throw new Error(`Failed to fetch events: ${res.statusText}`);
-    return res.json();
+    if (from) params.set('from', from instanceof Date ? from.toISOString() : String(from));
+    if (to) params.set('to', to instanceof Date ? to.toISOString() : String(to));
+    return _fetchWithRetry(
+        `${API_BASE}/data-sources/${dataSourceId}/events?${params}`,
+        'fetchEvents'
+    );
 }
 
 export async function fetchExecutions() {
-    const res = await fetch(`${API_BASE}/executions`);
-    if (!res.ok) throw new Error(`Failed to fetch executions: ${res.statusText}`);
-    return res.json();
+    return _fetchWithRetry(`${API_BASE}/executions`, 'fetchExecutions');
 }
