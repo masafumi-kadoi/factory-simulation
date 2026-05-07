@@ -837,7 +837,7 @@ class App {
                     <button id="work-modal-close" style="background:none;border:none;color:#6c7086;font-size:24px;cursor:pointer;padding:0 4px">&times;</button>
                 </div>
                 <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:14px">
-                    <tr><td style="padding:4px 8px;color:#a6adc8">ワークID</td><td style="padding:4px 8px">${workId.substring(0, 12)}...</td></tr>
+                    <tr><td style="padding:4px 8px;color:#a6adc8">ワークID</td><td style="padding:4px 8px" title="${workId}">${workId.length > 12 ? workId.substring(0, 12) + '...' : workId}</td></tr>
                     <tr><td style="padding:4px 8px;color:#a6adc8">表示名</td><td style="padding:4px 8px">${friendlyName}</td></tr>
                     <tr><td style="padding:4px 8px;color:#a6adc8">ワーク種類</td><td style="padding:4px 8px">${workType}</td></tr>
                     <tr><td style="padding:4px 8px;color:#a6adc8">現在状態</td><td style="padding:4px 8px">${stateText}</td></tr>

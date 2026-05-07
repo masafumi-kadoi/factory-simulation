@@ -673,6 +673,14 @@ export class Visualizer3D {
         return sprite;
     }
 
+    _shortWorkId(workId) {
+        if (!workId) return '';
+        // UUID: 8-4-4-4-12 → show first segment only
+        const dashIdx = workId.indexOf('-');
+        if (dashIdx > 0 && dashIdx <= 8) return workId.substring(0, dashIdx);
+        return workId.length > 12 ? workId.substring(0, 12) : workId;
+    }
+
     _createWorkLabel(text, x, y, z) {
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
@@ -960,7 +968,7 @@ export class Visualizer3D {
                 group.add(wireframeMesh);
                 group.userData = { workId };
 
-                const label = this._createWorkLabel(workId, 0, 60, 0);
+                const label = this._createWorkLabel(this._shortWorkId(workId), 0, 60, 0);
 
                 this.scene.add(group);
                 this.works.set(workId, { mesh: group, label });
