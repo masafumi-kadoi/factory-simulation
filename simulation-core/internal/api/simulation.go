@@ -75,6 +75,13 @@ func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// Disable WriteTimeout — same as /run — simulation runs synchronously and can
+	// take longer than the global 5-minute WriteTimeout.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		log.Printf("[simulation] warning: failed to clear write deadline: %v", err)
+	}
+
 	if r.Method != http.MethodPost {
 		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
