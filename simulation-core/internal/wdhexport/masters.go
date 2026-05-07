@@ -15,10 +15,48 @@ func (e *Exporter) exportLocationMaster(scenario *domain.Scenario) (int, error) 
 			}
 		}
 
+		var processingTime *float64
+		if pt, ok := station.Config["processingTime"]; ok {
+			if f, ok := pt.(float64); ok {
+				processingTime = &f
+			}
+		}
+
+		var mergeCount *int16
+		if station.Type == domain.StationTypeMerge {
+			if mc, ok := station.Config["mergeCount"]; ok {
+				if f, ok := mc.(float64); ok {
+					v := int16(f)
+					mergeCount = &v
+				}
+			}
+		}
+
+		var splitCount *int16
+		if station.Type == domain.StationTypeSplit {
+			if sc, ok := station.Config["splitCount"]; ok {
+				if f, ok := sc.(float64); ok {
+					v := int16(f)
+					splitCount = &v
+				}
+			}
+		}
+
+		var parentLocationID *int64
+		if scenario.StationModulerMap != nil {
+			if parentID, ok := scenario.StationModulerMap[station.ID]; ok && parentID != "" {
+				if pid, ok := e.locationMap[parentID]; ok {
+					parentLocationID = &pid
+				}
+			}
+		}
+
 		var id int64
 		err := e.targetDB.QueryRow(
-			`INSERT INTO "LocationMaster" (name, max_capacity) VALUES ($1, $2) RETURNING id`,
-			station.ID, maxCapacity,
+			`INSERT INTO location_master (name, station_type, parent_location_id, pos_x, pos_y, pos_z, max_capacity, processing_time, merge_count, split_count) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+			station.ID, string(station.Type), parentLocationID,
+			station.PositionX, station.PositionY, nil,
+			maxCapacity, processingTime, mergeCount, splitCount,
 		).Scan(&id)
 		if err != nil {
 			return count, fmt.Errorf("failed to insert location %s: %w", station.ID, err)
@@ -29,49 +67,39 @@ func (e *Exporter) exportLocationMaster(scenario *domain.Scenario) (int, error) 
 	return count, nil
 }
 
-func (e *Exporter) exportProcMaster(scenario *domain.Scenario) (int, error) {
-	// Assign proc IDs (1000-based)
-	procID := int64(1000)
-	for _, station := range scenario.Stations {
-		e.procMap[station.ID] = procID
-		procID++
-	}
-
-	// Build predecessor/successor maps from connections
-	preMap := make(map[string]int64)
-	postMap := make(map[string]int64)
-	for _, conn := range scenario.Connections {
-		if _, exists := preMap[conn.To]; !exists {
-			if pid, ok := e.procMap[conn.From]; ok {
-				preMap[conn.To] = pid
-			}
-		}
-		if _, exists := postMap[conn.From]; !exists {
-			if pid, ok := e.procMap[conn.To]; ok {
-				postMap[conn.From] = pid
-			}
-		}
-	}
-
+func (e *Exporter) exportConnectionMaster(scenario *domain.Scenario) (int, error) {
 	count := 0
-	for _, station := range scenario.Stations {
-		pid := e.procMap[station.ID]
-		locID := e.locationMap[station.ID]
-
-		var preProcID, postProcID *int64
-		if v, ok := preMap[station.ID]; ok {
-			preProcID = &v
+	for _, conn := range scenario.Connections {
+		fromLocID, fromOk := e.locationMap[conn.From]
+		toLocID, toOk := e.locationMap[conn.To]
+		if !fromOk || !toOk {
+			continue
 		}
-		if v, ok := postMap[station.ID]; ok {
-			postProcID = &v
+
+		var fromPortIndex *int16
+		if conn.FromPortIndex >= 0 {
+			v := int16(conn.FromPortIndex)
+			fromPortIndex = &v
+		}
+
+		var toPortIndex *int16
+		if conn.ToPortIndex >= 0 {
+			v := int16(conn.ToPortIndex)
+			toPortIndex = &v
+		}
+
+		var condition *string
+		if conn.Condition != "" && conn.Condition != domain.RoutingDefault {
+			c := string(conn.Condition)
+			condition = &c
 		}
 
 		_, err := e.targetDB.Exec(
-			`INSERT INTO "ProcMaster" (id, no, pre_proc_id, post_proc_id, location_id) VALUES ($1, $2, $3, $4, $5)`,
-			pid, station.ID, preProcID, postProcID, locID,
+			`INSERT INTO connection_master (from_location_id, to_location_id, from_port_index, to_port_index, condition) VALUES ($1, $2, $3, $4, $5)`,
+			fromLocID, toLocID, fromPortIndex, toPortIndex, condition,
 		)
 		if err != nil {
-			return count, fmt.Errorf("failed to insert proc %s: %w", station.ID, err)
+			return count, fmt.Errorf("failed to insert connection %s->%s: %w", conn.From, conn.To, err)
 		}
 		count++
 	}
@@ -85,34 +113,30 @@ func (e *Exporter) exportMachineMaster(scenario *domain.Scenario) (int, error) {
 			continue
 		}
 
-		machineName := station.Name
-		if machineName == "" {
-			machineName = station.ID
+		name := station.Name
+		if name == "" {
+			name = station.ID
 		}
-		// Truncate to 50 chars for varchar(50)
-		if len(machineName) > 50 {
-			machineName = machineName[:50]
+		if len(name) > 50 {
+			name = name[:50]
 		}
 		machineID := station.ID
 		if len(machineID) > 50 {
 			machineID = machineID[:50]
 		}
 
-		andonlogTable := "sim_" + station.ID
-
 		locID := e.locationMap[station.ID]
 
-		var cycleTime *int64
+		var cycleTime *float64
 		if pt, ok := station.Config["processingTime"]; ok {
 			if f, ok := pt.(float64); ok {
-				ct := int64(f)
-				cycleTime = &ct
+				cycleTime = &f
 			}
 		}
 
 		_, err := e.targetDB.Exec(
-			`INSERT INTO "MachineMaster" (machine_id, machine_name, andonlog_table, location_id, machine_cycle_time) VALUES ($1, $2, $3, $4, $5)`,
-			machineID, machineName, andonlogTable, locID, cycleTime,
+			`INSERT INTO machine_master (id, name, location_id, cycle_time) VALUES ($1, $2, $3, $4)`,
+			machineID, name, locID, cycleTime,
 		)
 		if err != nil {
 			return count, fmt.Errorf("failed to insert machine %s: %w", station.ID, err)

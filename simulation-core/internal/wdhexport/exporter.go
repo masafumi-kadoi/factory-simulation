@@ -29,10 +29,11 @@ type ExportResult struct {
 }
 
 type ExportInput struct {
-	SimulationID string
-	Scenario     *domain.Scenario
-	WorkEvents   []simulation.WorkEventLog
-	LineageLogs  []simulation.WorkLineageLog
+	SimulationID      string
+	Scenario          *domain.Scenario
+	WorkEvents        []simulation.WorkEventLog
+	LineageLogs       []simulation.WorkLineageLog
+	StationStatusLogs []simulation.StationStatusLog
 }
 
 type Exporter struct {
@@ -41,14 +42,12 @@ type Exporter struct {
 	targetDB    *sql.DB
 	dbName      string
 	locationMap map[string]int64
-	procMap     map[string]int64
 }
 
 func NewExporter(config ExportConfig) *Exporter {
 	return &Exporter{
 		config:      config,
 		locationMap: make(map[string]int64),
-		procMap:     make(map[string]int64),
 	}
 }
 
@@ -97,58 +96,64 @@ func (e *Exporter) Export(input ExportInput) (*ExportResult, error) {
 	n, err := e.exportLocationMaster(input.Scenario)
 	if err != nil {
 		e.cleanup()
-		return nil, fmt.Errorf("failed to export LocationMaster: %w", err)
+		return nil, fmt.Errorf("failed to export location_master: %w", err)
 	}
-	result.RecordCounts["LocationMaster"] = n
+	result.RecordCounts["location_master"] = n
 
-	n, err = e.exportProcMaster(input.Scenario)
+	n, err = e.exportConnectionMaster(input.Scenario)
 	if err != nil {
 		e.cleanup()
-		return nil, fmt.Errorf("failed to export ProcMaster: %w", err)
+		return nil, fmt.Errorf("failed to export connection_master: %w", err)
 	}
-	result.RecordCounts["ProcMaster"] = n
+	result.RecordCounts["connection_master"] = n
 
 	n, err = e.exportMachineMaster(input.Scenario)
 	if err != nil {
 		e.cleanup()
-		return nil, fmt.Errorf("failed to export MachineMaster: %w", err)
+		return nil, fmt.Errorf("failed to export machine_master: %w", err)
 	}
-	result.RecordCounts["MachineMaster"] = n
+	result.RecordCounts["machine_master"] = n
 
-	n, err = e.exportItemIDInfo(input.WorkEvents)
+	n, err = e.exportItemMaster(input.WorkEvents)
 	if err != nil {
 		e.cleanup()
-		return nil, fmt.Errorf("failed to export ItemIDInfo: %w", err)
+		return nil, fmt.Errorf("failed to export item_master: %w", err)
 	}
-	result.RecordCounts["ItemIDInfo"] = n
+	result.RecordCounts["item_master"] = n
 
-	n, err = e.exportActionInfo(input.WorkEvents)
+	n, err = e.exportItemMovement(input.WorkEvents)
 	if err != nil {
 		e.cleanup()
-		return nil, fmt.Errorf("failed to export ActionInfo: %w", err)
+		return nil, fmt.Errorf("failed to export item_movement: %w", err)
 	}
-	result.RecordCounts["ActionInfo"] = n
+	result.RecordCounts["item_movement"] = n
 
-	n, err = e.exportItemConstructionMapping(input.LineageLogs)
+	n, err = e.exportItemLineage(input.LineageLogs)
 	if err != nil {
 		e.cleanup()
-		return nil, fmt.Errorf("failed to export ItemConstructionMapping: %w", err)
+		return nil, fmt.Errorf("failed to export item_lineage: %w", err)
 	}
-	result.RecordCounts["ItemConstructionMapping"] = n
+	result.RecordCounts["item_lineage"] = n
 
 	n, err = e.exportItemStatus(input.WorkEvents)
 	if err != nil {
 		e.cleanup()
-		return nil, fmt.Errorf("failed to export ItemStatus: %w", err)
+		return nil, fmt.Errorf("failed to export item_status: %w", err)
 	}
-	result.RecordCounts["ItemStatus"] = n
+	result.RecordCounts["item_status"] = n
+
+	n, err = e.exportMachineSignal(input.StationStatusLogs)
+	if err != nil {
+		e.cleanup()
+		return nil, fmt.Errorf("failed to export machine_signal: %w", err)
+	}
+	result.RecordCounts["machine_signal"] = n
 
 	log.Printf("[WDH Export] Completed: db=%s records=%v", e.dbName, result.RecordCounts)
 	return result, nil
 }
 
 func (e *Exporter) createDatabase() error {
-	// Terminate existing connections to the target DB
 	e.adminDB.Exec(fmt.Sprintf(
 		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()`,
 		e.dbName))

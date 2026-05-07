@@ -59,6 +59,12 @@ func (h *Handler) HandleExportWDH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	statusLogs, err := h.repo.GetStationStatusLogs(simulationID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get status logs: %v", err))
+		return
+	}
+
 	baseTime := sim.CreatedAt
 
 	var req ExportWDHRequest
@@ -84,10 +90,11 @@ func (h *Handler) HandleExportWDH(w http.ResponseWriter, r *http.Request) {
 	})
 
 	result, err := exporter.Export(wdhexport.ExportInput{
-		SimulationID: simulationID,
-		Scenario:     flatScenario,
-		WorkEvents:   workEvents,
-		LineageLogs:  lineageLogs,
+		SimulationID:      simulationID,
+		Scenario:          flatScenario,
+		WorkEvents:        workEvents,
+		LineageLogs:       lineageLogs,
+		StationStatusLogs: statusLogs,
 	})
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Export failed: %v", err))

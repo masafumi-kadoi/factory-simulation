@@ -111,9 +111,9 @@ func TestCreateSchemaAndTables(t *testing.T) {
 	}
 
 	expectedTables := []string{
-		"LocationMaster", "ProcMaster", "MachineMaster",
-		"ActionInfo", "ItemIDInfo", "ItemConstructionMapping",
-		"ItemStatus", "ExpiryTimeInfo", "MachineStatus", "InvalidInputRecords",
+		"location_master", "connection_master", "machine_master",
+		"item_master", "item_movement", "item_lineage",
+		"item_status", "item_expiry", "machine_signal", "machine_status", "system_error",
 	}
 	for _, table := range expectedTables {
 		var exists bool
@@ -127,17 +127,6 @@ func TestCreateSchemaAndTables(t *testing.T) {
 		if !exists {
 			t.Errorf("Table %s was not created", table)
 		}
-	}
-
-	var exists bool
-	err = targetDB.QueryRow(
-		`SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'action_status')`,
-	).Scan(&exists)
-	if err != nil {
-		t.Errorf("Error checking enum type: %v", err)
-	}
-	if !exists {
-		t.Error("ENUM type action_status was not created")
 	}
 }
 
@@ -167,17 +156,19 @@ func TestExportLocationMaster(t *testing.T) {
 		t.Fatalf("CreateSchema failed: %v", err)
 	}
 
+	posX := 100.0
+	posY := 200.0
+
 	e := &Exporter{
 		config:      config,
 		targetDB:    targetDB,
 		locationMap: make(map[string]int64),
-		procMap:     make(map[string]int64),
 	}
 
 	scenario := &domain.Scenario{
 		Stations: []domain.Station{
-			{ID: "source1", Type: domain.StationTypeSource, Config: map[string]interface{}{}},
-			{ID: "proc1", Type: domain.StationTypeProcessing, Config: map[string]interface{}{"bufferCapacity": float64(5)}},
+			{ID: "source1", Type: domain.StationTypeSource, PositionX: &posX, PositionY: &posY, Config: map[string]interface{}{}},
+			{ID: "proc1", Type: domain.StationTypeProcessing, Config: map[string]interface{}{"bufferCapacity": float64(5), "processingTime": float64(3.0)}},
 			{ID: "drain1", Type: domain.StationTypeDrain, Config: map[string]interface{}{}},
 		},
 	}
@@ -190,43 +181,45 @@ func TestExportLocationMaster(t *testing.T) {
 		t.Errorf("Expected 3 locations, got %d", count)
 	}
 
-	// Verify locationMap
 	if _, ok := e.locationMap["source1"]; !ok {
 		t.Error("source1 not in locationMap")
 	}
-	if _, ok := e.locationMap["proc1"]; !ok {
-		t.Error("proc1 not in locationMap")
+
+	// Verify pos_x, pos_y, station_type
+	var gotPosX, gotPosY float64
+	var stationType string
+	err = targetDB.QueryRow(`SELECT pos_x, pos_y, station_type FROM location_master WHERE name = $1`, "source1").Scan(&gotPosX, &gotPosY, &stationType)
+	if err != nil {
+		t.Fatalf("Failed to query source1: %v", err)
 	}
-	if _, ok := e.locationMap["drain1"]; !ok {
-		t.Error("drain1 not in locationMap")
+	if gotPosX != 100.0 || gotPosY != 200.0 {
+		t.Errorf("Expected pos (100, 200), got (%v, %v)", gotPosX, gotPosY)
+	}
+	if stationType != "source" {
+		t.Errorf("Expected station_type=source, got %s", stationType)
 	}
 
-	// Verify max_capacity
+	// Verify max_capacity and processing_time
 	var maxCap int64
-	err = targetDB.QueryRow(`SELECT max_capacity FROM "LocationMaster" WHERE name = $1`, "proc1").Scan(&maxCap)
+	var procTime float64
+	err = targetDB.QueryRow(`SELECT max_capacity, processing_time FROM location_master WHERE name = $1`, "proc1").Scan(&maxCap, &procTime)
 	if err != nil {
 		t.Fatalf("Failed to query proc1: %v", err)
 	}
 	if maxCap != 5 {
-		t.Errorf("Expected max_capacity=5 for proc1, got %d", maxCap)
+		t.Errorf("Expected max_capacity=5, got %d", maxCap)
 	}
-
-	var defaultCap int64
-	err = targetDB.QueryRow(`SELECT max_capacity FROM "LocationMaster" WHERE name = $1`, "source1").Scan(&defaultCap)
-	if err != nil {
-		t.Fatalf("Failed to query source1: %v", err)
-	}
-	if defaultCap != 1 {
-		t.Errorf("Expected default max_capacity=1, got %d", defaultCap)
+	if procTime != 3.0 {
+		t.Errorf("Expected processing_time=3.0, got %v", procTime)
 	}
 }
 
-func TestExportActionInfo(t *testing.T) {
+func TestExportItemMovement(t *testing.T) {
 	config := getTestDBConfig()
 	adminDB := connectTestDB(t, config)
 	defer adminDB.Close()
 
-	dbName := "wdh_test_action"
+	dbName := "wdh_test_move"
 	cleanupTestDB(t, config, dbName)
 	defer cleanupTestDB(t, config, dbName)
 
@@ -251,43 +244,106 @@ func TestExportActionInfo(t *testing.T) {
 		config:      config,
 		targetDB:    targetDB,
 		locationMap: map[string]int64{"source1": 1, "proc1": 2, "drain1": 3},
-		procMap:     make(map[string]int64),
 	}
 
 	workEvents := []simulation.WorkEventLog{
-		{WorkID: "w1", StationID: "source1", Timestamp: 0.0, EventType: "WorkCreated"},
-		{WorkID: "w1", StationID: "source1", Timestamp: 0.0, EventType: "WorkArrived"},
-		{WorkID: "w1", StationID: "source1", Timestamp: 1.0, EventType: "WorkDeparted"},
-		{WorkID: "w1", StationID: "proc1", Timestamp: 1.0, EventType: "WorkArrived"},
-		{WorkID: "w1", StationID: "proc1", Timestamp: 3.0, EventType: "WorkDeparted"},
-		{WorkID: "w1", StationID: "drain1", Timestamp: 3.0, EventType: "WorkArrived"},
+		{WorkID: "w1", StationID: "source1", Timestamp: 0.0, EventType: "WorkCreated", PortIndex: -1},
+		{WorkID: "w1", StationID: "source1", Timestamp: 0.0, EventType: "WorkArrived", PortIndex: -1},
+		{WorkID: "w1", StationID: "source1", Timestamp: 1.0, EventType: "WorkDeparted", PortIndex: -1},
+		{WorkID: "w1", StationID: "proc1", Timestamp: 1.0, EventType: "WorkArrived", PortIndex: -1},
+		{WorkID: "w1", StationID: "proc1", Timestamp: 3.0, EventType: "WorkDeparted", PortIndex: -1},
+		{WorkID: "w1", StationID: "drain1", Timestamp: 3.0, EventType: "WorkArrived", PortIndex: -1},
 	}
 
-	count, err := e.exportActionInfo(workEvents)
+	count, err := e.exportItemMovement(workEvents)
 	if err != nil {
-		t.Fatalf("exportActionInfo failed: %v", err)
+		t.Fatalf("exportItemMovement failed: %v", err)
 	}
-
-	// 2 arrived + 2 departed for proc/drain arrivals, source arrive/depart = total 6 action events (3 arrived + 2 departed... let me count)
-	// WorkArrived events: source1(0.0), proc1(1.0), drain1(3.0) = 3 arrived
-	// WorkDeparted events: source1(1.0), proc1(3.0) = 2 departed
-	// Total = 5
 	if count != 5 {
-		t.Errorf("Expected 5 action records, got %d", count)
+		t.Errorf("Expected 5 movement records, got %d", count)
 	}
 
-	// Verify an arrived record has correct origin
-	var originLocID *int64
-	var destLocID int64
+	// Verify arrived at proc1 has from_location_id = source1 (1)
+	var fromLocID *int64
+	var toLocID int64
 	err = targetDB.QueryRow(
-		`SELECT origin_location_id, destination_location_id FROM "ActionInfo" WHERE item_id = $1 AND action_status = 'arrived' AND destination_location_id = $2`,
+		`SELECT from_location_id, to_location_id FROM item_movement WHERE item_id = $1 AND movement_type = 'arrived' AND to_location_id = $2`,
 		"w1", 2,
-	).Scan(&originLocID, &destLocID)
+	).Scan(&fromLocID, &toLocID)
 	if err != nil {
-		t.Fatalf("Failed to query ActionInfo: %v", err)
+		t.Fatalf("Failed to query item_movement: %v", err)
 	}
-	if originLocID == nil || *originLocID != 1 {
-		t.Errorf("Expected origin_location_id=1 for proc1 arrival, got %v", originLocID)
+	if fromLocID == nil || *fromLocID != 1 {
+		t.Errorf("Expected from_location_id=1, got %v", fromLocID)
+	}
+}
+
+func TestExportMachineSignal(t *testing.T) {
+	config := getTestDBConfig()
+	adminDB := connectTestDB(t, config)
+	defer adminDB.Close()
+
+	dbName := "wdh_test_signal"
+	cleanupTestDB(t, config, dbName)
+	defer cleanupTestDB(t, config, dbName)
+
+	_, err := adminDB.Exec(fmt.Sprintf(`CREATE DATABASE "%s"`, dbName))
+	if err != nil {
+		t.Fatalf("Failed to create test DB: %v", err)
+	}
+
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		config.Host, config.Port, config.User, config.Password, dbName)
+	targetDB, err := sql.Open("postgres", connStr)
+	if err != nil {
+		t.Fatalf("Failed to connect to target DB: %v", err)
+	}
+	defer targetDB.Close()
+
+	if err := CreateSchema(targetDB); err != nil {
+		t.Fatalf("CreateSchema failed: %v", err)
+	}
+
+	e := &Exporter{
+		config:      config,
+		targetDB:    targetDB,
+		locationMap: map[string]int64{"proc1": 1},
+	}
+
+	statusLogs := []simulation.StationStatusLog{
+		{StationID: "proc1", Timestamp: 0.0, StatusType: "signal_change", SignalName: "inputReady", Value: true, OldValue: false, RuleID: "rule1"},
+		{StationID: "proc1", Timestamp: 1.0, StatusType: "signal_change", SignalName: "outputReady", Value: true, OldValue: false, RuleID: "rule2"},
+		{StationID: "proc1", Timestamp: 2.0, StatusType: "signal_change", SignalName: "inputReady", Value: false, OldValue: true, RuleID: "rule1"},
+		{StationID: "proc1", Timestamp: 0.5, StatusType: "処理完了", SignalName: "", Value: true},
+	}
+
+	count, err := e.exportMachineSignal(statusLogs)
+	if err != nil {
+		t.Fatalf("exportMachineSignal failed: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("Expected 3 signal records (non-signal_change filtered), got %d", count)
+	}
+
+	// Verify data
+	var signalName string
+	var value, oldValue bool
+	var ruleID string
+	err = targetDB.QueryRow(
+		`SELECT signal_name, value, old_value, rule_id FROM machine_signal WHERE machine_id = $1 ORDER BY event_time LIMIT 1`,
+		"proc1",
+	).Scan(&signalName, &value, &oldValue, &ruleID)
+	if err != nil {
+		t.Fatalf("Failed to query machine_signal: %v", err)
+	}
+	if signalName != "inputReady" {
+		t.Errorf("Expected signal_name=inputReady, got %s", signalName)
+	}
+	if !value {
+		t.Error("Expected value=true")
+	}
+	if oldValue {
+		t.Error("Expected old_value=false")
 	}
 }
 
@@ -301,37 +357,47 @@ func TestFullExport(t *testing.T) {
 	cleanupTestDB(t, config, dbName)
 	defer cleanupTestDB(t, config, dbName)
 
+	posX1, posY1 := 0.0, 0.0
+	posX2, posY2 := 100.0, 0.0
+	posX3, posY3 := 200.0, 0.0
+
 	scenario := &domain.Scenario{
 		Stations: []domain.Station{
-			{ID: "source1", Type: domain.StationTypeSource, Config: map[string]interface{}{"interArrivalTime": float64(2)}},
-			{ID: "proc1", Name: "Processor A", Type: domain.StationTypeProcessing, Config: map[string]interface{}{"processingTime": float64(3)}},
-			{ID: "drain1", Type: domain.StationTypeDrain, Config: map[string]interface{}{}},
+			{ID: "source1", Type: domain.StationTypeSource, PositionX: &posX1, PositionY: &posY1, Config: map[string]interface{}{"interArrivalTime": float64(2)}},
+			{ID: "proc1", Name: "Processor A", Type: domain.StationTypeProcessing, PositionX: &posX2, PositionY: &posY2, Config: map[string]interface{}{"processingTime": float64(3)}},
+			{ID: "drain1", Type: domain.StationTypeDrain, PositionX: &posX3, PositionY: &posY3, Config: map[string]interface{}{}},
 		},
 		Connections: []domain.Connection{
-			{From: "source1", To: "proc1"},
-			{From: "proc1", To: "drain1"},
+			{From: "source1", To: "proc1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
+			{From: "proc1", To: "drain1", Condition: domain.RoutingDefault, FromPortIndex: -1, ToPortIndex: -1},
 		},
 	}
 
 	workEvents := []simulation.WorkEventLog{
-		{WorkID: "w1", WorkType: "typeA", StationID: "source1", Timestamp: 0.0, EventType: "WorkCreated"},
-		{WorkID: "w1", StationID: "source1", Timestamp: 0.0, EventType: "WorkArrived"},
-		{WorkID: "w1", StationID: "source1", Timestamp: 0.5, EventType: "WorkDeparted"},
-		{WorkID: "w1", StationID: "proc1", Timestamp: 0.5, EventType: "WorkArrived"},
-		{WorkID: "w1", StationID: "proc1", Timestamp: 3.5, EventType: "ProcessingCompleted", QualityStatus: "OK"},
-		{WorkID: "w1", StationID: "proc1", Timestamp: 3.5, EventType: "WorkDeparted"},
-		{WorkID: "w1", StationID: "drain1", Timestamp: 3.5, EventType: "WorkArrived"},
-		{WorkID: "w1", StationID: "drain1", Timestamp: 3.5, EventType: "WorkDestroyed"},
+		{WorkID: "w1", WorkType: "typeA", StationID: "source1", Timestamp: 0.0, EventType: "WorkCreated", PortIndex: -1},
+		{WorkID: "w1", StationID: "source1", Timestamp: 0.0, EventType: "WorkArrived", PortIndex: -1},
+		{WorkID: "w1", StationID: "source1", Timestamp: 0.5, EventType: "WorkDeparted", PortIndex: -1},
+		{WorkID: "w1", StationID: "proc1", Timestamp: 0.5, EventType: "WorkArrived", PortIndex: -1},
+		{WorkID: "w1", StationID: "proc1", Timestamp: 3.5, EventType: "ProcessingCompleted", QualityStatus: "OK", PortIndex: -1},
+		{WorkID: "w1", StationID: "proc1", Timestamp: 3.5, EventType: "WorkDeparted", PortIndex: -1},
+		{WorkID: "w1", StationID: "drain1", Timestamp: 3.5, EventType: "WorkArrived", PortIndex: -1},
+		{WorkID: "w1", StationID: "drain1", Timestamp: 3.5, EventType: "WorkDestroyed", PortIndex: -1},
+	}
+
+	statusLogs := []simulation.StationStatusLog{
+		{StationID: "proc1", Timestamp: 0.0, StatusType: "signal_change", SignalName: "inputReady", Value: true, OldValue: false, RuleID: "default"},
+		{StationID: "proc1", Timestamp: 0.5, StatusType: "signal_change", SignalName: "inputReady", Value: false, OldValue: true, RuleID: "default"},
 	}
 
 	lineageLogs := []simulation.WorkLineageLog{}
 
 	exporter := NewExporter(config)
 	result, err := exporter.Export(ExportInput{
-		SimulationID: simID,
-		Scenario:     scenario,
-		WorkEvents:   workEvents,
-		LineageLogs:  lineageLogs,
+		SimulationID:      simID,
+		Scenario:          scenario,
+		WorkEvents:        workEvents,
+		LineageLogs:       lineageLogs,
+		StationStatusLogs: statusLogs,
 	})
 	if err != nil {
 		t.Fatalf("Export failed: %v", err)
@@ -341,25 +407,26 @@ func TestFullExport(t *testing.T) {
 		t.Errorf("Expected database name %s, got %s", dbName, result.DatabaseName)
 	}
 
-	if result.RecordCounts["LocationMaster"] != 3 {
-		t.Errorf("Expected 3 LocationMaster records, got %d", result.RecordCounts["LocationMaster"])
+	if result.RecordCounts["location_master"] != 3 {
+		t.Errorf("Expected 3 location_master records, got %d", result.RecordCounts["location_master"])
 	}
-	if result.RecordCounts["ProcMaster"] != 3 {
-		t.Errorf("Expected 3 ProcMaster records, got %d", result.RecordCounts["ProcMaster"])
+	if result.RecordCounts["connection_master"] != 2 {
+		t.Errorf("Expected 2 connection_master records, got %d", result.RecordCounts["connection_master"])
 	}
-	// MachineMaster: only proc1 (source and drain are excluded)
-	if result.RecordCounts["MachineMaster"] != 1 {
-		t.Errorf("Expected 1 MachineMaster record, got %d", result.RecordCounts["MachineMaster"])
+	if result.RecordCounts["machine_master"] != 1 {
+		t.Errorf("Expected 1 machine_master record, got %d", result.RecordCounts["machine_master"])
 	}
-	if result.RecordCounts["ItemIDInfo"] != 1 {
-		t.Errorf("Expected 1 ItemIDInfo record, got %d", result.RecordCounts["ItemIDInfo"])
+	if result.RecordCounts["item_master"] != 1 {
+		t.Errorf("Expected 1 item_master record, got %d", result.RecordCounts["item_master"])
 	}
-	// ActionInfo: 3 arrived + 2 departed = 5
-	if result.RecordCounts["ActionInfo"] != 5 {
-		t.Errorf("Expected 5 ActionInfo records, got %d", result.RecordCounts["ActionInfo"])
+	if result.RecordCounts["item_movement"] != 5 {
+		t.Errorf("Expected 5 item_movement records, got %d", result.RecordCounts["item_movement"])
 	}
-	if result.RecordCounts["ItemStatus"] != 1 {
-		t.Errorf("Expected 1 ItemStatus record, got %d", result.RecordCounts["ItemStatus"])
+	if result.RecordCounts["item_status"] != 1 {
+		t.Errorf("Expected 1 item_status record, got %d", result.RecordCounts["item_status"])
+	}
+	if result.RecordCounts["machine_signal"] != 2 {
+		t.Errorf("Expected 2 machine_signal records, got %d", result.RecordCounts["machine_signal"])
 	}
 
 	// Verify data in created DB
@@ -371,37 +438,47 @@ func TestFullExport(t *testing.T) {
 	}
 	defer targetDB.Close()
 
-	// Check ItemIDInfo
+	// Check item_master
 	var itemType string
-	err = targetDB.QueryRow(`SELECT item_type FROM "ItemIDInfo" WHERE item_id = $1`, "w1").Scan(&itemType)
+	err = targetDB.QueryRow(`SELECT item_type FROM item_master WHERE id = $1`, "w1").Scan(&itemType)
 	if err != nil {
-		t.Fatalf("Failed to query ItemIDInfo: %v", err)
+		t.Fatalf("Failed to query item_master: %v", err)
 	}
 	if itemType != "typeA" {
 		t.Errorf("Expected item_type=typeA, got %s", itemType)
 	}
 
-	// Check MachineMaster
+	// Check machine_master
 	var machineName string
-	var cycleTime int64
-	err = targetDB.QueryRow(`SELECT machine_name, machine_cycle_time FROM "MachineMaster" WHERE machine_id = $1`, "proc1").Scan(&machineName, &cycleTime)
+	var cycleTime float64
+	err = targetDB.QueryRow(`SELECT name, cycle_time FROM machine_master WHERE id = $1`, "proc1").Scan(&machineName, &cycleTime)
 	if err != nil {
-		t.Fatalf("Failed to query MachineMaster: %v", err)
+		t.Fatalf("Failed to query machine_master: %v", err)
 	}
 	if machineName != "Processor A" {
-		t.Errorf("Expected machine_name='Processor A', got %s", machineName)
+		t.Errorf("Expected name='Processor A', got %s", machineName)
 	}
 	if cycleTime != 3 {
-		t.Errorf("Expected machine_cycle_time=3, got %d", cycleTime)
+		t.Errorf("Expected cycle_time=3, got %v", cycleTime)
 	}
 
-	// Check ItemStatus: OK → 1
-	var itemStatus int
-	err = targetDB.QueryRow(`SELECT item_status FROM "ItemStatus" WHERE item_id = $1`, "w1").Scan(&itemStatus)
+	// Check connection_master
+	var connCount int
+	err = targetDB.QueryRow(`SELECT count(*) FROM connection_master`).Scan(&connCount)
 	if err != nil {
-		t.Fatalf("Failed to query ItemStatus: %v", err)
+		t.Fatalf("Failed to query connection_master: %v", err)
 	}
-	if itemStatus != 1 {
-		t.Errorf("Expected item_status=1 (OK), got %d", itemStatus)
+	if connCount != 2 {
+		t.Errorf("Expected 2 connections, got %d", connCount)
+	}
+
+	// Check location_master has position
+	var px, py float64
+	err = targetDB.QueryRow(`SELECT pos_x, pos_y FROM location_master WHERE name = $1`, "proc1").Scan(&px, &py)
+	if err != nil {
+		t.Fatalf("Failed to query location pos: %v", err)
+	}
+	if px != 100.0 || py != 0.0 {
+		t.Errorf("Expected pos (100, 0), got (%v, %v)", px, py)
 	}
 }
