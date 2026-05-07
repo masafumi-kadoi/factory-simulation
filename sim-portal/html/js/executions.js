@@ -117,7 +117,9 @@ function renderExecutionRow(exec) {
 
     let errorHtml = '';
     if (exec.status === 'error' && exec.errorMessage) {
-        errorHtml = `<br><span class="text-muted" style="font-size: 0.75rem">${escapeHtml(exec.errorMessage)}</span>`;
+        let displayError = exec.errorMessage;
+        try { const p = JSON.parse(exec.errorMessage); displayError = p.message || displayError; } catch (_) {}
+        errorHtml = `<br><span class="text-muted" style="font-size: 0.75rem">${escapeHtml(displayError)}</span>`;
     }
 
     return `

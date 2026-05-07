@@ -153,7 +153,12 @@ function renderExecutionItem(exec, number) {
 
     let errorHtml = '';
     if (exec.status === 'error' && exec.errorMessage) {
-        errorHtml = `<div class="error-message" style="margin-top: 0.5rem; font-size: 0.8rem">${escapeHtml(exec.errorMessage)}</div>`;
+        let displayError = exec.errorMessage;
+        try {
+            const parsed = JSON.parse(exec.errorMessage);
+            displayError = parsed.message || exec.errorMessage;
+        } catch (_) {}
+        errorHtml = `<div class="error-message" style="margin-top: 0.5rem; font-size: 0.8rem">${escapeHtml(displayError)}</div>`;
     }
 
     let actions = '';
