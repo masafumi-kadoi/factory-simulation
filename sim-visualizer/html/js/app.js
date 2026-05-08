@@ -139,6 +139,13 @@ class App {
             left.appendChild(item);
         });
 
+        // 結果一覧リンク
+        const listLink = document.createElement('a');
+        listLink.href = '/visualizer/index-list.html';
+        listLink.className = 'menu-list-link';
+        listLink.textContent = '結果一覧';
+        left.appendChild(listLink);
+
         container.appendChild(left);
 
         const right = document.createElement('div');

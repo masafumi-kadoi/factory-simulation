@@ -5,11 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simulation Results - Factory Simulation</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -34,119 +30,88 @@
             text-align: center;
         }
 
-        header h1 {
-            font-size: 32px;
-            margin-bottom: 10px;
-        }
+        header h1 { font-size: 32px; margin-bottom: 10px; }
+        header p { font-size: 16px; opacity: 0.9; }
 
-        header p {
-            font-size: 16px;
-            opacity: 0.9;
-        }
+        main { padding: 30px; }
 
-        main {
-            padding: 30px;
-        }
+        .loading { text-align: center; padding: 60px 20px; color: #666; font-size: 18px; }
 
-        .loading {
-            text-align: center;
-            padding: 60px 20px;
-            color: #666;
-            font-size: 18px;
-        }
+        .error { text-align: center; padding: 60px 20px; color: #d32f2f; }
+        .error h2 { margin-bottom: 10px; }
 
-        .error {
-            text-align: center;
-            padding: 60px 20px;
-            color: #d32f2f;
-        }
+        .result-list { list-style: none; }
 
-        .error h2 {
-            margin-bottom: 10px;
-        }
-
-        .simulation-list {
-            list-style: none;
-        }
-
-        .simulation-item {
+        .result-item {
             background: #f8f9fa;
             border: 1px solid #dee2e6;
             border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .simulation-item:hover {
-            background: #e9ecef;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            transform: translateY(-2px);
-        }
-
-        .simulation-item h3 {
-            color: #495057;
-            font-size: 18px;
-            margin-bottom: 10px;
-        }
-
-        .simulation-meta {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            color: #6c757d;
-            font-size: 14px;
-            margin-top: 10px;
-        }
-
-        .simulation-meta span {
+            padding: 16px 20px;
+            margin-bottom: 12px;
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 16px;
         }
 
-        .status {
+        .result-item:hover { background: #e9ecef; }
+
+        .result-item-main { flex: 1; cursor: pointer; }
+
+        .result-item h3 { color: #495057; font-size: 16px; margin-bottom: 6px; }
+
+        .result-meta {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            color: #6c757d;
+            font-size: 13px;
+        }
+
+        .badge {
             display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
+            padding: 2px 10px;
+            border-radius: 10px;
             font-size: 12px;
             font-weight: 600;
-            text-transform: uppercase;
         }
 
-        .status.completed {
-            background: #d4edda;
-            color: #155724;
+        .badge-simulation { background: #cfe2ff; color: #084298; }
+        .badge-realtime { background: #d1e7dd; color: #0a3622; }
+        .badge-live { background: #d1e7dd; color: #0a3622; }
+        .badge-ended { background: #e2e3e5; color: #41464b; }
+
+        .live-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #198754;
+            border-radius: 50%;
+            margin-right: 4px;
+            animation: pulse 1.5s infinite;
         }
 
-        .status.failed {
-            background: #f8d7da;
-            color: #721c24;
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
         }
 
-        .empty-state {
-            text-align: center;
-            padding: 80px 20px;
-            color: #6c757d;
+        .btn {
+            padding: 6px 14px;
+            border-radius: 5px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            white-space: nowrap;
         }
 
-        .empty-state h2 {
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5a6fd6; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #bb2d3b; }
 
-        .empty-state p {
-            font-size: 16px;
-            margin-bottom: 20px;
-        }
-
-        .empty-state code {
-            background: #f8f9fa;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 14px;
-        }
+        .empty-state { text-align: center; padding: 80px 20px; color: #6c757d; }
+        .empty-state h2 { font-size: 24px; margin-bottom: 10px; }
 
         .refresh-btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -156,19 +121,10 @@
             border-radius: 6px;
             font-size: 16px;
             cursor: pointer;
-            transition: all 0.3s ease;
             margin-top: 20px;
         }
 
-        .refresh-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .icon {
-            font-style: normal;
-            margin-right: 5px;
-        }
+        .refresh-btn:hover { opacity: 0.9; }
     </style>
 </head>
 <body>
@@ -180,14 +136,10 @@
 
         <main>
             <div id="content">
-                <div class="loading">
-                    <p>📊 シミュレーション結果を読み込み中...</p>
-                </div>
+                <div class="loading"><p>シミュレーション結果を読み込み中...</p></div>
             </div>
             <div style="text-align: center;">
-                <button class="refresh-btn" onclick="location.reload()">
-                    🔄 更新
-                </button>
+                <button class="refresh-btn" onclick="location.reload()">更新</button>
             </div>
         </main>
     </div>
@@ -195,90 +147,85 @@
     <script type="module">
         const API_BASE = '/api';
 
-        async function fetchSimulations() {
+        function escapeHtml(text) {
+            if (!text) return '';
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        function formatDate(ts) {
+            if (!ts) return 'N/A';
+            return new Date(ts).toLocaleString('ja-JP');
+        }
+
+        async function loadDataSources() {
+            const content = document.getElementById('content');
             try {
-                const response = await fetch(`${API_BASE}/simulations`);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const res = await fetch(`${API_BASE}/data-sources`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const list = await res.json();
+
+                if (!list || list.length === 0) {
+                    content.innerHTML = `
+                        <div class="empty-state">
+                            <h2>シミュレーション結果がありません</h2>
+                            <p>まだシミュレーションが実行されていません。</p>
+                        </div>`;
+                    return;
                 }
-                return await response.json();
-            } catch (error) {
-                console.error('Failed to fetch simulations:', error);
-                throw error;
-            }
-        }
 
-        function formatDate(timestamp) {
-            if (!timestamp) return 'N/A';
-            const date = new Date(timestamp);
-            return date.toLocaleString('ja-JP');
-        }
+                const items = list.map(d => {
+                    const isLive = !d.endedAt;
+                    const isSimulation = d.sourceType === 'simulation';
+                    const label = d.label || d.friendlyName || (d.id || '').substring(0, 8) + '...';
+                    const typeBadge = isSimulation
+                        ? `<span class="badge badge-simulation">simulation</span>`
+                        : `<span class="badge badge-realtime">realtime</span>`;
+                    const statusBadge = isLive
+                        ? `<span class="badge badge-live"><span class="live-dot"></span>Live</span>`
+                        : `<span class="badge badge-ended">Ended</span>`;
+                    const viewUrl = `/?ds=${encodeURIComponent(d.id)}${isLive ? '&live=1' : ''}`;
 
-        function renderSimulations(simulations) {
-            const content = document.getElementById('content');
+                    return `
+                        <li class="result-item">
+                            <div class="result-item-main" onclick="window.location.href='${escapeHtml(viewUrl)}'">
+                                <h3>${escapeHtml(label)}</h3>
+                                <div class="result-meta">
+                                    ${typeBadge}
+                                    ${statusBadge}
+                                    <span>${(d.id || '').substring(0, 8)}...</span>
+                                    <span>${formatDate(d.startedAt)}</span>
+                                    ${d.endedAt ? `<span>〜 ${formatDate(d.endedAt)}</span>` : ''}
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" onclick="window.open('${escapeHtml(viewUrl)}', '_blank')">View</button>
+                            <button class="btn btn-danger" data-id="${escapeHtml(d.id)}" onclick="deleteResult(this.dataset.id)">Delete</button>
+                        </li>`;
+                }).join('');
 
-            if (!simulations || simulations.length === 0) {
+                content.innerHTML = `<ul class="result-list">${items}</ul>`;
+            } catch (err) {
                 content.innerHTML = `
-                    <div class="empty-state">
-                        <h2>📭 シミュレーション結果がありません</h2>
-                        <p>まだシミュレーションが実行されていません。</p>
-                        <p>以下のコマンドでテストを実行してください：</p>
-                        <code>cd simulation-core/test && bash run_all_tests.sh</code>
-                    </div>
-                `;
-                return;
+                    <div class="error">
+                        <h2>エラーが発生しました</h2>
+                        <p>${escapeHtml(err.message)}</p>
+                    </div>`;
             }
-
-            // Sort by creation time (most recent first)
-            simulations.sort((a, b) => {
-                const dateA = new Date(a.createdAt || 0);
-                const dateB = new Date(b.createdAt || 0);
-                return dateB - dateA;
-            });
-
-            const listHTML = simulations.map(sim => `
-                <li class="simulation-item" onclick="window.location.href='/?sim=${sim.simulationId}'">
-                    <h3>${sim.friendlyName || sim.simulationId}</h3>
-                    <span class="status ${sim.status}">${sim.status}</span>
-                    <div class="simulation-meta">
-                        <span><span class="icon">🆔</span> ${sim.simulationId.substring(0, 8)}...</span>
-                        <span><span class="icon">⏱️</span> 終了時刻: ${sim.endTime ? sim.endTime.toFixed(2) + 's' : 'N/A'}</span>
-                        <span><span class="icon">🏁</span> ${sim.endReason || 'N/A'}</span>
-                        <span><span class="icon">📅</span> ${formatDate(sim.createdAt)}</span>
-                    </div>
-                </li>
-            `).join('');
-
-            content.innerHTML = `
-                <ul class="simulation-list">
-                    ${listHTML}
-                </ul>
-            `;
         }
 
-        function renderError(error) {
-            const content = document.getElementById('content');
-            content.innerHTML = `
-                <div class="error">
-                    <h2>❌ エラーが発生しました</h2>
-                    <p>${error.message}</p>
-                    <p style="font-size: 14px; margin-top: 20px; color: #666;">
-                        APIサーバーが起動しているか確認してください。<br>
-                        <code>docker-compose ps</code>
-                    </p>
-                </div>
-            `;
-        }
-
-        // Load simulations on page load
-        (async () => {
+        window.deleteResult = async function(id) {
+            if (!confirm('このシミュレーション結果を削除しますか？\n（イベントデータも含めて削除されます）')) return;
             try {
-                const simulations = await fetchSimulations();
-                renderSimulations(simulations);
-            } catch (error) {
-                renderError(error);
+                const res = await fetch(`${API_BASE}/data-sources/${id}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                await loadDataSources();
+            } catch (err) {
+                alert('削除に失敗しました: ' + err.message);
             }
-        })();
+        };
+
+        loadDataSources();
     </script>
 </body>
 </html>

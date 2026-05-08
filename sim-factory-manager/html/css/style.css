@@ -95,16 +95,25 @@ tr:hover td { background: #fafafa; }
     background: #fff;
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,.12);
-    padding: 20px;
-    cursor: pointer;
-    text-decoration: none;
-    color: inherit;
     transition: box-shadow .15s, transform .15s;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    position: relative;
 }
 .factory-card:hover {
     box-shadow: 0 4px 12px rgba(0,0,0,.15);
     transform: translateY(-2px);
+}
+.factory-card-link {
+    display: block;
+    padding: 20px 20px 12px;
+    text-decoration: none;
+    color: inherit;
+    flex: 1;
+}
+.factory-card-delete {
+    align-self: flex-end;
+    margin: 0 12px 12px;
 }
 .factory-card-name { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .factory-card-meta { font-size: 13px; color: #757575; }

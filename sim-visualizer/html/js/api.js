@@ -63,3 +63,11 @@ export async function fetchEvents(dataSourceId, from, to) {
 export async function fetchExecutions() {
     return _fetchWithRetry(`${API_BASE}/executions`, 'fetchExecutions');
 }
+
+export async function deleteDataSource(id) {
+    const res = await fetch(`${API_BASE}/data-sources/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`deleteDataSource: ${res.status} ${res.statusText}${body ? ' — ' + body.substring(0, 200) : ''}`);
+    }
+}

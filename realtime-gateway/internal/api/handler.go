@@ -147,6 +147,12 @@ func (h *Handler) handleFactory(w http.ResponseWriter, r *http.Request, rest str
 				return
 			}
 			respondJSON(w, 200, map[string]string{"status": "updated"})
+		case http.MethodDelete:
+			if err := h.repo.DeleteFactory(id); err != nil {
+				respondError(w, 404, err.Error())
+				return
+			}
+			w.WriteHeader(204)
 		default:
 			respondError(w, 405, "method not allowed")
 		}
@@ -524,6 +530,12 @@ func (h *Handler) handleDataSource(w http.ResponseWriter, r *http.Request, rest 
 				return
 			}
 			respondJSON(w, 200, map[string]string{"status": "updated"})
+		case http.MethodDelete:
+			if err := h.repo.DeleteDataSource(id); err != nil {
+				respondError(w, 500, err.Error())
+				return
+			}
+			w.WriteHeader(204)
 		default:
 			respondError(w, 405, "method not allowed")
 		}

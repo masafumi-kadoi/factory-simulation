@@ -90,6 +90,11 @@ const FactoryAPI = {
         return r.json();
     },
 
+    async deleteFactory(id) {
+        const r = await fetch(`${API}/factories/${id}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error(await r.text());
+    },
+
     async listScenarios(factoryId) {
         const url = factoryId ? `${API}/scenarios?factory_id=${encodeURIComponent(factoryId)}` : `${API}/scenarios`;
         const r = await fetch(url);

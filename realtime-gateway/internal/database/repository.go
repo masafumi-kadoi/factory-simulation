@@ -81,6 +81,55 @@ func (r *Repository) GetFactory(id string) (*Factory, error) {
 	return &f, err
 }
 
+func (r *Repository) DeleteFactory(id string) error {
+	tx, err := r.db.Conn().Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Collect scenario IDs linked to this factory
+	rows, err := tx.Query(`SELECT id FROM scenarios WHERE factory_id=$1`, id)
+	if err != nil {
+		return err
+	}
+	var scenarioIDs []string
+	for rows.Next() {
+		var sid string
+		if err := rows.Scan(&sid); err != nil {
+			rows.Close()
+			return err
+		}
+		scenarioIDs = append(scenarioIDs, sid)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// Delete execution_configs referencing those scenarios
+	for _, sid := range scenarioIDs {
+		if _, err := tx.Exec(`DELETE FROM execution_configs WHERE scenario_id=$1`, sid); err != nil {
+			return err
+		}
+	}
+
+	// Delete scenarios (data_sources.scenario_id has ON DELETE SET NULL, so those stay)
+	if _, err := tx.Exec(`DELETE FROM scenarios WHERE factory_id=$1`, id); err != nil {
+		return err
+	}
+
+	// Delete factory (factory_stations/connections cascade automatically)
+	result, err := tx.Exec(`DELETE FROM factories WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return fmt.Errorf("factory not found: %s", id)
+	}
+	return tx.Commit()
+}
+
 func (r *Repository) UpdateFactory(id, name, description string) error {
 	result, err := r.db.Conn().Exec(
 		`UPDATE factories SET name=$2, description=$3, updated_at=NOW() WHERE id=$1`,
@@ -319,8 +368,35 @@ func (r *Repository) PatchDataSource(id string, endedAt *time.Time) error {
 }
 
 func (r *Repository) DeleteDataSource(id string) error {
-	_, err := r.db.Conn().Exec(`DELETE FROM data_sources WHERE id=$1`, id)
-	return err
+	tx, err := r.db.Conn().Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Delete all child tables that reference data_sources(id)
+	childTables := []string{
+		"execution_configs",
+		"location_master",
+		"connection_master",
+		"machine_master",
+		"item_master",
+		"item_movement",
+		"item_lineage",
+		"item_status",
+		"item_expiry",
+		"machine_signal",
+		"machine_status",
+		"system_error",
+	}
+	for _, t := range childTables {
+		if _, err := tx.Exec(`DELETE FROM `+t+` WHERE data_source_id=$1`, id); err != nil {
+			return fmt.Errorf("delete from %s: %w", t, err)
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM data_sources WHERE id=$1`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // --- Events ---

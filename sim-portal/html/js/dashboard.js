@@ -30,7 +30,7 @@ const TOOLS = [
         icon: '\uD83D\uDCCA',
         title: 'Result Visualizer',
         desc: 'Visualize simulation results and live factory data.',
-        url: SERVICE_URLS['sim-visualizer'],
+        url: SERVICE_URLS['sim-visualizer'] + '/index-list.html',
         status: 'online'
     },
     {

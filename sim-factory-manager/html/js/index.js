@@ -14,14 +14,27 @@ async function loadFactories() {
             return;
         }
         list.innerHTML = `<div class="factory-grid">${factories.map(f => `
-            <a href="factory.html?id=${f.id}" class="factory-card">
-                <div class="factory-card-name">${escapeHtml(f.name)}</div>
-                <div class="factory-card-meta">${escapeHtml(f.description || '')}${f.description ? '<br>' : ''}
-                    <span style="font-size:12px">${f.station_count || 0} stations</span>
-                </div>
-            </a>`).join('')}</div>`;
+            <div class="factory-card">
+                <a href="factory.html?id=${f.id}" class="factory-card-link">
+                    <div class="factory-card-name">${escapeHtml(f.name)}</div>
+                    <div class="factory-card-meta">${escapeHtml(f.description || '')}${f.description ? '<br>' : ''}
+                        <span style="font-size:12px">${f.station_count || 0} stations</span>
+                    </div>
+                </a>
+                <button class="btn btn-danger btn-sm factory-card-delete" data-factory-id="${escapeHtml(f.id)}" onclick="deleteFactory(this.dataset.factoryId)">Delete</button>
+            </div>`).join('')}</div>`;
     } catch (err) {
         list.innerHTML = `<div class="alert alert-error">Failed to load factories: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+async function deleteFactory(id) {
+    if (!confirm('Delete this factory and all its stations and scenarios?')) return;
+    try {
+        await FactoryAPI.deleteFactory(id);
+        await loadFactories();
+    } catch (err) {
+        alert('Error: ' + err.message);
     }
 }
 
