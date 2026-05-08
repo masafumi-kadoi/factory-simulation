@@ -62,6 +62,7 @@ type Engine struct {
 	sourceWorkCounters map[string]int          // Counter for each source station (stationID -> count created)
 	pendingDepartures  map[string]bool         // Tracks stations with a pending WorkDeparted event (avoid duplicates)
 	reservedStations   map[string]bool         // Stations that have a work in transit heading to them (prevents double-send)
+	workPortReservation map[string]int          // workID -> portIndex for works in transit to a Merge port
 	simDB              *SimDB                  // SimDB for managing predefined work IDs
 	mergeInProgress    map[string]bool         // Tracks merge stations currently processing (stationID -> in progress)
 	initialWorks       map[string]InitialWorkCondition // Initial work conditions by station ID
@@ -97,8 +98,9 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 		worksInTransit:     make(map[string]*domain.Work),
 		sourceWorkCounters: make(map[string]int),
 		pendingDepartures:  make(map[string]bool),
-		reservedStations:   make(map[string]bool),
-		simDB:              NewSimDB(workIDsByStation),
+		reservedStations:    make(map[string]bool),
+		workPortReservation: make(map[string]int),
+		simDB:               NewSimDB(workIDsByStation),
 		mergeInProgress:    make(map[string]bool),
 		initialWorks:       initialWorks,
 		pendingTimers:      make(map[string]float64),
@@ -304,8 +306,9 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	// Merge station: add to InputPort instead of CurrentWork
 	if station.Type == domain.StationTypeMerge {
 		portIndex := e.findToPortIndex(*event.WorkID, station.ID)
-		// Clear port-level reservation
+		// Clear port-level reservation and work-port mapping
 		delete(e.reservedStations, e.portReservationKey(station.ID, portIndex))
+		delete(e.workPortReservation, *event.WorkID)
 		return e.handleMergeWorkArrived(work, station, portIndex)
 	}
 
@@ -678,6 +681,7 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	// Reserve destination (port-level for merge, station-level otherwise)
 	if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToPortIndex >= 0 {
 		e.reservedStations[e.portReservationKey(nextStation.ID, conn.ToPortIndex)] = true
+		e.workPortReservation[work.ID] = conn.ToPortIndex
 	} else {
 		e.reservedStations[nextStation.ID] = true
 	}
@@ -767,6 +771,7 @@ func (e *Engine) handlePortWorkDeparted(event *Event, station *domain.Station) e
 	// Reserve destination
 	if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
 		e.reservedStations[e.portReservationKey(toStation.ID, conn.ToPortIndex)] = true
+		e.workPortReservation[work.ID] = conn.ToPortIndex
 	} else {
 		e.reservedStations[toStation.ID] = true
 	}
@@ -849,21 +854,18 @@ func (e *Engine) getNextStationWithConn(fromStation *domain.Station, work *domai
 }
 
 // findToPortIndex finds the ToPortIndex for a work arriving at a merge station.
-// It looks up the port reservation to determine which port the work was destined for.
+// Uses workPortReservation for an exact work-to-port lookup recorded at dispatch time.
 func (e *Engine) findToPortIndex(workID string, toStationID string) int {
-	// Check which port reservation exists for this station
+	if portIndex, ok := e.workPortReservation[workID]; ok {
+		return portIndex
+	}
+	// Fallback (should not occur in normal operation): find first reserved port
 	for _, conn := range e.scenario.Connections {
 		if conn.To == toStationID && conn.ToPortIndex >= 0 {
 			resKey := e.portReservationKey(toStationID, conn.ToPortIndex)
 			if e.reservedStations[resKey] {
 				return conn.ToPortIndex
 			}
-		}
-	}
-	// Fallback: find first connection to this station with a port index
-	for _, conn := range e.scenario.Connections {
-		if conn.To == toStationID && conn.ToPortIndex >= 0 {
-			return conn.ToPortIndex
 		}
 	}
 	return 0
