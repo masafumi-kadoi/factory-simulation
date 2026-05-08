@@ -82,11 +82,17 @@ func (r *Repository) GetFactory(id string) (*Factory, error) {
 }
 
 func (r *Repository) UpdateFactory(id, name, description string) error {
-	_, err := r.db.Conn().Exec(
+	result, err := r.db.Conn().Exec(
 		`UPDATE factories SET name=$2, description=$3, updated_at=NOW() WHERE id=$1`,
 		id, name, nullStr(description),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return fmt.Errorf("factory not found: %s", id)
+	}
+	return nil
 }
 
 func (r *Repository) ListFactoryStations(factoryID string) ([]FactoryStation, error) {
@@ -162,11 +168,17 @@ func (r *Repository) AddFactoryStation(factoryID, stationID, name, stationType s
 }
 
 func (r *Repository) DeleteFactoryStation(factoryID, stationID string) error {
-	_, err := r.db.Conn().Exec(
+	result, err := r.db.Conn().Exec(
 		`DELETE FROM factory_stations WHERE factory_id=$1 AND station_id=$2`,
 		factoryID, stationID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return fmt.Errorf("factory station not found: %s/%s", factoryID, stationID)
+	}
+	return nil
 }
 
 // --- Scenarios ---
