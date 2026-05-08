@@ -924,7 +924,7 @@ class App {
         const flatStations = [];
         const flatConnections = [];
 
-        for (const station of scenario.stations) {
+        for (const station of (scenario.stations || [])) {
             if (station.type === 'moduler') {
                 const sub = station.subScenario || station.config?.subScenario;
                 if (!sub || !sub.stations || sub.stations.length === 0) {
@@ -991,7 +991,7 @@ class App {
             }
         }
 
-        for (const conn of scenario.connections) {
+        for (const conn of (scenario.connections || [])) {
             const fromStation = scenario.stations.find(s => s.id === conn.from);
             const toStation = scenario.stations.find(s => s.id === conn.to);
 
@@ -1044,8 +1044,9 @@ class App {
 
     _updateUI() {
         let timeText;
-        if (this._dsStartTime) {
-            const absMs = new Date(this._dsStartTime).getTime() + this.currentTime * 1000;
+        const baseMs = this._dsStartTime ? new Date(this._dsStartTime).getTime() : NaN;
+        if (!isNaN(baseMs)) {
+            const absMs = baseMs + this.currentTime * 1000;
             timeText = new Date(absMs).toLocaleString('ja-JP', {
                 year: 'numeric', month: '2-digit', day: '2-digit',
                 hour: '2-digit', minute: '2-digit', second: '2-digit'
@@ -1059,8 +1060,9 @@ class App {
 
     _tsToDisplayTime(ts) {
         if (ts == null) return '-';
-        if (this._dsStartTime) {
-            const absMs = new Date(this._dsStartTime).getTime() + ts * 1000;
+        const baseMs = this._dsStartTime ? new Date(this._dsStartTime).getTime() : NaN;
+        if (!isNaN(baseMs)) {
+            const absMs = baseMs + ts * 1000;
             return new Date(absMs).toLocaleString('ja-JP', {
                 month: '2-digit', day: '2-digit',
                 hour: '2-digit', minute: '2-digit', second: '2-digit'
