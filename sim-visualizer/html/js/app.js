@@ -669,7 +669,7 @@ class App {
         this._lastSignalIdx = -1;
         this._lastCachedTime = -1;
 
-        if (!this.logs.workEvents) return;
+        if (!this.logs || !this.logs.workEvents) return;
 
         const events = this.logs.workEvents;
         const lastEventByWork = new Map();
@@ -1306,6 +1306,7 @@ class App {
     }
 
     _onLiveEvent(rawEvent) {
+        if (!this.logs) return;
         const ev = wdhEventToInternal(rawEvent, this._locationMap, this._dsStartTime);
         if (!ev) return;
 

@@ -677,7 +677,13 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 		payload["initialConditions"] = json.RawMessage("{}")
 	}
 
-	b, _ := json.Marshal(payload)
+	b, err := json.Marshal(payload)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to marshal payload: %v", err)
+		h.repo.UpdateExecutionStatus(execID, "error", &dataSourceID, &errMsg)
+		endDataSource()
+		return
+	}
 	simClient := &http.Client{Timeout: 10 * time.Minute}
 	req, err := http.NewRequest("POST", h.simCoreURL+"/run", bytes.NewReader(b))
 	if err != nil {
