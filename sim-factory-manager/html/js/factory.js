@@ -38,7 +38,7 @@ async function loadStations() {
                 <td><span class="badge badge-inactive">${escapeHtml(s.stationType)}</span></td>
                 <td style="font-size:12px;color:#757575">${formatPos(s)}</td>
                 <td>
-                    <button class="btn btn-danger btn-sm" onclick="deleteStation(${JSON.stringify(s.stationId)})">Delete</button>
+                    <button class="btn btn-danger btn-sm" data-station-id="${escapeHtml(s.stationId)}" onclick="deleteStation(this.dataset.stationId)">Delete</button>
                 </td>
             </tr>`).join('');
     } catch (err) {
