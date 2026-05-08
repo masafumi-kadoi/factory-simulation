@@ -701,6 +701,7 @@ class App {
     }
 
     _updateSimulation() {
+        if (!this.logs) return;
         const events = this.logs.workEvents;
         const signalLogs = this.logs.stationStatusLogs;
         const time = this.currentTime;
@@ -1196,7 +1197,9 @@ class App {
                     const t = new Date(e.event_time).getTime();
                     return t < min ? t : min;
                 }, Infinity);
-                this._dsStartTime = new Date(minMs).toISOString();
+                if (minMs !== Infinity) {
+                    this._dsStartTime = new Date(minMs).toISOString();
+                }
             }
             this._dsEvents = (rawEvents || []).map(ev => wdhEventToInternal(ev, this._locationMap, this._dsStartTime)).filter(Boolean);
             this._dsSignals = [];

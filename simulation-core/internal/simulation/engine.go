@@ -523,6 +523,11 @@ func (e *Engine) handleMergeStarted(station *domain.Station) error {
 
 // handleProcessingCompleted handles the ProcessingCompleted event
 func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station) error {
+	// Stale event: work already departed (state changed before this event fired)
+	if station.State == domain.StateIdle {
+		return nil
+	}
+
 	// Split station: split the work into components
 	if station.Type == domain.StationTypeSplit {
 		return e.handleSplitProcessingCompleted(station)
