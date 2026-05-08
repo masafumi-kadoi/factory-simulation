@@ -295,7 +295,11 @@ func (h *Handler) handleCSVImport(w http.ResponseWriter, r *http.Request, factor
 				posY, _ = strconv.ParseFloat(strings.TrimSpace(rec[4]), 64)
 			}
 			if dotIdx >= 0 {
-				seq, _ = strconv.Atoi(stationID[dotIdx+1:])
+				var seqErr error
+				seq, seqErr = strconv.Atoi(stationID[dotIdx+1:])
+				if seqErr != nil {
+					errs = append(errs, csvError{lineNum, "station_id", "suffix after '.' must be numeric digits"})
+				}
 			}
 		} else {
 			// Extended format: station_id, equipment_id, seq_number, name, station_type, pos_x, pos_y

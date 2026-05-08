@@ -839,6 +839,7 @@ class App {
     }
 
     _showWorkModal(workId) {
+        if (!this.logs) return;
         const workInfo = this.visualizer.getWorkInfo(workId);
 
         const events = [];

@@ -54,7 +54,7 @@ export class Visualizer3D {
         this.scene.background = new THREE.Color(0x0a0a0a);
         this.scene.fog = new THREE.Fog(0x0a0a0a, 500, 2000);
 
-        this.camera = new THREE.PerspectiveCamera(50, width / height, 1, 5000);
+        this.camera = new THREE.PerspectiveCamera(50, width / (height || 1), 1, 5000);
         this.camera.position.set(0, 600, 1000);
         this.camera.lookAt(0, 0, 0);
 
@@ -134,6 +134,7 @@ export class Visualizer3D {
         // Detect which station or work was clicked
         const stationMeshes = [];
         this.stations.forEach((station) => {
+            if (!station.mesh) return;
             stationMeshes.push(station.mesh);
             station.mesh.children.forEach(child => stationMeshes.push(child));
         });

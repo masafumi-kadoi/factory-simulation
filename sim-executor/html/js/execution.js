@@ -341,10 +341,21 @@ async function executeSimulation() {
 
     const startDate = document.getElementById('start-date').value;
     const startTime = document.getElementById('start-time').value;
+
+    if (!startDate || !startTime) {
+        resultContainer.innerHTML = '<div class="error-message">Please set start date and time first</div>';
+        return;
+    }
+
     const startTimeISO = `${startDate}T${startTime}:00Z`;
 
     // Get end condition
-    const endType = document.querySelector('input[name="end-type"]:checked').value;
+    const endTypeEl = document.querySelector('input[name="end-type"]:checked');
+    if (!endTypeEl) {
+        resultContainer.innerHTML = '<div class="error-message">Please select an end condition type</div>';
+        return;
+    }
+    const endType = endTypeEl.value;
     let endCondition;
     if (endType === 'duration') {
         const minutes = document.getElementById('duration-value').value;
@@ -377,9 +388,8 @@ async function executeSimulation() {
         );
 
         const isAsync = result.status === 'pending';
-        const vizParam = result.dataSourceId
-            ? `ds=${encodeURIComponent(result.dataSourceId)}`
-            : `ds=${encodeURIComponent(result.simulationId)}`;
+        const vizId = result.dataSourceId || result.simulationId;
+        const vizParam = vizId ? `ds=${encodeURIComponent(vizId)}` : '';
         resultContainer.innerHTML = `
             <div class="info-panel" style="border-color: #28a745">
                 <strong>${isAsync ? 'Simulation started (running in background)' : 'Simulation completed'}</strong>
