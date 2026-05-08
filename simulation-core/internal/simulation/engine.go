@@ -116,6 +116,14 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 	e.scenario.BuildStationIndex()
 	e.stationModulerMap = e.scenario.StationModulerMap
 
+	// Step 0.5: Normalize factory station types to simulation types
+	// "machine" (factory management term) → "processing" (simulation engine term)
+	for i := range e.scenario.Stations {
+		if e.scenario.Stations[i].Type == "machine" {
+			e.scenario.Stations[i].Type = domain.StationTypeProcessing
+		}
+	}
+
 	// Step 1: Initialize interlock rules, signals, and port slots for all stations
 	for i := range e.scenario.Stations {
 		station := &e.scenario.Stations[i]

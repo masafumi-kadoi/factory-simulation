@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -171,6 +172,10 @@ func (h *Handler) handleFactory(w http.ResponseWriter, r *http.Request, rest str
 				respondError(w, 400, "station_id is required")
 				return
 			}
+			if !stationIDPattern.MatchString(body.StationID) {
+				respondError(w, 400, "station_id must match {equipment_id}.{3digits} format (e.g. assembly.001)")
+				return
+			}
 			if err := h.repo.AddFactoryStation(id, body.StationID, body.Name, body.StationType, body.PosX, body.PosY); err != nil {
 				respondError(w, 500, err.Error())
 				return
@@ -207,6 +212,8 @@ func (h *Handler) handleFactory(w http.ResponseWriter, r *http.Request, rest str
 		http.NotFound(w, r)
 	}
 }
+
+var stationIDPattern = regexp.MustCompile(`^.+\.\d{3}$`)
 
 var validStationTypes = map[string]bool{
 	"source": true, "processing": true, "drain": true,
