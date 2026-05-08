@@ -151,17 +151,19 @@ export function wdhEventToInternal(event, locationMap, startTime) {
         const toStation = locationMap.get(event.to_location_id);
 
         if (event.movement_type === 'arrived') {
+            if (!toStation) return null;
             return {
                 WorkID: event.item_id,
-                StationID: toStation || String(event.to_location_id),
+                StationID: toStation,
                 Timestamp: ts,
                 EventType: 'WorkArrived',
                 PortIndex: event.port_index != null ? event.port_index : -1,
             };
         } else if (event.movement_type === 'departed') {
+            if (!fromStation) return null;
             return {
                 WorkID: event.item_id,
-                StationID: fromStation || String(event.from_location_id),
+                StationID: fromStation,
                 Timestamp: ts,
                 EventType: 'WorkDeparted',
                 PortIndex: event.port_index != null ? event.port_index : -1,

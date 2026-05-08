@@ -673,7 +673,7 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, startDatetime 
 		"startDatetime":     startDatetime,
 		"initialConditions": initialConditions,
 	}
-	if payload["initialConditions"] == nil {
+	if len(initialConditions) == 0 {
 		payload["initialConditions"] = json.RawMessage("{}")
 	}
 
