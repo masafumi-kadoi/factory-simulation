@@ -109,7 +109,7 @@ async function loadDataSources() {
                     <td>${escapeHtml(d.sourceType)}</td>
                     <td>${d.endedAt ? `<span class="badge badge-inactive">Ended</span>` : `<span class="badge badge-live"><span class="live-dot"></span>Live</span>`}</td>
                     <td>
-                        <a href="${viewerBase}?ds=${d.id}" class="btn btn-outline btn-sm" target="_blank">View</a>
+                        <a href="${viewerBase}?ds=${encodeURIComponent(d.id || '')}" class="btn btn-outline btn-sm" target="_blank">View</a>
                     </td>
                 </tr>`).join('')}
             </tbody></table></div>`;

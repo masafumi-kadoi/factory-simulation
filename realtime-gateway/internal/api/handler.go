@@ -747,7 +747,10 @@ func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, s
 		if simCoreResp.Scenarios == nil {
 			simCoreResp.Scenarios = make([]map[string]interface{}, 0)
 		}
-		execs, _ := h.repo.ListExecutions()
+		execs, execsErr := h.repo.ListExecutions()
+		if execsErr != nil {
+			log.Printf("[handler] ListExecutions error: %v", execsErr)
+		}
 		countByScenario := make(map[string]int)
 		for _, e := range execs {
 			countByScenario[e.ScenarioID]++
@@ -828,7 +831,11 @@ func (h *Handler) handleExecutorCompat(w http.ResponseWriter, r *http.Request, s
 		}
 		var simTime float64
 		if req.EndCondition.Type == "duration" {
-			mins, _ := strconv.ParseFloat(req.EndCondition.Value, 64)
+			mins, err := strconv.ParseFloat(req.EndCondition.Value, 64)
+			if err != nil || mins <= 0 {
+				respondError(w, 400, "endCondition.value must be a positive number of minutes for type 'duration'")
+				return
+			}
 			simTime = mins * 60
 		} else if req.EndCondition.Type == "absolute" {
 			parseFlexible := func(s string) (time.Time, error) {
