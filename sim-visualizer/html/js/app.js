@@ -721,6 +721,8 @@ class App {
         this._lastWorkEventIdx = -1;
         this._lastSignalIdx = -1;
         this._lastCachedTime = -1;
+        this._depMapBuiltUpTo = 0;
+        this._lastDepartureByWork = new Map();
 
         if (!this.logs || !this.logs.workEvents) return;
 
@@ -741,6 +743,42 @@ class App {
                 lastEventByWork.set(ev.WorkID, i);
             }
         }
+        this._depMapBuiltUpTo = events.length;
+    }
+
+    // Extends the departure map for newly appended events without invalidating the cache.
+    _extendDepartureMap() {
+        if (!this.logs || !this.logs.workEvents) return;
+        const events = this.logs.workEvents;
+        const start = this._depMapBuiltUpTo ?? 0;
+        if (start >= events.length) return;
+
+        for (let i = start; i < events.length; i++) {
+            const ev = events[i];
+            if (ev.EventType === 'WorkDeparted') {
+                // Find next arrived/destroyed for this work (search forward in full range)
+                for (let j = i + 1; j < events.length; j++) {
+                    const next = events[j];
+                    if (next.WorkID === ev.WorkID &&
+                        (next.EventType === 'WorkArrived' || next.EventType === 'WorkDestroyed')) {
+                        this._departureNextMap.set(i, j);
+                        break;
+                    }
+                }
+            } else if (ev.EventType === 'WorkArrived' || ev.EventType === 'WorkDestroyed') {
+                // Resolve any unresolved departure for this work (search backward from i-1)
+                for (let j = i - 1; j >= 0; j--) {
+                    const prev = events[j];
+                    if (prev.WorkID === ev.WorkID) {
+                        if (prev.EventType === 'WorkDeparted' && !this._departureNextMap.has(j)) {
+                            this._departureNextMap.set(j, i);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        this._depMapBuiltUpTo = events.length;
     }
 
     _binarySearchUpperBound(events, time) {
@@ -1385,6 +1423,10 @@ class App {
     _activateLive() {
         if (!this._dsId) return;
         this._liveClient.subscribe(this._dsId);
+        // Jump to the latest known time so we start from current state, not time=0
+        if (this.maxTime > 0) {
+            this.seek(this.maxTime);
+        }
     }
 
     _onLiveEvent(rawEvent) {
@@ -1392,16 +1434,11 @@ class App {
         const ev = wdhEventToInternal(rawEvent, this._locationMap, this._dsStartTime);
         if (!ev) return;
 
-        let needRebuildIndices = false;
         if (ev.EventType) {
             this.logs.workEvents.push(ev);
-            needRebuildIndices = true;
+            this._extendDepartureMap();
         } else if (ev.StatusType) {
             this.logs.stationStatusLogs.push(ev);
-        }
-
-        if (needRebuildIndices) {
-            this._buildEventIndices();
         }
 
         const newMax = Math.max(this.maxTime, ev.Timestamp || 0);

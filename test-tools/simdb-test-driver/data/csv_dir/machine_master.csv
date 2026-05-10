@@ -1,0 +1,3 @@
+id,name,location_id,cycle_time
+M-PROC01,Processing Machine 01,2,5
+M-PROC02,Processing Machine 02,3,8

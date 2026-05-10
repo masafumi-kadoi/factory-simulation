@@ -1,0 +1,2464 @@
+{
+  "scenarioId": "1c42a1b8-76f7-4964-bcec-ed75c147a1f2",
+  "name": "Demo-4Moduler-20Process",
+  "stations": [
+    {
+      "id": "source-1",
+      "name": "Source",
+      "type": "source",
+      "parentId": null,
+      "config": {
+        "continuous": false,
+        "departureTime": 2,
+        "noWorkTimeout": -1,
+        "stayTime": -1,
+        "workCount": 200,
+        "workType": "workA"
+      },
+      "positionX": 200,
+      "positionY": 500
+    },
+    {
+      "id": "mod-1",
+      "name": "Moduler-1",
+      "type": "moduler",
+      "parentId": null,
+      "config": {
+        "bufferSlots": 20,
+        "entryCount": 1,
+        "exitCount": 1,
+        "inputMonitorStationIds": [
+          "entry-0"
+        ],
+        "model3DGrid": {
+          "cells": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              2,
+              0
+            ],
+            [
+              3,
+              0
+            ],
+            [
+              4,
+              0
+            ],
+            [
+              5,
+              0
+            ],
+            [
+              6,
+              0
+            ],
+            [
+              7,
+              0
+            ],
+            [
+              8,
+              0
+            ],
+            [
+              9,
+              0
+            ],
+            [
+              10,
+              0
+            ],
+            [
+              11,
+              0
+            ],
+            [
+              12,
+              0
+            ],
+            [
+              13,
+              0
+            ],
+            [
+              14,
+              0
+            ],
+            [
+              15,
+              0
+            ],
+            [
+              16,
+              0
+            ],
+            [
+              17,
+              0
+            ],
+            [
+              18,
+              0
+            ],
+            [
+              19,
+              0
+            ],
+            [
+              20,
+              0
+            ],
+            [
+              21,
+              0
+            ]
+          ],
+          "cols": 22,
+          "gridSize": 0.5,
+          "height": 1,
+          "origin": [
+            21,
+            0
+          ],
+          "rows": 1
+        },
+        "outputMonitorStationIds": [
+          "exit-0"
+        ]
+      },
+      "positionX": 800,
+      "positionY": 500,
+      "subScenario": {
+        "stations": [
+          {
+            "id": "entry-0",
+            "name": "IN",
+            "type": "entry",
+            "parentId": null,
+            "config": {
+              "noWorkTimeout": -1,
+              "stayTime": -1
+            },
+            "positionX": 50,
+            "positionY": 300
+          },
+          {
+            "id": "slot-0",
+            "name": "Slot 1",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": -1,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-1",
+            "name": "Slot 2",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-2",
+            "name": "Slot 3",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-3",
+            "name": "Slot 4",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-4",
+            "name": "Slot 5",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-5",
+            "name": "Slot 6",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-6",
+            "name": "Slot 7",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-7",
+            "name": "Slot 8",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-8",
+            "name": "Slot 9",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-9",
+            "name": "Slot 10",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-10",
+            "name": "Slot 11",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-11",
+            "name": "Slot 12",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-12",
+            "name": "Slot 13",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-13",
+            "name": "Slot 14",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-14",
+            "name": "Slot 15",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-15",
+            "name": "Slot 16",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-16",
+            "name": "Slot 17",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-17",
+            "name": "Slot 18",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-18",
+            "name": "Slot 19",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-19",
+            "name": "Slot 20",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 4000,
+            "positionY": 300
+          },
+          {
+            "id": "exit-0",
+            "name": "OUT",
+            "type": "exit",
+            "parentId": null,
+            "config": {
+              "noWorkTimeout": 2.2,
+              "stayTime": -1
+            },
+            "positionX": 4300,
+            "positionY": 300
+          }
+        ],
+        "connections": [
+          {
+            "from": "entry-0",
+            "to": "slot-0",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-0",
+            "to": "slot-1",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-1",
+            "to": "slot-2",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-2",
+            "to": "slot-3",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-3",
+            "to": "slot-4",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-4",
+            "to": "slot-5",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-5",
+            "to": "slot-6",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-6",
+            "to": "slot-7",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-7",
+            "to": "slot-8",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-8",
+            "to": "slot-9",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-9",
+            "to": "slot-10",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-10",
+            "to": "slot-11",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-11",
+            "to": "slot-12",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-12",
+            "to": "slot-13",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-13",
+            "to": "slot-14",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-14",
+            "to": "slot-15",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-15",
+            "to": "slot-16",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-16",
+            "to": "slot-17",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-17",
+            "to": "slot-18",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-18",
+            "to": "slot-19",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-19",
+            "to": "exit-0",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          }
+        ]
+      },
+      "entryCount": 1,
+      "exitCount": 1
+    },
+    {
+      "id": "mod-2",
+      "name": "Moduler-2",
+      "type": "moduler",
+      "parentId": null,
+      "config": {
+        "bufferSlots": 20,
+        "entryCount": 1,
+        "exitCount": 1,
+        "inputMonitorStationIds": [
+          "entry-0"
+        ],
+        "model3DGrid": {
+          "cells": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              2,
+              0
+            ],
+            [
+              3,
+              0
+            ],
+            [
+              4,
+              0
+            ],
+            [
+              5,
+              0
+            ],
+            [
+              6,
+              0
+            ],
+            [
+              7,
+              0
+            ],
+            [
+              8,
+              0
+            ],
+            [
+              9,
+              0
+            ],
+            [
+              10,
+              0
+            ],
+            [
+              11,
+              0
+            ],
+            [
+              12,
+              0
+            ],
+            [
+              13,
+              0
+            ],
+            [
+              14,
+              0
+            ],
+            [
+              15,
+              0
+            ],
+            [
+              16,
+              0
+            ],
+            [
+              17,
+              0
+            ],
+            [
+              18,
+              0
+            ],
+            [
+              19,
+              0
+            ],
+            [
+              20,
+              0
+            ],
+            [
+              21,
+              0
+            ]
+          ],
+          "cols": 22,
+          "gridSize": 0.5,
+          "height": 1,
+          "origin": [
+            21,
+            0
+          ],
+          "rows": 1
+        },
+        "outputMonitorStationIds": [
+          "exit-0"
+        ]
+      },
+      "positionX": 2000,
+      "positionY": 500,
+      "subScenario": {
+        "stations": [
+          {
+            "id": "entry-0",
+            "name": "IN",
+            "type": "entry",
+            "parentId": null,
+            "config": {
+              "noWorkTimeout": -1,
+              "stayTime": -1
+            },
+            "positionX": 50,
+            "positionY": 300
+          },
+          {
+            "id": "slot-0",
+            "name": "Slot 1",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": -1,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-1",
+            "name": "Slot 2",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-2",
+            "name": "Slot 3",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-3",
+            "name": "Slot 4",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-4",
+            "name": "Slot 5",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-5",
+            "name": "Slot 6",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-6",
+            "name": "Slot 7",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-7",
+            "name": "Slot 8",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-8",
+            "name": "Slot 9",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-9",
+            "name": "Slot 10",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-10",
+            "name": "Slot 11",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-11",
+            "name": "Slot 12",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-12",
+            "name": "Slot 13",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-13",
+            "name": "Slot 14",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-14",
+            "name": "Slot 15",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-15",
+            "name": "Slot 16",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-16",
+            "name": "Slot 17",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-17",
+            "name": "Slot 18",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-18",
+            "name": "Slot 19",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-19",
+            "name": "Slot 20",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 4000,
+            "positionY": 300
+          },
+          {
+            "id": "exit-0",
+            "name": "OUT",
+            "type": "exit",
+            "parentId": null,
+            "config": {
+              "noWorkTimeout": 2.2,
+              "stayTime": -1
+            },
+            "positionX": 4300,
+            "positionY": 300
+          }
+        ],
+        "connections": [
+          {
+            "from": "entry-0",
+            "to": "slot-0",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-0",
+            "to": "slot-1",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-1",
+            "to": "slot-2",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-2",
+            "to": "slot-3",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-3",
+            "to": "slot-4",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-4",
+            "to": "slot-5",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-5",
+            "to": "slot-6",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-6",
+            "to": "slot-7",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-7",
+            "to": "slot-8",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-8",
+            "to": "slot-9",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-9",
+            "to": "slot-10",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-10",
+            "to": "slot-11",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-11",
+            "to": "slot-12",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-12",
+            "to": "slot-13",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-13",
+            "to": "slot-14",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-14",
+            "to": "slot-15",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-15",
+            "to": "slot-16",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-16",
+            "to": "slot-17",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-17",
+            "to": "slot-18",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-18",
+            "to": "slot-19",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-19",
+            "to": "exit-0",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          }
+        ]
+      },
+      "entryCount": 1,
+      "exitCount": 1
+    },
+    {
+      "id": "mod-3",
+      "name": "Moduler-3",
+      "type": "moduler",
+      "parentId": null,
+      "config": {
+        "bufferSlots": 20,
+        "entryCount": 1,
+        "exitCount": 1,
+        "inputMonitorStationIds": [
+          "entry-0"
+        ],
+        "model3DGrid": {
+          "cells": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              2,
+              0
+            ],
+            [
+              3,
+              0
+            ],
+            [
+              4,
+              0
+            ],
+            [
+              5,
+              0
+            ],
+            [
+              6,
+              0
+            ],
+            [
+              7,
+              0
+            ],
+            [
+              8,
+              0
+            ],
+            [
+              9,
+              0
+            ],
+            [
+              10,
+              0
+            ],
+            [
+              11,
+              0
+            ],
+            [
+              12,
+              0
+            ],
+            [
+              13,
+              0
+            ],
+            [
+              14,
+              0
+            ],
+            [
+              15,
+              0
+            ],
+            [
+              16,
+              0
+            ],
+            [
+              17,
+              0
+            ],
+            [
+              18,
+              0
+            ],
+            [
+              19,
+              0
+            ],
+            [
+              20,
+              0
+            ],
+            [
+              21,
+              0
+            ]
+          ],
+          "cols": 22,
+          "gridSize": 0.5,
+          "height": 1,
+          "origin": [
+            21,
+            0
+          ],
+          "rows": 1
+        },
+        "outputMonitorStationIds": [
+          "exit-0"
+        ]
+      },
+      "positionX": 3200,
+      "positionY": 500,
+      "subScenario": {
+        "stations": [
+          {
+            "id": "entry-0",
+            "name": "IN",
+            "type": "entry",
+            "parentId": null,
+            "config": {
+              "noWorkTimeout": -1,
+              "stayTime": -1
+            },
+            "positionX": 50,
+            "positionY": 300
+          },
+          {
+            "id": "slot-0",
+            "name": "Slot 1",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": -1,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-1",
+            "name": "Slot 2",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-2",
+            "name": "Slot 3",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-3",
+            "name": "Slot 4",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-4",
+            "name": "Slot 5",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-5",
+            "name": "Slot 6",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-6",
+            "name": "Slot 7",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-7",
+            "name": "Slot 8",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-8",
+            "name": "Slot 9",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-9",
+            "name": "Slot 10",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-10",
+            "name": "Slot 11",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-11",
+            "name": "Slot 12",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-12",
+            "name": "Slot 13",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-13",
+            "name": "Slot 14",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-14",
+            "name": "Slot 15",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-15",
+            "name": "Slot 16",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-16",
+            "name": "Slot 17",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-17",
+            "name": "Slot 18",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-18",
+            "name": "Slot 19",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-19",
+            "name": "Slot 20",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 4000,
+            "positionY": 300
+          },
+          {
+            "id": "exit-0",
+            "name": "OUT",
+            "type": "exit",
+            "parentId": null,
+            "config": {
+              "noWorkTimeout": 2.2,
+              "stayTime": -1
+            },
+            "positionX": 4300,
+            "positionY": 300
+          }
+        ],
+        "connections": [
+          {
+            "from": "entry-0",
+            "to": "slot-0",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-0",
+            "to": "slot-1",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-1",
+            "to": "slot-2",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-2",
+            "to": "slot-3",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-3",
+            "to": "slot-4",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-4",
+            "to": "slot-5",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-5",
+            "to": "slot-6",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-6",
+            "to": "slot-7",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-7",
+            "to": "slot-8",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-8",
+            "to": "slot-9",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-9",
+            "to": "slot-10",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-10",
+            "to": "slot-11",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-11",
+            "to": "slot-12",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-12",
+            "to": "slot-13",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-13",
+            "to": "slot-14",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-14",
+            "to": "slot-15",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-15",
+            "to": "slot-16",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-16",
+            "to": "slot-17",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-17",
+            "to": "slot-18",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-18",
+            "to": "slot-19",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-19",
+            "to": "exit-0",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          }
+        ]
+      },
+      "entryCount": 1,
+      "exitCount": 1
+    },
+    {
+      "id": "mod-4",
+      "name": "Moduler-4",
+      "type": "moduler",
+      "parentId": null,
+      "config": {
+        "bufferSlots": 20,
+        "entryCount": 1,
+        "exitCount": 1,
+        "inputMonitorStationIds": [
+          "entry-0"
+        ],
+        "model3DGrid": {
+          "cells": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              2,
+              0
+            ],
+            [
+              3,
+              0
+            ],
+            [
+              4,
+              0
+            ],
+            [
+              5,
+              0
+            ],
+            [
+              6,
+              0
+            ],
+            [
+              7,
+              0
+            ],
+            [
+              8,
+              0
+            ],
+            [
+              9,
+              0
+            ],
+            [
+              10,
+              0
+            ],
+            [
+              11,
+              0
+            ],
+            [
+              12,
+              0
+            ],
+            [
+              13,
+              0
+            ],
+            [
+              14,
+              0
+            ],
+            [
+              15,
+              0
+            ],
+            [
+              16,
+              0
+            ],
+            [
+              17,
+              0
+            ],
+            [
+              18,
+              0
+            ],
+            [
+              19,
+              0
+            ],
+            [
+              20,
+              0
+            ],
+            [
+              21,
+              0
+            ]
+          ],
+          "cols": 22,
+          "gridSize": 0.5,
+          "height": 1,
+          "origin": [
+            21,
+            0
+          ],
+          "rows": 1
+        },
+        "outputMonitorStationIds": [
+          "exit-0"
+        ]
+      },
+      "positionX": 4400,
+      "positionY": 500,
+      "subScenario": {
+        "stations": [
+          {
+            "id": "entry-0",
+            "name": "IN",
+            "type": "entry",
+            "parentId": null,
+            "config": {
+              "noWorkTimeout": -1,
+              "stayTime": -1
+            },
+            "positionX": 50,
+            "positionY": 300
+          },
+          {
+            "id": "slot-0",
+            "name": "Slot 1",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": -1,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-1",
+            "name": "Slot 2",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-2",
+            "name": "Slot 3",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-3",
+            "name": "Slot 4",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-4",
+            "name": "Slot 5",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-5",
+            "name": "Slot 6",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-6",
+            "name": "Slot 7",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-7",
+            "name": "Slot 8",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-8",
+            "name": "Slot 9",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 1800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-9",
+            "name": "Slot 10",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-10",
+            "name": "Slot 11",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-11",
+            "name": "Slot 12",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-12",
+            "name": "Slot 13",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-13",
+            "name": "Slot 14",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 2800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-14",
+            "name": "Slot 15",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3000,
+            "positionY": 300
+          },
+          {
+            "id": "slot-15",
+            "name": "Slot 16",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3200,
+            "positionY": 300
+          },
+          {
+            "id": "slot-16",
+            "name": "Slot 17",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3400,
+            "positionY": 300
+          },
+          {
+            "id": "slot-17",
+            "name": "Slot 18",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3600,
+            "positionY": 300
+          },
+          {
+            "id": "slot-18",
+            "name": "Slot 19",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 3800,
+            "positionY": 300
+          },
+          {
+            "id": "slot-19",
+            "name": "Slot 20",
+            "type": "processing",
+            "parentId": null,
+            "config": {
+              "arrivalTime": 0.1,
+              "departureTime": 0.1,
+              "noWorkTimeout": 2.2,
+              "processingTime": 1,
+              "stayTime": 2.2
+            },
+            "positionX": 4000,
+            "positionY": 300
+          },
+          {
+            "id": "exit-0",
+            "name": "OUT",
+            "type": "exit",
+            "parentId": null,
+            "config": {
+              "noWorkTimeout": 2.2,
+              "stayTime": -1
+            },
+            "positionX": 4300,
+            "positionY": 300
+          }
+        ],
+        "connections": [
+          {
+            "from": "entry-0",
+            "to": "slot-0",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-0",
+            "to": "slot-1",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-1",
+            "to": "slot-2",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-2",
+            "to": "slot-3",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-3",
+            "to": "slot-4",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-4",
+            "to": "slot-5",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-5",
+            "to": "slot-6",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-6",
+            "to": "slot-7",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-7",
+            "to": "slot-8",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-8",
+            "to": "slot-9",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-9",
+            "to": "slot-10",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-10",
+            "to": "slot-11",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-11",
+            "to": "slot-12",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-12",
+            "to": "slot-13",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-13",
+            "to": "slot-14",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-14",
+            "to": "slot-15",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-15",
+            "to": "slot-16",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-16",
+            "to": "slot-17",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-17",
+            "to": "slot-18",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-18",
+            "to": "slot-19",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          },
+          {
+            "from": "slot-19",
+            "to": "exit-0",
+            "condition": "default",
+            "fromPortIndex": -1,
+            "toPortIndex": -1
+          }
+        ]
+      },
+      "entryCount": 1,
+      "exitCount": 1
+    },
+    {
+      "id": "drain-1",
+      "name": "Drain",
+      "type": "drain",
+      "parentId": null,
+      "config": {
+        "arrivalTime": 0.1,
+        "noWorkTimeout": -1,
+        "stayTime": -1
+      },
+      "positionX": 5600,
+      "positionY": 500
+    }
+  ],
+  "connections": [
+    {
+      "from": "source-1",
+      "to": "mod-1",
+      "condition": "default",
+      "fromPortIndex": -1,
+      "toPortIndex": -1
+    },
+    {
+      "from": "mod-1",
+      "to": "mod-2",
+      "condition": "default",
+      "fromPortIndex": -1,
+      "toPortIndex": -1
+    },
+    {
+      "from": "mod-2",
+      "to": "mod-3",
+      "condition": "default",
+      "fromPortIndex": -1,
+      "toPortIndex": -1
+    },
+    {
+      "from": "mod-3",
+      "to": "mod-4",
+      "condition": "default",
+      "fromPortIndex": -1,
+      "toPortIndex": -1
+    },
+    {
+      "from": "mod-4",
+      "to": "drain-1",
+      "condition": "default",
+      "fromPortIndex": -1,
+      "toPortIndex": -1
+    }
+  ]
+}

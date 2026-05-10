@@ -1,0 +1,5 @@
+id,name,station_type,parent_location_id,pos_x,pos_y,pos_z,max_capacity,processing_time,merge_count,split_count
+1,source,source,,0,0,0,,,, 
+2,proc_01,processing,,100,0,0,,5,,
+3,proc_02,processing,,200,0,0,,8,,
+4,drain,drain,,300,0,0,,,,

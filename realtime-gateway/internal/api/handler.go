@@ -549,13 +549,22 @@ func (h *Handler) handleDataSource(w http.ResponseWriter, r *http.Request, rest 
 		toStr := q.Get("to")
 		from := time.Now().Add(-1 * time.Hour)
 		to := time.Now()
+		parseTS := func(s string) (time.Time, bool) {
+			if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+				return t, true
+			}
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return t, true
+			}
+			return time.Time{}, false
+		}
 		if fromStr != "" {
-			if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			if t, ok := parseTS(fromStr); ok {
 				from = t
 			}
 		}
 		if toStr != "" {
-			if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			if t, ok := parseTS(toStr); ok {
 				to = t
 			}
 		}

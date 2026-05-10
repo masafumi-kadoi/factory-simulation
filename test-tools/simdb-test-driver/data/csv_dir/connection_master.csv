@@ -1,0 +1,4 @@
+id,from_location_id,to_location_id,from_port_index,to_port_index,condition
+1,1,2,,,default
+2,2,3,,,default
+3,3,4,,,default
