@@ -1,0 +1,7 @@
+{
+  "id": "d2fef4ec-6055-4f98-84b2-cf7e34d164e3",
+  "friendlyName": "demo-4moduler-live",
+  "scenarioId": "1c42a1b8-76f7-4964-bcec-ed75c147a1f2",
+  "sourceType": "simulation",
+  "note": "このファイルはデモ環境で作成したDataSourceの設定情報です。新しい環境でテストを行う場合は、POST /api/data-sources で新しいIDを発行してください（README.md 参照）。"
+}
