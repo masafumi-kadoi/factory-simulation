@@ -199,7 +199,7 @@ class App {
             this._buildModulerMap(this.flatScenario);
 
             const layer1Scenario = this._buildLayer1Scenario(this.flatScenario);
-            this.visualizer.loadScenario(layer1Scenario);
+            await this.visualizer.loadScenario(layer1Scenario);
 
             this.visualizer.setOnWorkClick((workId) => this._showWorkModal(workId));
             this.visualizer.setOnModulerDoubleClick((stationId) => this._openModulerViewer(stationId));
@@ -1194,7 +1194,7 @@ class App {
             this.flatScenario = this._flattenScenario(scenario);
             this._buildModulerMap(this.flatScenario);
             const layer1Scenario = this._buildLayer1Scenario(this.flatScenario);
-            this.visualizer.loadScenario(layer1Scenario);
+            await this.visualizer.loadScenario(layer1Scenario);
             this.visualizer.setOnModulerDoubleClick((sid) => this._openModulerViewer(sid));
             this.visualizer.setOnWorkClick((workId) => this._showWorkModal(workId));
 

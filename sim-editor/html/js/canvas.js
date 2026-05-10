@@ -1,6 +1,9 @@
 // Canvas rendering and interaction
 import { MoveStationCommand, MoveMultipleStationsCommand } from './undo.js';
 
+// 1 meter = 80 SVG pixels (standard station is 80×60px ≈ 1m wide)
+const PX_PER_M = 80;
+
 export class Canvas {
     constructor(svg, editor) {
         this.svg = svg;
@@ -887,168 +890,261 @@ export class Canvas {
         g.appendChild(text);
     }
 
+    // Returns {w, h} for a moduler station — model-based or default 100×70
+    _getModulerSize(station) {
+        const grid = station.config?.model3DGrid;
+        if (grid?.cells?.length > 0) {
+            const cells = grid.cells;
+            const minC = Math.min(...cells.map(([c]) => c));
+            const maxC = Math.max(...cells.map(([c]) => c));
+            const minR = Math.min(...cells.map(([, r]) => r));
+            const maxR = Math.max(...cells.map(([, r]) => r));
+            const gs = (grid.gridSize || 1) * PX_PER_M;
+            return { w: (maxC - minC + 1) * gs, h: (maxR - minR + 1) * gs };
+        }
+        return { w: 100, h: 70 };
+    }
+
+    // Returns the visual center of a moduler station, accounting for origin offset
+    _getModulerVisualCenter(station) {
+        const grid = station.config?.model3DGrid;
+        if (!grid?.cells?.length) return { cx: station.x, cy: station.y };
+        const cells = grid.cells;
+        const minC = Math.min(...cells.map(([c]) => c));
+        const maxC = Math.max(...cells.map(([c]) => c));
+        const minR = Math.min(...cells.map(([, r]) => r));
+        const maxR = Math.max(...cells.map(([, r]) => r));
+        const cellPx = (grid.gridSize || 1) * PX_PER_M;
+        const spanC = maxC - minC + 1;
+        const spanR = maxR - minR + 1;
+        const origin = grid.origin;
+        if (origin) {
+            const startX = station.x - (origin[0] - minC + 0.5) * cellPx;
+            const startY = station.y - (origin[1] - minR + 0.5) * cellPx;
+            return { cx: startX + spanC * cellPx / 2, cy: startY + spanR * cellPx / 2 };
+        }
+        return { cx: station.x, cy: station.y };
+    }
+
+    _getModulerPortPos(station, portIndex, portType) {
+        const subStations = station.config?.subScenario?.stations;
+        if (!subStations || subStations.length === 0) return null;
+        const targets = subStations
+            .filter(s => s.type === (portType === 'input' ? 'entry' : 'exit'))
+            .sort((a, b) => a.y - b.y);
+        if (portIndex < 0 || portIndex >= targets.length) return null;
+
+        const xs = subStations.map(s => s.x);
+        const ys = subStations.map(s => s.y);
+        const subMinX = Math.min(...xs), subMaxX = Math.max(...xs);
+        const subMinY = Math.min(...ys), subMaxY = Math.max(...ys);
+        const subCenterX = (subMinX + subMaxX) / 2;
+        const subCenterY = (subMinY + subMaxY) / 2;
+        const rangeX = subMaxX - subMinX;
+        const rangeY = subMaxY - subMinY;
+
+        const { w, h } = this._getModulerSize(station);
+        const { cx, cy } = this._getModulerVisualCenter(station);
+        const scaleX = rangeX > 0 ? w / rangeX : 0;
+        const scaleY = rangeY > 0 ? h / rangeY : 0;
+        const t = targets[portIndex];
+        return {
+            x: cx + (t.x - subCenterX) * scaleX,
+            y: cy + (t.y - subCenterY) * scaleY,
+        };
+    }
+
     _renderModulerStation(g, station) {
         const x = station.x;
         const y = station.y;
-        const w = 100;
-        const h = 70;
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const grid = station.config?.model3DGrid;
+        const { w, h } = this._getModulerSize(station);
 
-        // Outer rectangle
-        const outerRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        outerRect.setAttribute('x', x - w / 2);
-        outerRect.setAttribute('y', y - h / 2);
-        outerRect.setAttribute('width', w);
-        outerRect.setAttribute('height', h);
-        outerRect.setAttribute('rx', 8);
+        if (grid?.cells?.length > 0) {
+            const cells = grid.cells;
+            const minC = Math.min(...cells.map(([c]) => c));
+            const maxC = Math.max(...cells.map(([c]) => c));
+            const minR = Math.min(...cells.map(([, r]) => r));
+            const maxR = Math.max(...cells.map(([, r]) => r));
+            const spanC = maxC - minC + 1;
+            const spanR = maxR - minR + 1;
+            const cellPx = (grid.gridSize || 1) * PX_PER_M;
 
-        // Inner rectangle (double border effect)
-        const innerRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        innerRect.setAttribute('x', x - w / 2 + 4);
-        innerRect.setAttribute('y', y - h / 2 + 4);
-        innerRect.setAttribute('width', w - 8);
-        innerRect.setAttribute('height', h - 8);
-        innerRect.setAttribute('rx', 5);
-        innerRect.classList.add('moduler-inner-rect');
+            // Origin-based positioning: station.x,y aligns to origin cell center.
+            // Without origin, station.x,y is the bounding box center (default).
+            const origin = grid.origin;
+            let startX, startY;
+            if (origin) {
+                startX = x - (origin[0] - minC + 0.5) * cellPx;
+                startY = y - (origin[1] - minR + 0.5) * cellPx;
+            } else {
+                startX = x - w / 2;
+                startY = y - h / 2;
+            }
 
-        // Text
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', x);
-        text.setAttribute('y', y - 5);
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('dominant-baseline', 'middle');
-        text.setAttribute('font-size', '11');
-        text.setAttribute('font-weight', 'bold');
-        text.setAttribute('fill', 'var(--station-stroke)');
-        text.textContent = station.name || station.config?.name || station.id;
+            const hitRect = document.createElementNS(svgNS, 'rect');
+            hitRect.setAttribute('x', startX);
+            hitRect.setAttribute('y', startY);
+            hitRect.setAttribute('width',  spanC * cellPx);
+            hitRect.setAttribute('height', spanR * cellPx);
+            hitRect.setAttribute('fill',   'transparent');
+            hitRect.setAttribute('stroke', 'none');
+            g.appendChild(hitRect);
 
-        // Sub-label showing entry/exit count
-        const subText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        subText.setAttribute('x', x);
-        subText.setAttribute('y', y + 12);
-        subText.setAttribute('text-anchor', 'middle');
-        subText.setAttribute('dominant-baseline', 'middle');
-        subText.setAttribute('font-size', '9');
-        subText.setAttribute('fill', 'var(--text-secondary)');
-        const entryCount = station.config.entryCount || 1;
-        const exitCount = station.config.exitCount || 1;
-        subText.textContent = `E:${entryCount} X:${exitCount}`;
+            for (const [c, r] of cells) {
+                const cr = document.createElementNS(svgNS, 'rect');
+                const gap = Math.max(cellPx * 0.05, 0.5);
+                cr.setAttribute('x',      startX + (c - minC) * cellPx + gap);
+                cr.setAttribute('y',      startY + (r - minR) * cellPx + gap);
+                cr.setAttribute('width',  cellPx - gap * 2);
+                cr.setAttribute('height', cellPx - gap * 2);
+                cr.setAttribute('rx', Math.max(cellPx * 0.1, 1));
+                cr.setAttribute('fill',         'rgba(74,20,140,0.5)');
+                cr.setAttribute('stroke',        '#7b1fa2');
+                cr.setAttribute('stroke-width',  '1');
+                g.appendChild(cr);
+            }
 
-        g.appendChild(outerRect);
-        g.appendChild(innerRect);
-        g.appendChild(text);
-        g.appendChild(subText);
+            // Text at visual center of bounding box
+            const vizCenterX = startX + spanC * cellPx / 2;
+            const vizCenterY = startY + spanR * cellPx / 2;
+
+            const text = document.createElementNS(svgNS, 'text');
+            text.setAttribute('x', vizCenterX);
+            text.setAttribute('y', vizCenterY - 4);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('dominant-baseline', 'middle');
+            text.setAttribute('font-size', '10');
+            text.setAttribute('font-weight', 'bold');
+            text.setAttribute('fill', '#e0d0ff');
+            text.setAttribute('pointer-events', 'none');
+            text.textContent = station.name || station.config?.name || station.id;
+            g.appendChild(text);
+
+            const entryCount = station.config.entryCount || 1;
+            const exitCount  = station.config.exitCount  || 1;
+            const subText = document.createElementNS(svgNS, 'text');
+            subText.setAttribute('x', vizCenterX);
+            subText.setAttribute('y', vizCenterY + 10);
+            subText.setAttribute('text-anchor', 'middle');
+            subText.setAttribute('dominant-baseline', 'middle');
+            subText.setAttribute('font-size', '8');
+            subText.setAttribute('fill', '#c0a0e0');
+            subText.setAttribute('pointer-events', 'none');
+            subText.textContent = `E:${entryCount} X:${exitCount}`;
+            g.appendChild(subText);
+        } else {
+            // --- Default mode: standard rectangle ---
+            const outerRect = document.createElementNS(svgNS, 'rect');
+            outerRect.setAttribute('x', x - w / 2);
+            outerRect.setAttribute('y', y - h / 2);
+            outerRect.setAttribute('width', w);
+            outerRect.setAttribute('height', h);
+            outerRect.setAttribute('rx', 8);
+            g.appendChild(outerRect);
+
+            const innerRect = document.createElementNS(svgNS, 'rect');
+            innerRect.setAttribute('x', x - w / 2 + 4);
+            innerRect.setAttribute('y', y - h / 2 + 4);
+            innerRect.setAttribute('width', w - 8);
+            innerRect.setAttribute('height', h - 8);
+            innerRect.setAttribute('rx', 5);
+            innerRect.classList.add('moduler-inner-rect');
+            g.appendChild(innerRect);
+
+            const text = document.createElementNS(svgNS, 'text');
+            text.setAttribute('x', x);
+            text.setAttribute('y', y - 5);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('dominant-baseline', 'middle');
+            text.setAttribute('font-size', '11');
+            text.setAttribute('font-weight', 'bold');
+            text.setAttribute('fill', 'var(--station-stroke)');
+            text.textContent = station.name || station.config?.name || station.id;
+            g.appendChild(text);
+
+            const subText = document.createElementNS(svgNS, 'text');
+            subText.setAttribute('x', x);
+            subText.setAttribute('y', y + 12);
+            subText.setAttribute('text-anchor', 'middle');
+            subText.setAttribute('dominant-baseline', 'middle');
+            subText.setAttribute('font-size', '9');
+            subText.setAttribute('fill', 'var(--text-secondary)');
+            const entryCount = station.config.entryCount || 1;
+            const exitCount  = station.config.exitCount  || 1;
+            subText.textContent = `E:${entryCount} X:${exitCount}`;
+            g.appendChild(subText);
+        }
     }
 
     _renderModulerPorts(parentGroup, station) {
         const entryCount = station.config.entryCount || 1;
         const exitCount = station.config.exitCount || 1;
-        const w = 100;
-        const h = 70;
+        const { w, h } = this._getModulerSize(station);
+        const { cx, cy } = this._getModulerVisualCenter(station);
 
         const portWidth = 20;
         const portHeight = 14;
         const gap = 20;
 
-        // Entry ports (left side - input)
+        // Fallback even-spacing helpers (use visual center)
         const entryTotalH = entryCount * portHeight + (entryCount - 1) * (gap - portHeight);
-        const entryStartY = station.y - entryTotalH / 2;
+        const entryStartY = cy - entryTotalH / 2;
+        const exitTotalH  = exitCount  * portHeight + (exitCount  - 1) * (gap - portHeight);
+        const exitStartY  = cy - exitTotalH  / 2;
 
-        for (let i = 0; i < entryCount; i++) {
-            const bufX = station.x - w / 2 - portWidth - 6;
-            const bufY = entryStartY + i * gap;
+        const renderPort = (i, portType, fallbackCenterX, fallbackCenterY, label, fillColor) => {
+            const mapped = this._getModulerPortPos(station, i, portType);
+            const cx = mapped ? mapped.x : fallbackCenterX;
+            const cy = mapped ? mapped.y : fallbackCenterY;
 
             const bufGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            bufGroup.classList.add('port-slot', 'port-slot-entry');
+            bufGroup.classList.add('port-slot', portType === 'input' ? 'port-slot-entry' : 'port-slot-exit');
             bufGroup.dataset.stationId = station.id;
             bufGroup.dataset.portIndex = i;
-            bufGroup.dataset.portType = 'input';
+            bufGroup.dataset.portType = portType;
 
-            const isConnected = this.editor.scenario.connections.some(
-                c => c.to === station.id && c.toPortIndex === i
-            );
+            const isConnected = portType === 'input'
+                ? this.editor.scenario.connections.some(c => c.to === station.id && c.toPortIndex === i)
+                : this.editor.scenario.connections.some(c => c.from === station.id && c.fromPortIndex === i);
             if (isConnected) bufGroup.classList.add('connected');
 
             const bufRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            bufRect.setAttribute('x', bufX);
-            bufRect.setAttribute('y', bufY);
+            bufRect.setAttribute('x', cx - portWidth / 2);
+            bufRect.setAttribute('y', cy - portHeight / 2);
             bufRect.setAttribute('width', portWidth);
             bufRect.setAttribute('height', portHeight);
             bufRect.setAttribute('rx', 2);
 
             const bufText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            bufText.setAttribute('x', bufX + portWidth / 2);
-            bufText.setAttribute('y', bufY + portHeight / 2);
+            bufText.setAttribute('x', cx);
+            bufText.setAttribute('y', cy);
             bufText.setAttribute('text-anchor', 'middle');
             bufText.setAttribute('dominant-baseline', 'middle');
             bufText.setAttribute('font-size', '7');
-            bufText.setAttribute('fill', '#2e7d32');
-            bufText.textContent = `E${i}`;
+            bufText.setAttribute('fill', fillColor);
+            bufText.textContent = label;
 
             bufGroup.appendChild(bufRect);
             bufGroup.appendChild(bufText);
             parentGroup.appendChild(bufGroup);
+        };
 
-            // Line from port to station body
-            const connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            connLine.setAttribute('x1', bufX + portWidth);
-            connLine.setAttribute('y1', bufY + portHeight / 2);
-            connLine.setAttribute('x2', station.x - w / 2);
-            connLine.setAttribute('y2', station.y);
-            connLine.setAttribute('stroke', '#2e7d3280');
-            connLine.setAttribute('stroke-width', '1');
-            connLine.setAttribute('stroke-dasharray', '3,2');
-            parentGroup.appendChild(connLine);
+        // Entry ports
+        for (let i = 0; i < entryCount; i++) {
+            renderPort(i, 'input',
+                cx - w / 2 + portWidth / 2,
+                entryStartY + i * gap + portHeight / 2,
+                `E${i}`, '#2e7d32');
         }
 
-        // Exit ports (right side - output)
-        const exitTotalH = exitCount * portHeight + (exitCount - 1) * (gap - portHeight);
-        const exitStartY = station.y - exitTotalH / 2;
-
+        // Exit ports
         for (let i = 0; i < exitCount; i++) {
-            const bufX = station.x + w / 2 + 6;
-            const bufY = exitStartY + i * gap;
-
-            const bufGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            bufGroup.classList.add('port-slot', 'port-slot-exit');
-            bufGroup.dataset.stationId = station.id;
-            bufGroup.dataset.portIndex = i;
-            bufGroup.dataset.portType = 'output';
-
-            const isConnected = this.editor.scenario.connections.some(
-                c => c.from === station.id && c.fromPortIndex === i
-            );
-            if (isConnected) bufGroup.classList.add('connected');
-
-            const bufRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            bufRect.setAttribute('x', bufX);
-            bufRect.setAttribute('y', bufY);
-            bufRect.setAttribute('width', portWidth);
-            bufRect.setAttribute('height', portHeight);
-            bufRect.setAttribute('rx', 2);
-
-            const bufText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            bufText.setAttribute('x', bufX + portWidth / 2);
-            bufText.setAttribute('y', bufY + portHeight / 2);
-            bufText.setAttribute('text-anchor', 'middle');
-            bufText.setAttribute('dominant-baseline', 'middle');
-            bufText.setAttribute('font-size', '7');
-            bufText.setAttribute('fill', '#e65100');
-            bufText.textContent = `X${i}`;
-
-            bufGroup.appendChild(bufRect);
-            bufGroup.appendChild(bufText);
-            parentGroup.appendChild(bufGroup);
-
-            // Line from station body to port
-            const connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            connLine.setAttribute('x1', station.x + w / 2);
-            connLine.setAttribute('y1', station.y);
-            connLine.setAttribute('x2', bufX);
-            connLine.setAttribute('y2', bufY + portHeight / 2);
-            connLine.setAttribute('stroke', '#e6510080');
-            connLine.setAttribute('stroke-width', '1');
-            connLine.setAttribute('stroke-dasharray', '3,2');
-            parentGroup.appendChild(connLine);
+            renderPort(i, 'output',
+                cx + w / 2 - portWidth / 2,
+                exitStartY + i * gap + portHeight / 2,
+                `X${i}`, '#e65100');
         }
     }
 
@@ -1181,9 +1277,10 @@ export class Canvas {
         const station = this.editor.getStation(stationId);
         if (!station) return null;
 
-        // ModulerStation ports
+        // ModulerStation ports — connection line attaches to port indicator edge
         if (station.type === 'moduler') {
-            const w = 100;
+            const { w } = this._getModulerSize(station);
+            const { cx, cy } = this._getModulerVisualCenter(station);
             const portWidth = 20;
             const portHeight = 14;
             const gap = 20;
@@ -1191,19 +1288,21 @@ export class Canvas {
             if (portType === 'input') {
                 const count = station.config.entryCount || 1;
                 if (portIndex < 0 || portIndex >= count) return null;
+                const mapped = this._getModulerPortPos(station, portIndex, 'input');
+                if (mapped) return { x: mapped.x - portWidth / 2, y: mapped.y };
                 const totalH = count * portHeight + (count - 1) * (gap - portHeight);
-                const startY = station.y - totalH / 2;
-                const bufX = station.x - w / 2 - portWidth - 6;
-                const bufY = startY + portIndex * gap + portHeight / 2;
-                return { x: bufX, y: bufY };
+                const startY = cy - totalH / 2;
+                const fallbackX = cx - w / 2 + portWidth / 2;
+                return { x: fallbackX - portWidth / 2, y: startY + portIndex * gap + portHeight / 2 };
             } else {
                 const count = station.config.exitCount || 1;
                 if (portIndex < 0 || portIndex >= count) return null;
+                const mapped = this._getModulerPortPos(station, portIndex, 'output');
+                if (mapped) return { x: mapped.x + portWidth / 2, y: mapped.y };
                 const totalH = count * portHeight + (count - 1) * (gap - portHeight);
-                const startY = station.y - totalH / 2;
-                const bufX = station.x + w / 2 + 6 + portWidth;
-                const bufY = startY + portIndex * gap + portHeight / 2;
-                return { x: bufX, y: bufY };
+                const startY = cy - totalH / 2;
+                const fallbackX = cx + w / 2 - portWidth / 2;
+                return { x: fallbackX + portWidth / 2, y: startY + portIndex * gap + portHeight / 2 };
             }
         }
 
@@ -1245,7 +1344,7 @@ export class Canvas {
         } else {
             const targetX = (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler'))
                 ? (toStation.x - 40 - 40) : toStation.x;
-            const halfW = fromStation.type === 'moduler' ? 50 : 40;
+            const halfW = fromStation.type === 'moduler' ? this._getModulerSize(fromStation).w / 2 : 40;
             x1 = targetX >= fromStation.x ? fromStation.x + halfW : fromStation.x - halfW;
             y1 = fromStation.y;
         }
@@ -1256,7 +1355,7 @@ export class Canvas {
             if (bufPos) { x2 = bufPos.x; y2 = bufPos.y; }
             else { x2 = toStation.x - 40; y2 = toStation.y; }
         } else {
-            const halfW = toStation.type === 'moduler' ? 50 : 40;
+            const halfW = toStation.type === 'moduler' ? this._getModulerSize(toStation).w / 2 : 40;
             x2 = x1 <= toStation.x ? toStation.x - halfW : toStation.x + halfW;
             y2 = toStation.y;
         }

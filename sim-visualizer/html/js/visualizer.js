@@ -1,6 +1,7 @@
 // 3D Visualizer inspired by Mini Tokyo 3D
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const STATION_COLORS = {
     'source': 0x28a745,
@@ -301,7 +302,7 @@ export class Visualizer3D {
         this.scene = null;
     }
 
-    loadScenario(scenario) {
+    async loadScenario(scenario) {
         console.log('[Visualizer3D] Loading scenario:', scenario.name);
 
         const hasSavedPositions = scenario.stations.some(s => s.positionX != null && s.positionY != null);
@@ -315,22 +316,41 @@ export class Visualizer3D {
         scenario.stations.forEach(s => stationTypes.set(s.id, s.type));
         const portTargets = this._buildPortTargetMap(scenario.connections, stationTypes, positions);
 
-        scenario.stations.forEach(station => {
+        for (const station of scenario.stations) {
             const pos = positions.get(station.id);
-            if (!pos) return;
+            if (!pos) continue;
 
-            const { mesh, label } = this._createStation(station, pos);
-            const portSlots = this._createPortSlots(station, pos, portTargets.get(station.id) || []);
-
-            this.stations.set(station.id, {
-                mesh, position: pos, label,
-                stationType: station.type,
-                portSlots,
-                portConfig: station.config?.ports || [],
-                bufferSlots: station.type === 'moduler' ? (station.config?.bufferSlots || null) : null,
-                stationName: station.name || station.id,
-            });
-        });
+            const cfg = station.config;
+            if (station.type === 'moduler') {
+                if (cfg?.model3DGrid) {
+                    this._createModulerGridModel(station.id, station, pos, portTargets.get(station.id) || []);
+                } else if (cfg?.model3DGltf || cfg?.model3DGlb) {
+                    await this._createModulerGltfModel(station.id, station, pos, portTargets.get(station.id) || []);
+                } else {
+                    const { mesh, label } = this._createStation(station, pos);
+                    const portSlots = this._createPortSlots(station, pos, portTargets.get(station.id) || []);
+                    this.stations.set(station.id, {
+                        mesh, position: pos, label,
+                        stationType: station.type,
+                        portSlots,
+                        portConfig: cfg?.ports || [],
+                        bufferSlots: cfg?.bufferSlots || null,
+                        stationName: station.name || station.id,
+                    });
+                }
+            } else {
+                const { mesh, label } = this._createStation(station, pos);
+                const portSlots = this._createPortSlots(station, pos, portTargets.get(station.id) || []);
+                this.stations.set(station.id, {
+                    mesh, position: pos, label,
+                    stationType: station.type,
+                    portSlots,
+                    portConfig: cfg?.ports || [],
+                    bufferSlots: null,
+                    stationName: station.name || station.id,
+                });
+            }
+        }
 
         const resolveModulerChild = (id) => {
             const dotIdx = id.lastIndexOf('.');
@@ -403,6 +423,101 @@ export class Visualizer3D {
         console.log(`[Visualizer3D] Created ${this.stations.size} stations and ${this.connections.length} connections`);
         if (this.modulerHierarchy.size > 0) {
             console.log(`[Visualizer3D] Found ${this.modulerHierarchy.size} moduler station group(s)`);
+        }
+    }
+
+    _createModulerGridModel(stationId, station, pos, portTargetList) {
+        const grid = station.config.model3DGrid;
+        const { gridSize, height, cols, rows, cells } = grid;
+
+        const group = new THREE.Group();
+        const geometry = new THREE.BoxGeometry(gridSize, height, gridSize);
+        for (const [cx, cy] of cells) {
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x4a148c,
+                transparent: true,
+                opacity: 0.7,
+                roughness: 0.5,
+                metalness: 0.1,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(
+                (cx - (cols - 1) / 2) * gridSize,
+                height / 2,
+                (cy - (rows - 1) / 2) * gridSize
+            );
+            group.add(mesh);
+        }
+
+        group.position.set(pos.x, 0, pos.z);
+        group.userData = { stationId, type: 'moduler' };
+        this.scene.add(group);
+
+        const label = this._createLabel(station.name || stationId, pos.x, height + 15, pos.z);
+        const portSlots = this._createPortSlots(station, pos, portTargetList);
+
+        this.stations.set(stationId, {
+            mesh: group,
+            position: pos,
+            label,
+            stationType: 'moduler',
+            portSlots,
+            portConfig: station.config?.ports || [],
+            bufferSlots: station.config?.bufferSlots || null,
+            stationName: station.name || stationId,
+        });
+    }
+
+    async _createModulerGltfModel(stationId, station, pos, portTargetList) {
+        const { model3DGltf, model3DGlb } = station.config;
+        const loader = new GLTFLoader();
+        let url;
+
+        try {
+            if (model3DGltf) {
+                const blob = new Blob([JSON.stringify(model3DGltf)], { type: 'model/gltf+json' });
+                url = URL.createObjectURL(blob);
+            } else {
+                const binary = Uint8Array.from(atob(model3DGlb), c => c.charCodeAt(0));
+                const blob = new Blob([binary], { type: 'model/gltf-binary' });
+                url = URL.createObjectURL(blob);
+            }
+
+            const gltf = await new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
+            URL.revokeObjectURL(url);
+            url = null;
+
+            gltf.scene.position.set(pos.x, 0, pos.z);
+            gltf.scene.userData = { stationId, type: 'moduler' };
+            this.scene.add(gltf.scene);
+
+            const label = this._createLabel(station.name || stationId, pos.x, 50, pos.z);
+            const portSlots = this._createPortSlots(station, pos, portTargetList);
+
+            this.stations.set(stationId, {
+                mesh: gltf.scene,
+                position: pos,
+                label,
+                stationType: 'moduler',
+                portSlots,
+                portConfig: station.config?.ports || [],
+                bufferSlots: station.config?.bufferSlots || null,
+                stationName: station.name || stationId,
+            });
+        } catch (err) {
+            if (url) URL.revokeObjectURL(url);
+            console.error(`[Visualizer3D] Failed to load glTF model for ${stationId}:`, err);
+            // Fallback to default cylinder
+            const { mesh, label } = this._createStation(station, pos);
+            const portSlots = this._createPortSlots(station, pos, portTargetList);
+            this.stations.set(stationId, {
+                mesh, position: pos, label,
+                stationType: 'moduler',
+                portSlots,
+                portConfig: station.config?.ports || [],
+                bufferSlots: station.config?.bufferSlots || null,
+                stationName: station.name || stationId,
+            });
         }
     }
 

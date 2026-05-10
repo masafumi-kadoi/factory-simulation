@@ -1,6 +1,8 @@
 // Scenario Editor Main
 import { Canvas } from './canvas.js';
 import { PropertiesPanel } from './properties.js';
+import { ModelEditor } from './model-editor.js';
+import { Editor3DView } from './editor-3d-view.js';
 import { validateScenario, validateStation } from './validation.js';
 import { apiClient } from './api.js';
 import { TooltipManager } from './tooltip.js';
@@ -69,6 +71,10 @@ class ScenarioEditor {
         this._editStack = []; // Stack of { scenario, selectedItem, commandManager }
         this._currentSubScenarioPath = []; // Array of station IDs for breadcrumb
 
+        // Model editing mode
+        this._editMode = 'logic'; // 'logic' | 'model'
+        this._modelEditor = null;
+
         this._init();
     }
 
@@ -117,6 +123,11 @@ class ScenarioEditor {
         this.canvas.snapToGrid = this._gridSnap;
         this.propertiesPanel = new PropertiesPanel(document.getElementById('properties-content'), this);
         this.propertiesPanel.setInterlockModal(this.interlockModal);
+
+        // 3D view
+        this._editor3DView = new Editor3DView(document.getElementById('editor-3d-canvas'));
+        this._is3DMode = false;
+        this._setup3DToggle();
 
         // Initialize minimap and search
         this.minimap = new Minimap(this);
@@ -1145,8 +1156,18 @@ class ScenarioEditor {
     }
 
     async _saveScenario() {
-        // Validate
-        const { errors, warnings } = validateScenario(this.scenario);
+        // When editing a sub-scenario, sync it to the parent and validate the root scenario
+        let scenarioToValidate = this.scenario;
+        if (this.scenario._isSubScenario) {
+            if (this.scenario._parentStation) {
+                this.scenario._parentStation.config.subScenario = {
+                    stations: this.scenario.stations,
+                    connections: this.scenario.connections
+                };
+            }
+            scenarioToValidate = this._editStack[0]?.scenario || this.scenario;
+        }
+        const { errors, warnings } = validateScenario(scenarioToValidate);
 
         if (errors.length > 0) {
             const confirmMsg = 'バリデーションエラー:\n' + errors.join('\n')
@@ -1471,6 +1492,8 @@ class ScenarioEditor {
         // Update breadcrumb
         this._updateBreadcrumb();
 
+        this._editMode = 'logic';
+        this._showSubScenarioToolbar();
         this._animateDrill();
     }
 
@@ -1493,6 +1516,7 @@ class ScenarioEditor {
         this.selectedItem = prev.selectedItem;
         this.commandManager = prev.commandManager;
 
+        this._hideSubScenarioToolbar();
         this._markDirty();
         this._updateBreadcrumb();
         this._animateDrill();
@@ -1515,6 +1539,7 @@ class ScenarioEditor {
             this.commandManager = prev.commandManager;
         }
 
+        if (this._editStack.length === 0) this._hideSubScenarioToolbar();
         this._markDirty();
         this._updateBreadcrumb();
         this._animateDrill();
@@ -1531,6 +1556,404 @@ class ScenarioEditor {
                 svg.style.opacity = '1';
                 svg.style.transition = 'opacity 0.2s ease-out';
             });
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Sub-scenario toolbar (model editing mode)
+    // -----------------------------------------------------------------------
+    _showSubScenarioToolbar() {
+        const toolbar = document.getElementById('sub-scenario-toolbar');
+        if (!toolbar) return;
+        toolbar.style.display = 'flex';
+
+        // Re-attach event listeners every time (toolbar may have been hidden)
+        const logicBtn = document.getElementById('logic-mode-btn');
+        const modelBtn = document.getElementById('model-mode-btn');
+        const blockSizeBtn = document.getElementById('block-size-btn');
+        const blockHeightBtn = document.getElementById('block-height-btn');
+        const originBtn = document.getElementById('origin-set-btn');
+        const confirmBtn = document.getElementById('model-confirm-btn');
+        const importBtn = document.getElementById('model-import-btn');
+        const fileInput = document.getElementById('model-file-input');
+        const resetBtn = document.getElementById('model-reset-btn');
+        const exportBtn = document.getElementById('model-export-btn');
+
+        // Clone buttons to remove old listeners
+        const rebind = (el, handler) => {
+            if (!el) return;
+            const clone = el.cloneNode(true);
+            el.parentNode.replaceChild(clone, el);
+            clone.addEventListener('click', handler);
+            return clone;
+        };
+
+        rebind(logicBtn, () => this.setEditMode('logic'));
+        rebind(modelBtn, () => this.setEditMode('model'));
+        rebind(blockSizeBtn, () => this._modelEditor?.openGridSizeModal());
+        rebind(blockHeightBtn, () => this._modelEditor?.openHeightModal());
+        rebind(originBtn, () => {
+            if (!this._modelEditor) return;
+            const active = this._modelEditor.toggleOriginMode();
+            const btn = document.getElementById('origin-set-btn');
+            if (btn) {
+                btn.style.background = active ? '#ff4444' : '';
+                btn.style.color = active ? '#fff' : '';
+            }
+        });
+        rebind(confirmBtn, () => this._handleModelConfirm());
+        rebind(importBtn, () => document.getElementById('model-file-input')?.click());
+        rebind(resetBtn, () => this._handleModelReset());
+        rebind(exportBtn, () => this._handleModelExport());
+
+        // File input change handler
+        if (fileInput) {
+            const newFileInput = fileInput.cloneNode(true);
+            fileInput.parentNode.replaceChild(newFileInput, fileInput);
+            newFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) this._handleModelImport(file);
+                e.target.value = '';
+            });
+        }
+
+        // Initialize model editor
+        const canvas = document.getElementById('model-editor-canvas');
+        const fp = document.getElementById('model-footprint-canvas');
+        if (canvas && fp) {
+            if (this._modelEditor) this._modelEditor.close();
+            this._modelEditor = new ModelEditor(canvas, fp);
+            this._modelEditor.open(this._loadModel3D());
+        }
+
+        this._updateSubScenarioToolbarState();
+
+        // Draw footprint on SVG if model data exists (logic mode on drill-down)
+        // Use double-RAF to ensure _animateDrill's _render() has already run
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (this._editMode === 'logic') {
+                const m = this._loadModel3D();
+                if (m) this._drawFootprintOnSVG(m);
+            }
+        }));
+    }
+
+    _hideSubScenarioToolbar() {
+        const toolbar = document.getElementById('sub-scenario-toolbar');
+        if (toolbar) toolbar.style.display = 'none';
+
+        const modelCanvas = document.getElementById('model-editor-canvas');
+        if (modelCanvas) modelCanvas.style.display = 'none';
+
+        const fpCanvas = document.getElementById('model-footprint-canvas');
+        if (fpCanvas) fpCanvas.style.display = 'none';
+
+        this._clearFootprintSVG();
+
+        const svgCanvas = document.getElementById('canvas');
+        if (svgCanvas) svgCanvas.style.display = '';
+
+        if (this._modelEditor) {
+            this._modelEditor.close();
+            this._modelEditor = null;
+        }
+    }
+
+    setEditMode(mode) {
+        const svgCanvas = document.getElementById('canvas');
+        const modelCanvas = document.getElementById('model-editor-canvas');
+        const fpCanvas = document.getElementById('model-footprint-canvas');
+        const editControls = document.getElementById('model-editing-controls');
+        const logicBtn = document.getElementById('logic-mode-btn');
+        const modelBtn = document.getElementById('model-mode-btn');
+
+        if (mode === 'logic') {
+            if (svgCanvas) svgCanvas.style.display = '';
+            if (modelCanvas) modelCanvas.style.display = 'none';
+            if (fpCanvas) fpCanvas.style.display = 'none';
+            if (editControls) editControls.style.display = 'none';
+            logicBtn?.classList.add('active');
+            modelBtn?.classList.remove('active');
+
+            // Draw footprint as SVG overlay
+            const m = this._loadModel3D();
+            requestAnimationFrame(() => this._drawFootprintOnSVG(m));
+        } else if (mode === 'model') {
+            this._clearFootprintSVG();
+            if (svgCanvas) svgCanvas.style.display = 'none';
+            if (modelCanvas) modelCanvas.style.display = 'block';
+            if (editControls) editControls.style.display = 'flex';
+            if (fpCanvas) fpCanvas.style.display = 'none';
+            modelBtn?.classList.add('active');
+            logicBtn?.classList.remove('active');
+
+            this._modelEditor?.open(this._loadModel3D());
+            this._updateSubScenarioToolbarState();
+        }
+
+        this._editMode = mode;
+    }
+
+    _updateSubScenarioToolbarState() {
+        const m = this._loadModel3D();
+        const exportBtn = document.getElementById('model-export-btn');
+        const confirmBtn = document.getElementById('model-confirm-btn');
+        const resetBtn = document.getElementById('model-reset-btn');
+
+        if (exportBtn) exportBtn.disabled = !m;
+
+        if (this._modelEditor?._mode === 'imported') {
+            if (confirmBtn) confirmBtn.disabled = true;
+            if (resetBtn) resetBtn.style.display = '';
+        } else {
+            if (confirmBtn) confirmBtn.disabled = false;
+            if (resetBtn) resetBtn.style.display = 'none';
+        }
+    }
+
+    _handleModelConfirm() {
+        if (!this._modelEditor) return;
+        const grid = this._modelEditor.getGridData();
+        if (!grid) {
+            alert('セルを選択してください');
+            return;
+        }
+        this._saveModel3DGrid(grid);
+        this._updateSubScenarioToolbarState();
+        this._showInlineNotification('モデルを保存しました');
+    }
+
+    async _handleModelImport(file) {
+        if (!this._modelEditor) return;
+        try {
+            const result = await this._modelEditor.importFile(file);
+            if (result.type === 'gltf') {
+                this._saveModel3DGltf(result.data);
+            } else if (result.type === 'glb') {
+                this._saveModel3DGlb(result.data);
+            }
+            this._updateSubScenarioToolbarState();
+        } catch (err) {
+            this._showInlineNotification(err.message || 'インポートに失敗しました', 'error');
+        }
+    }
+
+    async _handleModelExport() {
+        if (!this._modelEditor) return;
+        const exportBtn = document.getElementById('model-export-btn');
+        if (exportBtn) {
+            exportBtn.disabled = true;
+            exportBtn.textContent = '処理中...';
+        }
+        try {
+            const m = this._loadModel3D();
+            if (!m) return;
+            if (m.type === 'grid') {
+                await this._modelEditor.exportFromGrid();
+            } else if (m.type === 'gltf') {
+                this._modelEditor.exportFromGltf(m.data);
+            } else if (m.type === 'glb') {
+                this._modelEditor.exportFromGlb(m.data);
+            }
+        } finally {
+            if (exportBtn) {
+                exportBtn.disabled = false;
+                exportBtn.textContent = 'エクスポート';
+                this._updateSubScenarioToolbarState();
+            }
+        }
+    }
+
+    _handleModelReset() {
+        this._resetModel3D();
+        this._modelEditor?.open(null);
+        this._updateSubScenarioToolbarState();
+    }
+
+    _showInlineNotification(message, type = 'info') {
+        const modelCanvas = document.getElementById('model-editor-canvas');
+        if (!modelCanvas) return;
+        const container = modelCanvas.parentElement;
+        if (!container) return;
+
+        const existing = container.querySelector('.model-inline-notification');
+        if (existing) existing.remove();
+
+        const note = document.createElement('div');
+        note.className = 'model-inline-notification';
+        note.textContent = message;
+        note.style.cssText = `
+            position:absolute; top:8px; left:50%; transform:translateX(-50%);
+            background:${type === 'error' ? 'var(--danger-color)' : 'var(--accent-color)'};
+            color:#fff; padding:6px 16px; border-radius:4px; font-size:13px;
+            z-index:100; pointer-events:none; white-space:nowrap;`;
+        container.appendChild(note);
+        setTimeout(() => note.remove(), 3000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Model 3D save/load helpers
+    // -----------------------------------------------------------------------
+    _saveModel3DGrid(grid) {
+        const parent = this.scenario._parentStation;
+        if (!parent) return;
+        parent.config = parent.config || {};
+        delete parent.config.model3DGltf;
+        delete parent.config.model3DGlb;
+        if (grid) {
+            parent.config.model3DGrid = grid;
+        } else {
+            delete parent.config.model3DGrid;
+        }
+        this._markDirty();
+    }
+
+    _saveModel3DGltf(gltfJson) {
+        const parent = this.scenario._parentStation;
+        if (!parent) return;
+        parent.config = parent.config || {};
+        delete parent.config.model3DGrid;
+        delete parent.config.model3DGlb;
+        parent.config.model3DGltf = gltfJson;
+        this._markDirty();
+    }
+
+    _saveModel3DGlb(base64) {
+        const parent = this.scenario._parentStation;
+        if (!parent) return;
+        parent.config = parent.config || {};
+        delete parent.config.model3DGrid;
+        delete parent.config.model3DGltf;
+        parent.config.model3DGlb = base64;
+        this._markDirty();
+    }
+
+    _resetModel3D() {
+        const parent = this.scenario._parentStation;
+        if (!parent) return;
+        delete parent.config?.model3DGrid;
+        delete parent.config?.model3DGltf;
+        delete parent.config?.model3DGlb;
+        this._markDirty();
+    }
+
+    _loadModel3D() {
+        const cfg = this.scenario._parentStation?.config;
+        if (!cfg) return null;
+        if (cfg.model3DGrid) return { type: 'grid', data: cfg.model3DGrid };
+        if (cfg.model3DGltf) return { type: 'gltf', data: cfg.model3DGltf };
+        if (cfg.model3DGlb)  return { type: 'glb',  data: cfg.model3DGlb };
+        return null;
+    }
+
+    _clearFootprintSVG() {
+        document.getElementById('footprint-overlay')?.remove();
+    }
+
+    _drawFootprintOnSVG(model3D) {
+        this._clearFootprintSVG();
+        const svgEl = document.getElementById('canvas');
+        if (!svgEl || !model3D || model3D.type !== 'grid') return;
+        const cells = model3D.data?.cells;
+        if (!cells || cells.length === 0) return;
+
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const g = document.createElementNS(svgNS, 'g');
+        g.id = 'footprint-overlay';
+        g.setAttribute('pointer-events', 'none');
+
+        const minC = Math.min(...cells.map(([c]) => c));
+        const maxC = Math.max(...cells.map(([c]) => c));
+        const minR = Math.min(...cells.map(([, r]) => r));
+        const maxR = Math.max(...cells.map(([, r]) => r));
+        const spanC = maxC - minC + 1;
+        const spanR = maxR - minR + 1;
+
+        const vw = svgEl.clientWidth  || 800;
+        const vh = svgEl.clientHeight || 600;
+        const maxPx  = Math.min(vw, vh) * 0.6;
+        const cellPx = Math.min(maxPx / spanC, maxPx / spanR);
+        const startX = (vw - spanC * cellPx) / 2;
+        const startY = (vh - spanR * cellPx) / 2;
+
+        for (const [c, r] of cells) {
+            const rect = document.createElementNS(svgNS, 'rect');
+            rect.setAttribute('x',      startX + (c - minC) * cellPx);
+            rect.setAttribute('y',      startY + (r - minR) * cellPx);
+            rect.setAttribute('width',  cellPx);
+            rect.setAttribute('height', cellPx);
+            rect.setAttribute('fill',   'rgba(0,207,255,0.25)');
+            rect.setAttribute('stroke', 'rgba(0,207,255,0.75)');
+            rect.setAttribute('stroke-width', '1.5');
+            g.appendChild(rect);
+        }
+
+        // Insert behind stations so stations render on top
+        const stationsLayer = svgEl.querySelector('#stations-layer');
+        if (stationsLayer) svgEl.insertBefore(g, stationsLayer);
+        else svgEl.appendChild(g);
+    }
+
+    _drawFootprintOnCanvas(fpCanvas, model3D) {
+        const dpr = window.devicePixelRatio || 1;
+        const w = fpCanvas.offsetWidth  || fpCanvas.parentElement?.offsetWidth  || 0;
+        const h = fpCanvas.offsetHeight || fpCanvas.parentElement?.offsetHeight || 0;
+        if (w <= 0 || h <= 0) return;
+
+        fpCanvas.width  = w * dpr;
+        fpCanvas.height = h * dpr;
+        const ctx = fpCanvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        if (model3D.type === 'grid' && model3D.data?.cells?.length > 0) {
+            const cells = model3D.data.cells;
+            const minC = Math.min(...cells.map(([c]) => c));
+            const maxC = Math.max(...cells.map(([c]) => c));
+            const minR = Math.min(...cells.map(([, r]) => r));
+            const maxR = Math.max(...cells.map(([, r]) => r));
+            const spanC = maxC - minC + 1;
+            const spanR = maxR - minR + 1;
+            const maxPx  = Math.min(w, h) * 0.7;
+            const cellPx = Math.min(maxPx / spanC, maxPx / spanR);
+            const offsetX = (w - spanC * cellPx) / 2;
+            const offsetY = (h - spanR * cellPx) / 2;
+
+            ctx.fillStyle   = 'rgba(0, 207, 255, 0.35)';
+            ctx.strokeStyle = 'rgba(0, 207, 255, 0.9)';
+            ctx.lineWidth   = 2;
+            for (const [c, r] of cells) {
+                ctx.fillRect(  offsetX + (c - minC) * cellPx, offsetY + (r - minR) * cellPx, cellPx, cellPx);
+                ctx.strokeRect(offsetX + (c - minC) * cellPx, offsetY + (r - minR) * cellPx, cellPx, cellPx);
+            }
+        } else if (model3D.type === 'gltf' || model3D.type === 'glb') {
+            ctx.font          = '14px sans-serif';
+            ctx.fillStyle     = 'rgba(0, 207, 255, 0.6)';
+            ctx.textAlign     = 'center';
+            ctx.textBaseline  = 'middle';
+            ctx.fillText('📦 外部モデル設定済み', w / 2, h / 2);
+        }
+    }
+
+    _setup3DToggle() {
+        const btn = document.getElementById('toggle-3d-btn');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            this._is3DMode = !this._is3DMode;
+            const svgCanvas = document.getElementById('canvas');
+            if (this._is3DMode) {
+                if (svgCanvas) svgCanvas.style.display = 'none';
+                btn.textContent = '2D';
+                btn.style.background = '#4a148c';
+                btn.style.color = '#fff';
+                this._editor3DView.show(this.scenario);
+            } else {
+                this._editor3DView.hide();
+                if (svgCanvas) svgCanvas.style.display = '';
+                btn.textContent = '3D';
+                btn.style.background = '#222';
+                btn.style.color = '#ccc';
+            }
         });
     }
 

@@ -480,6 +480,7 @@ export class PropertiesPanel {
                     this.editor.drillDown(stationId);
                 });
             }
+
         }
 
         // Interlock config button

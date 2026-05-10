@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scenario Editor - Factory Simulation</title>
     <link href="css/style.css" rel="stylesheet">
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 <body>
     <div class="editor-container">
@@ -72,9 +80,33 @@
 
             <!-- Center: Canvas -->
             <div class="canvas-container">
+                <button id="toggle-3d-btn" title="2D / 3D 切替"
+                        style="position:absolute;top:8px;right:8px;z-index:50;padding:4px 12px;border-radius:4px;border:1px solid #555;background:#222;color:#ccc;font-size:12px;cursor:pointer;">
+                    3D
+                </button>
                 <div id="breadcrumb" class="breadcrumb" style="display: none;">
                     <span class="breadcrumb-item breadcrumb-root" data-depth="0">Root</span>
                 </div>
+                <div id="sub-scenario-toolbar" style="display:none;">
+                    <div class="mode-buttons">
+                        <button id="logic-mode-btn" class="mode-btn active">ロジック編集</button>
+                        <button id="model-mode-btn" class="mode-btn">モデル編集</button>
+                    </div>
+                    <div id="model-editing-controls" style="display:none;">
+                        <button id="block-size-btn">ブロックサイズ切替</button>
+                        <button id="block-height-btn">ブロック高さ切替</button>
+                        <button id="origin-set-btn">基準点設定</button>
+                        <button id="model-confirm-btn" class="btn-primary">モデル決定</button>
+                        <button id="model-import-btn">インポート</button>
+                        <button id="model-reset-btn" style="display:none;">リセット</button>
+                        <button id="model-export-btn" disabled>エクスポート</button>
+                    </div>
+                </div>
+                <canvas id="model-editor-canvas" style="display:none;"></canvas>
+                <canvas id="editor-3d-canvas"></canvas>
+                <canvas id="model-footprint-canvas"
+                        style="display:none; position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                <input type="file" id="model-file-input" accept=".gltf,.glb" style="display:none;">
                 <svg id="canvas" width="100%" height="100%">
                     <defs>
                         <marker id="arrowhead" markerWidth="10" markerHeight="7"
