@@ -440,7 +440,9 @@ class App {
                 from: fromTop,
                 to: toTop,
                 fromPortIndex: conn.fromPortIndex ?? -1,
-                toPortIndex: conn.toPortIndex ?? -1
+                toPortIndex: conn.toPortIndex ?? -1,
+                originalFrom: conn.from,
+                originalTo: conn.to,
             });
         }
 

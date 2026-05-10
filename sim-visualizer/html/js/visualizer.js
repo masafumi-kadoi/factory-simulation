@@ -333,11 +333,10 @@ export class Visualizer3D {
                     await this._createModulerGltfModel(station.id, station, pos, portTargets.get(station.id) || []);
                 } else {
                     const { mesh, label } = this._createStation(station, pos);
-                    const portSlots = this._createPortSlots(station, pos, portTargets.get(station.id) || []);
                     this.stations.set(station.id, {
                         mesh, position: pos, label,
-                        stationType: station.type,
-                        portSlots,
+                        stationType: 'moduler',
+                        portSlots: [],
                         portConfig: cfg?.ports || [],
                         bufferSlots: cfg?.bufferSlots || null,
                         stationName: station.name || station.id,
@@ -416,7 +415,11 @@ export class Visualizer3D {
                 from: fromPos,
                 to: toPos,
                 fromStationId: conn.from,
-                toStationId: conn.to
+                toStationId: conn.to,
+                originalFrom: conn.originalFrom || conn.from,
+                originalTo: conn.originalTo || conn.to,
+                defaultFrom: fromPos,
+                defaultTo: toPos,
             };
             this.connections.push(connData);
 
@@ -469,14 +472,13 @@ export class Visualizer3D {
         const labelX = pos.x + ((minC + maxC) / 2 - refC) * cellUnit;
         const labelZ = pos.z + ((minR + maxR) / 2 - refR) * cellUnit;
         const label = this._createLabel(station.name || stationId, labelX, modelH + 15, labelZ);
-        const portSlots = this._createModulerPortSlots(station, pos, portTargetList);
 
         this.stations.set(stationId, {
             mesh: group,
             position: pos,
             label,
             stationType: 'moduler',
-            portSlots,
+            portSlots: [],
             portConfig: station.config?.ports || [],
             bufferSlots: station.config?.bufferSlots || null,
             stationName: station.name || stationId,
@@ -541,14 +543,13 @@ export class Visualizer3D {
             this.scene.add(gltf.scene);
 
             const label = this._createLabel(station.name || stationId, pos.x, 50, pos.z);
-            const portSlots = this._createPortSlots(station, pos, portTargetList);
 
             this.stations.set(stationId, {
                 mesh: gltf.scene,
                 position: pos,
                 label,
                 stationType: 'moduler',
-                portSlots,
+                portSlots: [],
                 portConfig: station.config?.ports || [],
                 bufferSlots: station.config?.bufferSlots || null,
                 stationName: station.name || stationId,
@@ -558,11 +559,10 @@ export class Visualizer3D {
             console.error(`[Visualizer3D] Failed to load glTF model for ${stationId}:`, err);
             // Fallback to default cylinder
             const { mesh, label } = this._createStation(station, pos);
-            const portSlots = this._createPortSlots(station, pos, portTargetList);
             this.stations.set(stationId, {
                 mesh, position: pos, label,
                 stationType: 'moduler',
-                portSlots,
+                portSlots: [],
                 portConfig: station.config?.ports || [],
                 bufferSlots: station.config?.bufferSlots || null,
                 stationName: station.name || stationId,
@@ -588,7 +588,7 @@ export class Visualizer3D {
 
     _createPortSlots(station, stationPos, portTargets) {
         if (station.type === 'moduler') {
-            return this._createModulerPortSlots(station, stationPos, portTargets);
+            return [];
         }
 
         const ports = station.config?.ports || [];
@@ -637,81 +637,7 @@ export class Visualizer3D {
         });
     }
 
-    _createModulerPortSlots(station, stationPos, portTargets) {
-        const entryCount = station.config?.entryCount || station.entryCount || 1;
-        const exitCount = station.config?.exitCount || station.exitCount || 1;
-        const portRadius = 12;
-        const portHeight = 3;
-        const spacing = 30;
-        const offset = 70;
-        const slots = [];
 
-        const entryColor = STATION_COLORS['entry'];
-        for (let i = 0; i < entryCount; i++) {
-            const { x, z } = this._calcPortPosition(stationPos, i, entryCount, spacing, offset, 'entry', portTargets);
-            const position = { x, y: 0, z };
-
-            const discGeo = new THREE.CylinderGeometry(portRadius, portRadius, portHeight, 24);
-            const discMat = new THREE.MeshStandardMaterial({
-                color: entryColor, transparent: true, opacity: 0.3,
-                emissive: entryColor, emissiveIntensity: 0.3
-            });
-            const discMesh = new THREE.Mesh(discGeo, discMat);
-
-            const ringGeo = new THREE.RingGeometry(portRadius - 1.5, portRadius, 32);
-            const ringMat = new THREE.MeshBasicMaterial({
-                color: entryColor, transparent: true, opacity: 0.7, side: THREE.DoubleSide
-            });
-            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-            ringMesh.rotation.x = -Math.PI / 2;
-            ringMesh.position.y = portHeight / 2 + 0.1;
-
-            const group = new THREE.Group();
-            group.add(discMesh);
-            group.add(ringMesh);
-            group.position.set(x, portHeight / 2, z);
-            this.scene.add(group);
-
-            const label = this._createLabel(`E${i}`, x, 12, z);
-            const connLine = this._createSlotConnectorLine({ x, z }, stationPos, entryColor);
-
-            slots.push({ mesh: group, label, position, connLine, portType: 'entry', portIndex: i });
-        }
-
-        const exitColor = STATION_COLORS['exit'];
-        for (let i = 0; i < exitCount; i++) {
-            const { x, z } = this._calcPortPosition(stationPos, i, exitCount, spacing, offset, 'exit', portTargets);
-            const position = { x, y: 0, z };
-
-            const discGeo = new THREE.CylinderGeometry(portRadius, portRadius, portHeight, 24);
-            const discMat = new THREE.MeshStandardMaterial({
-                color: exitColor, transparent: true, opacity: 0.3,
-                emissive: exitColor, emissiveIntensity: 0.3
-            });
-            const discMesh = new THREE.Mesh(discGeo, discMat);
-
-            const ringGeo = new THREE.RingGeometry(portRadius - 1.5, portRadius, 32);
-            const ringMat = new THREE.MeshBasicMaterial({
-                color: exitColor, transparent: true, opacity: 0.7, side: THREE.DoubleSide
-            });
-            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-            ringMesh.rotation.x = -Math.PI / 2;
-            ringMesh.position.y = portHeight / 2 + 0.1;
-
-            const group = new THREE.Group();
-            group.add(discMesh);
-            group.add(ringMesh);
-            group.position.set(x, portHeight / 2, z);
-            this.scene.add(group);
-
-            const label = this._createLabel(`X${i}`, x, 12, z);
-            const connLine = this._createSlotConnectorLine({ x, z }, stationPos, exitColor);
-
-            slots.push({ mesh: group, label, position, connLine, portType: 'exit', portIndex: i });
-        }
-
-        return slots;
-    }
 
     _createSlotConnectorLine(slotPos, stationPos, color) {
         const points = [
@@ -1095,6 +1021,28 @@ export class Visualizer3D {
             } else {
                 obj.visible = show;
             }
+        }
+        this._rerouteConnections();
+    }
+
+    _rerouteConnections() {
+        for (const conn of this.connections) {
+            let fromPos = conn.defaultFrom;
+            let toPos = conn.defaultTo;
+
+            if (this.showInternal) {
+                const internalFrom = this._internalPositions.get(conn.originalFrom);
+                if (internalFrom) fromPos = internalFrom;
+                const internalTo = this._internalPositions.get(conn.originalTo);
+                if (internalTo) toPos = internalTo;
+            }
+
+            conn.from = fromPos;
+            conn.to = toPos;
+            const positions = conn.line.geometry.attributes.position;
+            positions.setXYZ(0, fromPos.x, 1, fromPos.z);
+            positions.setXYZ(1, toPos.x, 1, toPos.z);
+            positions.needsUpdate = true;
         }
     }
 
