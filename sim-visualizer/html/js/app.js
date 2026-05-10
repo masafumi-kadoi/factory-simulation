@@ -27,6 +27,7 @@ class App {
 
         this.flatScenario = null;
         this.modulerMap = new Map();   // internal stationID → direct parent moduler ID
+        this._drainIds = new Set();
         this.openViewers = new Map();  // modulerId → { window, ready }
         this._rawActiveWorks = new Map();
         this._rawSignalStates = new Map();
@@ -228,7 +229,9 @@ class App {
 
     _buildModulerMap(flatScenario) {
         this.modulerMap.clear();
+        this._drainIds.clear();
         for (const station of flatScenario.stations) {
+            if (station.type === 'drain') this._drainIds.add(station.id);
             const dotIdx = station.id.lastIndexOf('.');
             if (dotIdx === -1) continue;
             const parentId = station.id.substring(0, dotIdx);
@@ -251,6 +254,7 @@ class App {
 
         rawActiveWorks.forEach((workInfo, workId) => {
             if (workInfo.state === 'at_station') {
+                if (this._drainIds.has(workInfo.stationId)) return;
                 const parent = this._getDirectParent(workInfo.stationId);
                 if (parent) {
                     // Internal station → show at parent moduler, static
@@ -308,6 +312,7 @@ class App {
     _transformForInternalView(rawActiveWorks) {
         const result = new Map();
         rawActiveWorks.forEach((workInfo, workId) => {
+            if (workInfo.state === 'at_station' && this._drainIds.has(workInfo.stationId)) return;
             const sid = workInfo.stationId || workInfo.fromStation;
             if (!sid) { result.set(workId, { ...workInfo }); return; }
             const dotIdx = sid.indexOf('.');
