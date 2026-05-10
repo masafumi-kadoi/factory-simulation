@@ -31,8 +31,13 @@ export class Visualizer3D {
         this.showWorkIDs = true;
         this.showStationNames = true;
         this.showInterlocks = false;
+        this.showInternal = false;
+        this.showInternalNames = true;
         this.interlockIndicators = [];
         this.modulerHierarchy = new Map();
+        this._internalObjects = [];
+        this._internalLabels = [];
+        this._internalPositions = new Map();
         this.ground = null;
         this.gridHelper = null;
         this._raycaster = new THREE.Raycaster();
@@ -972,6 +977,148 @@ export class Visualizer3D {
         });
     }
 
+    loadInternalStations(flatScenario) {
+        this._clearInternalObjects();
+        this._internalPositions.clear();
+        const PX_PER_M = 80;
+        const topModulers = flatScenario.stations.filter(s => s.type === 'moduler' && !s.id.includes('.'));
+        for (const moduler of topModulers) {
+            const prefix = moduler.id + '.';
+            const internalStations = flatScenario.stations.filter(s => {
+                if (!s.id.startsWith(prefix)) return false;
+                const relative = s.id.substring(prefix.length);
+                return !relative.includes('.');
+            });
+            if (internalStations.length === 0) continue;
+
+            const parentX = moduler.positionX || 0;
+            const parentZ = moduler.positionY || 0;
+
+            const grid = moduler.config?.model3DGrid;
+            let targetExtent = 90;
+            if (grid?.cells?.length > 0) {
+                const gs = grid.gridSize || 0.5;
+                const cells = grid.cells;
+                const spanC = Math.max(...cells.map(([c]) => c)) - Math.min(...cells.map(([c]) => c)) + 1;
+                const spanR = Math.max(...cells.map(([, r]) => r)) - Math.min(...cells.map(([, r]) => r)) + 1;
+                targetExtent = Math.max(spanC, spanR) * gs * PX_PER_M * 0.8;
+            }
+
+            const relPositions = internalStations.map(s => ({
+                x: (s.positionX || 0) - parentX,
+                z: (s.positionY || 0) - parentZ,
+            }));
+            const minRX = Math.min(...relPositions.map(p => p.x));
+            const maxRX = Math.max(...relPositions.map(p => p.x));
+            const minRZ = Math.min(...relPositions.map(p => p.z));
+            const maxRZ = Math.max(...relPositions.map(p => p.z));
+            const srcExtent = Math.max(maxRX - minRX, maxRZ - minRZ, 1);
+            const scale = targetExtent / srcExtent;
+            const centerRX = (minRX + maxRX) / 2;
+            const centerRZ = (minRZ + maxRZ) / 2;
+
+            const discHeight = 4;
+            const positions = new Map();
+            for (let i = 0; i < internalStations.length; i++) {
+                const s = internalStations[i];
+                const rel = relPositions[i];
+                const pos = {
+                    x: parentX + (rel.x - centerRX) * scale,
+                    y: discHeight / 2,
+                    z: parentZ + (rel.z - centerRZ) * scale,
+                };
+                positions.set(s.id, pos);
+                this._internalPositions.set(s.id, pos);
+            }
+
+            for (const s of internalStations) {
+                const pos = positions.get(s.id);
+                const color = STATION_COLORS[s.type] || 0x6c757d;
+                const radius = 15;
+                const discGeo = new THREE.CylinderGeometry(radius, radius, discHeight, 24);
+                const discMat = new THREE.MeshStandardMaterial({
+                    color, transparent: true, opacity: 0.5,
+                    emissive: color, emissiveIntensity: 0.3,
+                    roughness: 0.4, metalness: 0.1,
+                });
+                const mesh = new THREE.Mesh(discGeo, discMat);
+                const ringGeo = new THREE.RingGeometry(radius - 1.5, radius, 32);
+                const ringMat = new THREE.MeshBasicMaterial({
+                    color, transparent: true, opacity: 0.6, side: THREE.DoubleSide,
+                });
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = -Math.PI / 2;
+                ring.position.y = discHeight / 2 + 0.1;
+                const group = new THREE.Group();
+                group.add(mesh);
+                group.add(ring);
+                group.position.set(pos.x, pos.y, pos.z);
+                group.visible = this.showInternal;
+                this.scene.add(group);
+                this._internalObjects.push(group);
+
+                const shortName = s.name || s.id.substring(prefix.length);
+                const label = this._createLabel(shortName, pos.x, 20, pos.z);
+                label.visible = this.showInternal && this.showInternalNames;
+                this.scene.add(label);
+                this._internalObjects.push(label);
+                this._internalLabels.push(label);
+            }
+
+            const internalIds = new Set(internalStations.map(s => s.id));
+            const internalConns = flatScenario.connections.filter(c =>
+                internalIds.has(c.from) && internalIds.has(c.to)
+            );
+            for (const conn of internalConns) {
+                const fromPos = positions.get(conn.from);
+                const toPos = positions.get(conn.to);
+                if (!fromPos || !toPos) continue;
+                const points = [
+                    new THREE.Vector3(fromPos.x, 1, fromPos.z),
+                    new THREE.Vector3(toPos.x, 1, toPos.z),
+                ];
+                const geom = new THREE.BufferGeometry().setFromPoints(points);
+                const mat = new THREE.LineBasicMaterial({ color: 0x5a7aaa, transparent: true, opacity: 0.6 });
+                const line = new THREE.Line(geom, mat);
+                line.visible = this.showInternal;
+                this.scene.add(line);
+                this._internalObjects.push(line);
+            }
+        }
+    }
+
+    setShowInternal(show) {
+        this.showInternal = show;
+        for (const obj of this._internalObjects) {
+            if (this._internalLabels.includes(obj)) {
+                obj.visible = show && this.showInternalNames;
+            } else {
+                obj.visible = show;
+            }
+        }
+    }
+
+    setShowInternalNames(show) {
+        this.showInternalNames = show;
+        for (const label of this._internalLabels) {
+            label.visible = this.showInternal && show;
+        }
+    }
+
+    getInternalPosition(stationId) {
+        return this._internalPositions.get(stationId) || null;
+    }
+
+    _clearInternalObjects() {
+        for (const obj of this._internalObjects) {
+            this.scene.remove(obj);
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+        }
+        this._internalObjects = [];
+        this._internalLabels = [];
+    }
+
     updateInterlockStates(signalStates) {
         this.interlockIndicators.forEach(indicator => {
             const stationSignals = signalStates.get(indicator.stationId);
@@ -1170,57 +1317,74 @@ export class Visualizer3D {
             const work = this.works.get(workId);
 
             if (workInfo.state === 'at_station') {
-                const station = this.stations.get(workInfo.stationId);
-                if (station) {
-                    let x = station.position.x;
-                    let z = station.position.z;
-                    const y = 40;
+                const internalPos = this._internalPositions.get(workInfo.stationId);
+                if (this.showInternal && internalPos) {
+                    const y = 30;
+                    work.mesh.position.set(internalPos.x, y, internalPos.z);
+                    if (work.label) work.label.position.set(internalPos.x, y + 20, internalPos.z);
+                } else {
+                    const station = this.stations.get(workInfo.stationId);
+                    if (station) {
+                        let x = station.position.x;
+                        let z = station.position.z;
+                        const y = 40;
 
-                    if (workInfo.portIndex >= 0) {
-                        const slotPos = this._getPortSlotPosition(station, workInfo.portIndex);
-                        if (slotPos) {
-                            x = slotPos.x;
-                            z = slotPos.z;
+                        if (workInfo.portIndex >= 0) {
+                            const slotPos = this._getPortSlotPosition(station, workInfo.portIndex);
+                            if (slotPos) {
+                                x = slotPos.x;
+                                z = slotPos.z;
+                            }
                         }
-                    }
 
-                    // Multi-work offset
-                    const offsetInfo = stationWorkIndex.get(workId);
-                    if (offsetInfo && offsetInfo.total > 1) {
-                        const angle = (offsetInfo.index / offsetInfo.total) * Math.PI * 2;
-                        x += Math.cos(angle) * 15;
-                        z += Math.sin(angle) * 15;
-                    }
+                        const offsetInfo = stationWorkIndex.get(workId);
+                        if (offsetInfo && offsetInfo.total > 1) {
+                            const angle = (offsetInfo.index / offsetInfo.total) * Math.PI * 2;
+                            x += Math.cos(angle) * 15;
+                            z += Math.sin(angle) * 15;
+                        }
 
-                    work.mesh.position.set(x, y, z);
-                    if (work.label) work.label.position.set(x, y + 20, z);
+                        work.mesh.position.set(x, y, z);
+                        if (work.label) work.label.position.set(x, y + 20, z);
+                    }
                 }
             } else if (workInfo.state === 'moving') {
-                const fromStation = this.stations.get(workInfo.fromStation);
-                const toStation = this.stations.get(workInfo.toStation);
+                const fromInternal = this.showInternal && this._internalPositions.get(workInfo.fromStation);
+                const toInternal = this.showInternal && this._internalPositions.get(workInfo.toStation);
+                const fromStation = fromInternal ? null : this.stations.get(workInfo.fromStation);
+                const toStation = toInternal ? null : this.stations.get(workInfo.toStation);
 
-                if (fromStation && toStation) {
-                    const duration = Math.max(0.001, workInfo.arriveTime - workInfo.departTime);
-                    const elapsed = currentTime - workInfo.departTime;
-                    const progress = Math.max(0, Math.min(1, elapsed / duration));
+                let startX, startZ, endX, endZ;
+                let hasFrom = false, hasTo = false;
 
-                    let startX = fromStation.position.x, startZ = fromStation.position.z;
-                    let endX = toStation.position.x, endZ = toStation.position.z;
-
+                if (fromInternal) {
+                    startX = fromInternal.x; startZ = fromInternal.z; hasFrom = true;
+                } else if (fromStation) {
+                    startX = fromStation.position.x; startZ = fromStation.position.z; hasFrom = true;
                     if ((fromStation.stationType === 'split' || fromStation.stationType === 'moduler') && workInfo.fromPortIndex >= 0) {
                         const slot = this._findPortSlot(fromStation, workInfo.fromPortIndex, 'exit');
                         if (slot) { startX = slot.position.x; startZ = slot.position.z; }
                     }
+                }
 
+                if (toInternal) {
+                    endX = toInternal.x; endZ = toInternal.z; hasTo = true;
+                } else if (toStation) {
+                    endX = toStation.position.x; endZ = toStation.position.z; hasTo = true;
                     if ((toStation.stationType === 'merge' || toStation.stationType === 'moduler') && workInfo.toPortIndex >= 0) {
                         const slot = this._findPortSlot(toStation, workInfo.toPortIndex, 'entry');
                         if (slot) { endX = slot.position.x; endZ = slot.position.z; }
                     }
+                }
 
+                if (hasFrom && hasTo) {
+                    const duration = Math.max(0.001, workInfo.arriveTime - workInfo.departTime);
+                    const elapsed = currentTime - workInfo.departTime;
+                    const progress = Math.max(0, Math.min(1, elapsed / duration));
                     const t = this._easeInOutCubic(progress);
                     const x = startX + (endX - startX) * t;
                     const z = startZ + (endZ - startZ) * t;
-                    const y = 40 + Math.sin(t * Math.PI) * 30;
+                    const y = 30 + Math.sin(t * Math.PI) * 20;
 
                     work.mesh.position.set(x, y, z);
                     if (work.label) work.label.position.set(x, y + 20, z);

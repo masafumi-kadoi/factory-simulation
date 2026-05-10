@@ -30,6 +30,7 @@ class App {
         this.openViewers = new Map();  // modulerId → { window, ready }
         this._rawActiveWorks = new Map();
         this._rawSignalStates = new Map();
+        this._showInternal = false;
         this._controlsBound = false;
         this._keyboardBound = false;
         this._liveBtnBound = false;
@@ -200,6 +201,7 @@ class App {
 
             const layer1Scenario = this._buildLayer1Scenario(this.flatScenario);
             await this.visualizer.loadScenario(layer1Scenario);
+            this.visualizer.loadInternalStations(this.flatScenario);
 
             this.visualizer.setOnWorkClick((workId) => this._showWorkModal(workId));
             this.visualizer.setOnModulerDoubleClick((stationId) => this._openModulerViewer(stationId));
@@ -301,6 +303,34 @@ class App {
         });
 
         return layer1;
+    }
+
+    _transformForInternalView(rawActiveWorks) {
+        const result = new Map();
+        rawActiveWorks.forEach((workInfo, workId) => {
+            const sid = workInfo.stationId || workInfo.fromStation;
+            if (!sid) { result.set(workId, { ...workInfo }); return; }
+            const dotIdx = sid.indexOf('.');
+            if (dotIdx === -1) {
+                result.set(workId, { ...workInfo });
+                return;
+            }
+            const relative = sid.substring(dotIdx + 1);
+            if (relative.includes('.')) {
+                result.set(workId, this._transformForLayer1(new Map([[workId, workInfo]])).get(workId) || workInfo);
+                return;
+            }
+            result.set(workId, { ...workInfo });
+        });
+        return result;
+    }
+
+    _refreshWorks() {
+        if (!this.visualizer || this._rawActiveWorks.size === 0) return;
+        const works = this._showInternal
+            ? this._transformForInternalView(this._rawActiveWorks)
+            : this._transformForLayer1(this._rawActiveWorks);
+        this.visualizer.updateWorks(works, this.currentTime);
     }
 
     _resolveToTopLevel(stationId) {
@@ -617,6 +647,15 @@ class App {
         document.getElementById('show-interlocks').addEventListener('change', (e) => {
             if (this.visualizer) this.visualizer.setShowInterlocks(e.target.checked);
         });
+        document.getElementById('show-internal').addEventListener('change', (e) => {
+            this._showInternal = e.target.checked;
+            if (this.visualizer) this.visualizer.setShowInternal(e.target.checked);
+            document.getElementById('show-internal-names-label').style.display = e.target.checked ? '' : 'none';
+            this._refreshWorks();
+        });
+        document.getElementById('show-internal-names').addEventListener('change', (e) => {
+            if (this.visualizer) this.visualizer.setShowInternalNames(e.target.checked);
+        });
     }
 
     play() {
@@ -831,8 +870,10 @@ class App {
         this._rawSignalStates = rawSignalStates;
 
         if (this.visualizer) {
-            const layer1Works = this._transformForLayer1(rawActiveWorks);
-            this.visualizer.updateWorks(layer1Works, this.currentTime);
+            const works = this._showInternal
+                ? this._transformForInternalView(rawActiveWorks)
+                : this._transformForLayer1(rawActiveWorks);
+            this.visualizer.updateWorks(works, this.currentTime);
             this.visualizer.updateInterlockStates(rawSignalStates);
         }
 
@@ -1214,6 +1255,7 @@ class App {
             this._buildModulerMap(this.flatScenario);
             const layer1Scenario = this._buildLayer1Scenario(this.flatScenario);
             await this.visualizer.loadScenario(layer1Scenario);
+            this.visualizer.loadInternalStations(this.flatScenario);
             this.visualizer.setOnModulerDoubleClick((sid) => this._openModulerViewer(sid));
             this.visualizer.setOnWorkClick((workId) => this._showWorkModal(workId));
 
