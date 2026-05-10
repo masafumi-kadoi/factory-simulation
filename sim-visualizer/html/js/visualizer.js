@@ -428,33 +428,43 @@ export class Visualizer3D {
 
     _createModulerGridModel(stationId, station, pos, portTargetList) {
         const grid = station.config.model3DGrid;
-        const { gridSize, height, cols, rows, cells } = grid;
+        const { gridSize, height, cells, origin } = grid;
+        const PX_PER_M = 80;
+        const cellUnit = gridSize * PX_PER_M;
+        const modelH = height * PX_PER_M;
+
+        const minC = Math.min(...cells.map(([c]) => c));
+        const maxC = Math.max(...cells.map(([c]) => c));
+        const minR = Math.min(...cells.map(([, r]) => r));
+        const maxR = Math.max(...cells.map(([, r]) => r));
+
+        const refC = origin ? origin[0] : (minC + maxC) / 2;
+        const refR = origin ? origin[1] : (minR + maxR) / 2;
+
+        const shellGeom = this._buildShellGeometry(cells, cellUnit, modelH, refC, refR);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x4a148c,
+            transparent: true,
+            opacity: 0.7,
+            roughness: 0.5,
+            metalness: 0.1,
+        });
+        const mesh = new THREE.Mesh(shellGeom, material);
+
+        const edgeGeom = new THREE.EdgesGeometry(shellGeom, 1);
+        const edgeMat = new THREE.LineBasicMaterial({ color: 0x7c43bd, transparent: true, opacity: 0.9 });
+        mesh.add(new THREE.LineSegments(edgeGeom, edgeMat));
 
         const group = new THREE.Group();
-        const geometry = new THREE.BoxGeometry(gridSize, height, gridSize);
-        for (const [cx, cy] of cells) {
-            const material = new THREE.MeshStandardMaterial({
-                color: 0x4a148c,
-                transparent: true,
-                opacity: 0.7,
-                roughness: 0.5,
-                metalness: 0.1,
-            });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(
-                (cx - (cols - 1) / 2) * gridSize,
-                height / 2,
-                (cy - (rows - 1) / 2) * gridSize
-            );
-            group.add(mesh);
-        }
-
+        group.add(mesh);
         group.position.set(pos.x, 0, pos.z);
         group.userData = { stationId, type: 'moduler' };
         this.scene.add(group);
 
-        const label = this._createLabel(station.name || stationId, pos.x, height + 15, pos.z);
-        const portSlots = this._createPortSlots(station, pos, portTargetList);
+        const labelX = pos.x + ((minC + maxC) / 2 - refC) * cellUnit;
+        const labelZ = pos.z + ((minR + maxR) / 2 - refR) * cellUnit;
+        const label = this._createLabel(station.name || stationId, labelX, modelH + 15, labelZ);
+        const portSlots = this._createModulerPortSlots(station, pos, portTargetList);
 
         this.stations.set(stationId, {
             mesh: group,
@@ -466,6 +476,40 @@ export class Visualizer3D {
             bufferSlots: station.config?.bufferSlots || null,
             stationName: station.name || stationId,
         });
+    }
+
+    _buildShellGeometry(cells, cellSize, height, refC, refR) {
+        const cellSet = new Set(cells.map(([c, r]) => `${c},${r}`));
+        const positions = [];
+        const normals = [];
+        const indices = [];
+        const addQuad = (v0, v1, v2, v3, n) => {
+            const base = positions.length / 3;
+            positions.push(...v0, ...v1, ...v2, ...v3);
+            normals.push(...n, ...n, ...n, ...n);
+            indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        };
+        for (const [c, r] of cells) {
+            const x0 = (c - refC) * cellSize;
+            const x1 = (c + 1 - refC) * cellSize;
+            const z0 = (r - refR) * cellSize;
+            const z1 = (r + 1 - refR) * cellSize;
+            addQuad([x0, height, z0], [x1, height, z0], [x1, height, z1], [x0, height, z1], [0, 1, 0]);
+            addQuad([x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0], [0, -1, 0]);
+            if (!cellSet.has(`${c - 1},${r}`))
+                addQuad([x0, 0, z1], [x0, 0, z0], [x0, height, z0], [x0, height, z1], [-1, 0, 0]);
+            if (!cellSet.has(`${c + 1},${r}`))
+                addQuad([x1, 0, z0], [x1, 0, z1], [x1, height, z1], [x1, height, z0], [1, 0, 0]);
+            if (!cellSet.has(`${c},${r - 1}`))
+                addQuad([x0, 0, z0], [x1, 0, z0], [x1, height, z0], [x0, height, z0], [0, 0, -1]);
+            if (!cellSet.has(`${c},${r + 1}`))
+                addQuad([x1, 0, z1], [x0, 0, z1], [x0, height, z1], [x1, height, z1], [0, 0, 1]);
+        }
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+        geom.setIndex(indices);
+        return geom;
     }
 
     async _createModulerGltfModel(stationId, station, pos, portTargetList) {

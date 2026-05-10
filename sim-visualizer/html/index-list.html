@@ -185,7 +185,7 @@
                     const statusBadge = isLive
                         ? `<span class="badge badge-live"><span class="live-dot"></span>Live</span>`
                         : `<span class="badge badge-ended">Ended</span>`;
-                    const viewUrl = `/?ds=${encodeURIComponent(d.id)}${isLive ? '&live=1' : ''}`;
+                    const viewUrl = `./?ds=${encodeURIComponent(d.id)}${isLive ? '&live=1' : ''}`;
 
                     return `
                         <li class="result-item">

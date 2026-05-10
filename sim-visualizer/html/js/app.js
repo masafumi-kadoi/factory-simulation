@@ -1174,6 +1174,25 @@ class App {
             const ds = await fetchDataSource(dsId);
             const layout = await fetchLayout(dsId);
 
+            // If DataSource has a linked scenario, fetch it to get model3D configs
+            let scenarioConfigs = null;
+            if (ds.scenarioId) {
+                try {
+                    const linkedScenario = await fetchScenario(ds.scenarioId);
+                    scenarioConfigs = new Map();
+                    for (const st of (linkedScenario.stations || [])) {
+                        if (st.config && (st.config.model3DGrid || st.config.model3DGltf || st.config.model3DGlb)) {
+                            scenarioConfigs.set(st.id, st.config);
+                            if (st.name && st.name !== st.id) {
+                                scenarioConfigs.set(st.name, st.config);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[App] Could not fetch linked scenario for model3D data:', e.message);
+                }
+            }
+
             // Build location ID → name map
             this._locationMap = new Map();
             for (const loc of (layout.locations || [])) {
@@ -1181,7 +1200,7 @@ class App {
             }
 
             // Build scenario from layout
-            const scenario = this._layoutToScenario(layout);
+            const scenario = this._layoutToScenario(layout, scenarioConfigs);
             this._dsStartTime = ds.startedAt;
 
             document.getElementById('sim-info').textContent = ds.friendlyName || dsId.substring(0, 8);
@@ -1248,7 +1267,7 @@ class App {
         }
     }
 
-    _layoutToScenario(layout) {
+    _layoutToScenario(layout, scenarioConfigs = null) {
         const locById = new Map((layout.locations || []).map(l => [l.id, l]));
 
         // Sub-station pos_x/pos_y in WDH are relative to the parent moduler.
@@ -1270,13 +1289,14 @@ class App {
 
         const stations = (layout.locations || []).map(loc => {
             const { x, y } = getAbsPos(loc);
+            const config = scenarioConfigs?.get(loc.name) || {};
             return {
                 id: loc.name,
                 name: loc.name,
                 type: loc.stationType || 'processing',
                 positionX: x,
                 positionY: y,
-                config: {},
+                config,
             };
         });
         const nameMap = new Map((layout.locations || []).map(l => [l.id, l.name]));
