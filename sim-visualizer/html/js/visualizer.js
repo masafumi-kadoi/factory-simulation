@@ -910,6 +910,8 @@ export class Visualizer3D {
         this._clearInternalObjects();
         this._internalPositions.clear();
         const PX_PER_M = 80;
+        const discHeight = 4;
+
         const topModulers = flatScenario.stations.filter(s => s.type === 'moduler' && !s.id.includes('.'));
         for (const moduler of topModulers) {
             const prefix = moduler.id + '.';
@@ -920,30 +922,45 @@ export class Visualizer3D {
             });
             if (internalStations.length === 0) continue;
 
+            // Parent moduler's world position (origin cell anchor)
             const parentX = moduler.positionX || 0;
             const parentZ = moduler.positionY || 0;
 
+            // --- Derive model geometry from model3DGrid ---
+            // modelCenterX/Z: world-space center of the model's bounding box
+            // modelExtentX/Z: usable width/depth (80% of model span) for station placement
+            // modelH: model height in world units
             const grid = moduler.config?.model3DGrid;
-            let targetExtent = 90;
             let modelCenterX = parentX;
             let modelCenterZ = parentZ;
+            let modelExtentX = 90;
+            let modelExtentZ = 90;
+            let modelH = discHeight;
+
             if (grid?.cells?.length > 0) {
                 const gs = grid.gridSize || 0.5;
-                const cells = grid.cells;
                 const cellUnit = gs * PX_PER_M;
+                const cells = grid.cells;
                 const minC = Math.min(...cells.map(([c]) => c));
                 const maxC = Math.max(...cells.map(([c]) => c));
                 const minR = Math.min(...cells.map(([, r]) => r));
                 const maxR = Math.max(...cells.map(([, r]) => r));
                 const spanC = maxC - minC + 1;
                 const spanR = maxR - minR + 1;
-                targetExtent = Math.max(spanC, spanR) * gs * PX_PER_M * 0.8;
+                // refC/refR: origin cell (if set) is placed at world (parentX, parentZ)
                 const refC = grid.origin ? grid.origin[0] : (minC + maxC) / 2;
                 const refR = grid.origin ? grid.origin[1] : (minR + maxR) / 2;
+                // Bounding box center in world space
                 modelCenterX = parentX + ((minC + maxC + 1) / 2 - refC) * cellUnit;
                 modelCenterZ = parentZ + ((minR + maxR + 1) / 2 - refR) * cellUnit;
+                modelExtentX = spanC * cellUnit * 0.8;
+                modelExtentZ = spanR * cellUnit * 0.8;
+                modelH = (grid.height || 2) * PX_PER_M;
             }
 
+            // --- Map sub-scenario positions to model world space ---
+            // Sub-scenario stations have flat-scenario positions = parentX + localX.
+            // Recover localX by subtracting parentX.
             const relPositions = internalStations.map(s => ({
                 x: (s.positionX || 0) - parentX,
                 z: (s.positionY || 0) - parentZ,
@@ -952,25 +969,33 @@ export class Visualizer3D {
             const maxRX = Math.max(...relPositions.map(p => p.x));
             const minRZ = Math.min(...relPositions.map(p => p.z));
             const maxRZ = Math.max(...relPositions.map(p => p.z));
-            const srcExtent = Math.max(maxRX - minRX, maxRZ - minRZ, 1);
-            const scale = targetExtent / srcExtent;
             const centerRX = (minRX + maxRX) / 2;
             const centerRZ = (minRZ + maxRZ) / 2;
+            const srcExtentX = maxRX - minRX;
+            const srcExtentZ = maxRZ - minRZ;
 
-            const discHeight = 4;
+            // Use independent X/Z scales so stations always fit within the model bounding box.
+            // When all stations share the same axis coordinate (extent=0), the scale is irrelevant.
+            const scaleX = srcExtentX > 0 ? modelExtentX / srcExtentX : 1;
+            const scaleZ = srcExtentZ > 0 ? modelExtentZ / srcExtentZ : scaleX;
+
+            // Place discs at the vertical center of the model
+            const posY = modelH / 2;
+
             const positions = new Map();
             for (let i = 0; i < internalStations.length; i++) {
                 const s = internalStations[i];
                 const rel = relPositions[i];
                 const pos = {
-                    x: modelCenterX + (rel.x - centerRX) * scale,
-                    y: discHeight / 2,
-                    z: modelCenterZ + (rel.z - centerRZ) * scale,
+                    x: modelCenterX + (rel.x - centerRX) * scaleX,
+                    y: posY,
+                    z: modelCenterZ + (rel.z - centerRZ) * scaleZ,
                 };
                 positions.set(s.id, pos);
                 this._internalPositions.set(s.id, pos);
             }
 
+            // --- Render station discs ---
             for (const s of internalStations) {
                 const pos = positions.get(s.id);
                 const color = STATION_COLORS[s.type] || 0x6c757d;
@@ -998,13 +1023,15 @@ export class Visualizer3D {
                 this._internalObjects.push(group);
 
                 const shortName = s.name || s.id.substring(prefix.length);
-                const label = this._createLabel(shortName, pos.x, 20, pos.z);
+                const labelY = posY + discHeight / 2 + 5;
+                const label = this._createLabel(shortName, pos.x, labelY, pos.z);
                 label.visible = this.showInternal && this.showInternalNames;
                 this.scene.add(label);
                 this._internalObjects.push(label);
                 this._internalLabels.push(label);
             }
 
+            // --- Render internal connection lines ---
             const internalIds = new Set(internalStations.map(s => s.id));
             const internalConns = flatScenario.connections.filter(c =>
                 internalIds.has(c.from) && internalIds.has(c.to)
@@ -1014,8 +1041,8 @@ export class Visualizer3D {
                 const toPos = positions.get(conn.to);
                 if (!fromPos || !toPos) continue;
                 const points = [
-                    new THREE.Vector3(fromPos.x, 1, fromPos.z),
-                    new THREE.Vector3(toPos.x, 1, toPos.z),
+                    new THREE.Vector3(fromPos.x, fromPos.y, fromPos.z),
+                    new THREE.Vector3(toPos.x, toPos.y, toPos.z),
                 ];
                 const geom = new THREE.BufferGeometry().setFromPoints(points);
                 const mat = new THREE.LineBasicMaterial({ color: 0x5a7aaa, transparent: true, opacity: 0.6 });
