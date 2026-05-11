@@ -160,7 +160,7 @@ export class Canvas {
         } else {
             this._lastClickStationId = null;
             // Clicked on empty space
-            if (tool === 'source' || tool === 'processing' || tool === 'drain' || tool === 'merge' || tool === 'split' || tool === 'moduler') {
+            if (tool === 'source' || tool === 'processing' || tool === 'drain' || tool === 'merge' || tool === 'split' || tool === 'moduler' || tool === 'switch') {
                 this.editor.addStation(tool, pt.x, pt.y);
             } else if (tool === 'select') {
                 this.editor.selectItem(null);
