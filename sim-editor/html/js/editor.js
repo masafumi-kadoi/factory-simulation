@@ -297,10 +297,14 @@ class ScenarioEditor {
             if (e.key === 'Escape') { e.preventDefault(); this.selectItem(null); }
         });
 
-        // Tool buttons
+        // Tool buttons — only trigger _selectTool for buttons that declare a data-tool value.
+        // Action buttons (alignment, template insertion, etc.) have no data-tool and must
+        // NOT call _selectTool; they handle their own click events separately below.
         document.querySelectorAll('.tool-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                this._selectTool(btn.dataset.tool);
+                if (btn.dataset.tool) {
+                    this._selectTool(btn.dataset.tool);
+                }
             });
         });
 
@@ -373,9 +377,10 @@ class ScenarioEditor {
     _selectTool(tool) {
         this.currentTool = tool;
 
-        // Update UI
+        // Update UI — only toggle active on buttons that have a declared data-tool.
+        // Buttons without data-tool (one-shot action buttons) must never get active class here.
         document.querySelectorAll('.tool-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.tool === tool);
+            btn.classList.toggle('active', !!btn.dataset.tool && btn.dataset.tool === tool);
         });
 
         // Update canvas cursor
