@@ -654,14 +654,12 @@ export class Canvas {
             const y1 = Math.min(this.rectSelectStart.y, pt.y);
             const x2 = Math.max(this.rectSelectStart.x, pt.x);
             const y2 = Math.max(this.rectSelectStart.y, pt.y);
-            // Select all stations within rectangle
-            const stationW = 160, stationH = 60;
+            // Select all stations whose bounding box intersects the selection rectangle.
+            // s.x / s.y are the CENTER of each station in SVG coordinates.
+            const hw = 40 * this.stationSizeMultiplier;
+            const hh = 30 * this.stationSizeMultiplier;
             const ids = this.editor.scenario.stations
-                .filter(s => {
-                    const cx = s.x + stationW / 2;
-                    const cy = s.y + stationH / 2;
-                    return cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2;
-                })
+                .filter(s => s.x + hw >= x1 && s.x - hw <= x2 && s.y + hh >= y1 && s.y - hh <= y2)
                 .map(s => s.id);
             if (ids.length > 0) {
                 this.editor.setSelection(ids);
