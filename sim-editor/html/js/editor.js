@@ -494,9 +494,12 @@ class ScenarioEditor {
     }
 
     // Auto-layout: arrange stations Source→Drain by connection flow.
-    // axis: 'horizontal' (left↔right) or 'vertical' (up↕down).
-    // Within each axis, direction is inferred from current Source/Drain positions.
-    // One-shot: applies positions once; stations can be freely moved afterward.
+    // axis: 'horizontal' (↔) or 'vertical' (↕).
+    //   horizontal: stations are spread along X; same-depth stations stack vertically.
+    //   vertical:   stations are spread along Y; same-depth stations stack horizontally.
+    // Start/end positions are taken from the current average positions of
+    // Source/Entry and Drain/Exit stations — all other stations are placed between them.
+    // One-shot: no lock, freely movable afterward.
     autoLayout(axis) {
         const stations = this.scenario.stations;
         const connections = this.scenario.connections;
@@ -511,9 +514,8 @@ class ScenarioEditor {
             inEdges.get(c.to)?.push(c.from);
         });
 
-        // Assign column (X layer) = longest path from any source node.
-        // source/entry types are forced to column 0.
-        // drain/exit types are pinned to the last column after BFS.
+        // BFS longest-path column assignment.
+        // source/entry → column 0; drain/exit → maxCol.
         const col = new Map();
         const queue = [];
         stations.forEach(s => {
@@ -522,7 +524,6 @@ class ScenarioEditor {
                 queue.push(s.id);
             }
         });
-        // BFS: propagate longest-path column
         let head = 0;
         while (head < queue.length) {
             const id = queue[head++];
@@ -535,37 +536,29 @@ class ScenarioEditor {
                 }
             }
         }
-        // Any unvisited (isolated) → column 0
         stations.forEach(s => { if (!col.has(s.id)) col.set(s.id, 0); });
-
         const maxCol = Math.max(...col.values());
-
-        // Pin drain/exit types to the last column
         stations.forEach(s => {
             if (s.type === 'drain' || s.type === 'exit') col.set(s.id, maxCol);
         });
 
-        // Group by column
+        // Group by column; sort within each column by average predecessor row.
         const colGroups = Array.from({ length: maxCol + 1 }, () => []);
         stations.forEach(s => colGroups[col.get(s.id)].push(s));
-
-        // Assign rows within each column.
-        // Sort by average predecessor row to reduce line crossings.
         const rowPos = new Map();
         for (let ci = 0; ci <= maxCol; ci++) {
             const group = colGroups[ci];
             group.sort((a, b) => {
-                const avgPredRow = (s) => {
+                const avgPredRow = s => {
                     const preds = inEdges.get(s.id).filter(p => rowPos.has(p));
-                    if (preds.length === 0) return 0;
-                    return preds.reduce((sum, p) => sum + rowPos.get(p), 0) / preds.length;
+                    return preds.length ? preds.reduce((sum, p) => sum + rowPos.get(p), 0) / preds.length : 0;
                 };
                 return avgPredRow(a) - avgPredRow(b);
             });
             group.forEach((s, i) => rowPos.set(s.id, i));
         }
 
-        // Determine direction (normal vs reverse) from current Source/Drain positions.
+        // Anchor positions: average of Source/Entry (start) and Drain/Exit (end).
         const srcStations   = stations.filter(s => s.type === 'source' || s.type === 'entry');
         const drainStations = stations.filter(s => s.type === 'drain'  || s.type === 'exit');
         const avgPos = arr => arr.length
@@ -575,27 +568,36 @@ class ScenarioEditor {
         const avgSrc   = avgPos(srcStations);
         const avgDrain = avgPos(drainStations);
 
-        const horizontal = (axis === 'horizontal');
-        let reverse = false;
-        if (avgSrc && avgDrain) {
-            reverse = horizontal ? (avgDrain.x < avgSrc.x) : (avgDrain.y < avgSrc.y);
-        }
+        // Fallback when source or drain is absent
+        const defaultGap = Math.max(maxCol, 1) * 200;
+        const start = avgSrc ?? { x: 200, y: 200 };
+        const end   = avgDrain ?? (axis === 'horizontal'
+            ? { x: start.x + defaultGap, y: start.y }
+            : { x: start.x, y: start.y + defaultGap });
 
-        // Apply positions (one-shot, no lock)
-        const xStart = 200;
-        const xGap   = 200;
-        const yStart = 150;
-        const yGap   = 120;
+        const rowGap = 120;
 
+        // Place stations:
+        //   Main axis  : linearly interpolated from start→end based on col depth (t = col/maxCol).
+        //   Cross axis : rows centered around the interpolated position, spread with rowGap.
+        //   horizontal → main=X, cross=Y
+        //   vertical   → main=Y, cross=X
         stations.forEach(s => {
-            const colIdx = reverse ? (maxCol - col.get(s.id)) : col.get(s.id);
-            const rowIdx = rowPos.get(s.id) || 0;
-            if (horizontal) {
-                s.x = this.canvas._snapToGrid(xStart + colIdx * xGap);
-                s.y = this.canvas._snapToGrid(yStart + rowIdx * yGap);
+            const c = col.get(s.id);
+            const t = maxCol === 0 ? 0 : c / maxCol;
+            const rowIdx   = rowPos.get(s.id) || 0;
+            const colCount = colGroups[c].length;
+            const rowOffset = (rowIdx - (colCount - 1) / 2) * rowGap;
+
+            const mainX = start.x + t * (end.x - start.x);
+            const mainY = start.y + t * (end.y - start.y);
+
+            if (axis === 'horizontal') {
+                s.x = this.canvas._snapToGrid(mainX);
+                s.y = this.canvas._snapToGrid(mainY + rowOffset);
             } else {
-                s.x = this.canvas._snapToGrid(xStart + rowIdx * xGap);
-                s.y = this.canvas._snapToGrid(yStart + colIdx * yGap);
+                s.x = this.canvas._snapToGrid(mainX + rowOffset);
+                s.y = this.canvas._snapToGrid(mainY);
             }
         });
 
