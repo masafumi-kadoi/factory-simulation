@@ -504,23 +504,38 @@ class ScenarioEditor {
 
     // Auto-layout: arrange stations Source→Drain by connection flow.
     // axis: 'horizontal' (↔) or 'vertical' (↕).
-    //   horizontal: stations are spread along X; same-depth stations stack vertically.
-    //   vertical:   stations are spread along Y; same-depth stations stack horizontally.
-    // Start/end positions are taken from the current average positions of
-    // Source/Entry and Drain/Exit stations — all other stations are placed between them.
+    //
+    // Two modes depending on selection:
+    //   Source/Drain anchor mode  — target stations include both Source/Entry AND Drain/Exit
+    //     (or nothing is selected → all stations are target).
+    //     Anchors: avg position of Source/Entry (start) → avg of Drain/Exit (end).
+    //   Extreme-position mode     — selection contains no Source/Entry or no Drain/Exit.
+    //     Anchors: leftmost/rightmost (↔) or topmost/bottommost (↕) of selected stations.
+    //     Cross-axis center: average of selected stations on the other axis.
+    //
     // One-shot: no lock, freely movable afterward.
     autoLayout(axis) {
-        const stations = this.scenario.stations;
+        const allStations = this.scenario.stations;
         const connections = this.scenario.connections;
+        if (allStations.length === 0) return;
+
+        // Determine target stations
+        const hasSelection = this.selectedStationIds.size > 0;
+        const stations = hasSelection
+            ? allStations.filter(s => this.selectedStationIds.has(s.id))
+            : allStations;
         if (stations.length === 0) return;
 
-        // Build adjacency
+        // Build adjacency for target stations only
+        const stationSet = new Set(stations.map(s => s.id));
         const outEdges = new Map();
         const inEdges  = new Map();
         stations.forEach(s => { outEdges.set(s.id, []); inEdges.set(s.id, []); });
         connections.forEach(c => {
-            outEdges.get(c.from)?.push(c.to);
-            inEdges.get(c.to)?.push(c.from);
+            if (stationSet.has(c.from) && stationSet.has(c.to)) {
+                outEdges.get(c.from).push(c.to);
+                inEdges.get(c.to).push(c.from);
+            }
         });
 
         // BFS longest-path column assignment.
@@ -567,22 +582,38 @@ class ScenarioEditor {
             group.forEach((s, i) => rowPos.set(s.id, i));
         }
 
-        // Anchor positions: average of Source/Entry (start) and Drain/Exit (end).
-        const srcStations   = stations.filter(s => s.type === 'source' || s.type === 'entry');
-        const drainStations = stations.filter(s => s.type === 'drain'  || s.type === 'exit');
-        const avgPos = arr => arr.length
-            ? { x: arr.reduce((sum, s) => sum + s.x, 0) / arr.length,
-                y: arr.reduce((sum, s) => sum + s.y, 0) / arr.length }
-            : null;
-        const avgSrc   = avgPos(srcStations);
-        const avgDrain = avgPos(drainStations);
+        // Determine anchors (start / end positions)
+        const srcInTarget   = stations.filter(s => s.type === 'source' || s.type === 'entry');
+        const drainInTarget = stations.filter(s => s.type === 'drain'  || s.type === 'exit');
+        const hasBothEnds   = srcInTarget.length > 0 && drainInTarget.length > 0;
 
-        // Fallback when source or drain is absent
-        const defaultGap = Math.max(maxCol, 1) * 200;
-        const start = avgSrc ?? { x: 200, y: 200 };
-        const end   = avgDrain ?? (axis === 'horizontal'
-            ? { x: start.x + defaultGap, y: start.y }
-            : { x: start.x, y: start.y + defaultGap });
+        const avgOf = arr => ({
+            x: arr.reduce((sum, s) => sum + s.x, 0) / arr.length,
+            y: arr.reduce((sum, s) => sum + s.y, 0) / arr.length,
+        });
+
+        let start, end;
+        if (hasBothEnds) {
+            // Source/Drain anchor mode
+            start = avgOf(srcInTarget);
+            end   = avgOf(drainInTarget);
+        } else {
+            // Extreme-position mode: anchors are the two extremes of the target stations
+            // on the chosen axis; cross-axis is centered on the average.
+            const avgX = stations.reduce((sum, s) => sum + s.x, 0) / stations.length;
+            const avgY = stations.reduce((sum, s) => sum + s.y, 0) / stations.length;
+            if (axis === 'horizontal') {
+                const minX = Math.min(...stations.map(s => s.x));
+                const maxX = Math.max(...stations.map(s => s.x));
+                start = { x: minX, y: avgY };
+                end   = { x: maxX, y: avgY };
+            } else {
+                const minY = Math.min(...stations.map(s => s.y));
+                const maxY = Math.max(...stations.map(s => s.y));
+                start = { x: avgX, y: minY };
+                end   = { x: avgX, y: maxY };
+            }
+        }
 
         const rowGap = 120;
 
