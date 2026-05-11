@@ -906,6 +906,29 @@ export class Canvas {
         return { w: 100, h: 70 };
     }
 
+    // Returns the visual center {x, y} of any station type.
+    // For moduler, accounts for origin offset.  For all others, returns station.x/y.
+    _getStationCenter(station) {
+        if (station.type === 'moduler') {
+            const { cx, cy } = this._getModulerVisualCenter(station);
+            return { x: cx, y: cy };
+        }
+        return { x: station.x, y: station.y };
+    }
+
+    // Returns the point on station's axis-aligned bounding-box edge
+    // in the normalized direction (dirX, dirY) from the station center.
+    _getStationEdgePoint(station, dirX, dirY) {
+        const { x: cx, y: cy } = this._getStationCenter(station);
+        const hw = station.type === 'moduler' ? this._getModulerSize(station).w / 2 : 40;
+        const hh = station.type === 'moduler' ? this._getModulerSize(station).h / 2 : 30;
+        const absX = Math.abs(dirX), absY = Math.abs(dirY);
+        const tx = absX > 1e-9 ? hw / absX : Infinity;
+        const ty = absY > 1e-9 ? hh / absY : Infinity;
+        const t = Math.min(tx, ty);
+        return { x: cx + dirX * t, y: cy + dirY * t };
+    }
+
     // Returns the visual center of a moduler station, accounting for origin offset
     _getModulerVisualCenter(station) {
         const grid = station.config?.model3DGrid;
@@ -930,29 +953,39 @@ export class Canvas {
     _getModulerPortPos(station, portIndex, portType) {
         const subStations = station.config?.subScenario?.stations;
         if (!subStations || subStations.length === 0) return null;
+        const portStationType = portType === 'input' ? 'entry' : 'exit';
         const targets = subStations
-            .filter(s => s.type === (portType === 'input' ? 'entry' : 'exit'))
+            .filter(s => s.type === portStationType)
             .sort((a, b) => a.y - b.y);
         if (portIndex < 0 || portIndex >= targets.length) return null;
 
-        const xs = subStations.map(s => s.x);
-        const ys = subStations.map(s => s.y);
-        const subMinX = Math.min(...xs), subMaxX = Math.max(...xs);
-        const subMinY = Math.min(...ys), subMaxY = Math.max(...ys);
-        const subCenterX = (subMinX + subMaxX) / 2;
-        const subCenterY = (subMinY + subMaxY) / 2;
-        const rangeX = subMaxX - subMinX;
-        const rangeY = subMaxY - subMinY;
-
         const { w, h } = this._getModulerSize(station);
         const { cx, cy } = this._getModulerVisualCenter(station);
-        const scaleX = rangeX > 0 ? w / rangeX : 0;
-        const scaleY = rangeY > 0 ? h / rangeY : 0;
+        const portWidth = 20;
+
+        // X is always fixed: entry ports on the left edge, exit ports on the right edge.
+        // The X position inside the sub-scenario is irrelevant — type determines side.
+        const portCenterX = portType === 'input'
+            ? cx - w / 2 + portWidth / 2
+            : cx + w / 2 - portWidth / 2;
+
+        // Y: map from sub-scenario Y range (all stations) to moduler height proportionally.
+        const ys = subStations.map(s => s.y);
+        const subMinY = Math.min(...ys);
+        const subMaxY = Math.max(...ys);
+        const rangeY = subMaxY - subMinY;
         const t = targets[portIndex];
-        return {
-            x: cx + (t.x - subCenterX) * scaleX,
-            y: cy + (t.y - subCenterY) * scaleY,
-        };
+        let portCenterY;
+        if (rangeY > 0) {
+            const raw = (cy - h / 2) + ((t.y - subMinY) / rangeY) * h;
+            // Clamp inside the moduler rectangle with a small margin
+            const margin = portWidth / 2;
+            portCenterY = Math.max(cy - h / 2 + margin, Math.min(cy + h / 2 - margin, raw));
+        } else {
+            // All sub-stations at the same Y: distribute targets evenly around center
+            portCenterY = cy + (portIndex - (targets.length - 1) / 2) * 20;
+        }
+        return { x: portCenterX, y: portCenterY };
     }
 
     _renderModulerStation(g, station) {
@@ -1339,28 +1372,40 @@ export class Canvas {
         const toStation = this.editor.getStation(connection.to);
         if (!fromStation || !toStation) return null;
 
+        // Direction vector from source center to target center (used for edge intersection)
+        const fc = this._getStationCenter(fromStation);
+        const tc = this._getStationCenter(toStation);
+        const dxTotal = tc.x - fc.x, dyTotal = tc.y - fc.y;
+        const dist = Math.sqrt(dxTotal * dxTotal + dyTotal * dyTotal);
+        const nx = dist > 0 ? dxTotal / dist : 1;
+        const ny = dist > 0 ? dyTotal / dist : 0;
+
+        // Source endpoint
         let x1, y1;
-        if (connection.fromPortIndex >= 0 && (fromStation.type === 'split' || fromStation.type === 'moduler')) {
+        const isFromPort = connection.fromPortIndex >= 0 &&
+            (fromStation.type === 'split' || fromStation.type === 'moduler');
+        if (isFromPort) {
             const bufPos = this._getPortPosition(connection.from, connection.fromPortIndex, 'output');
             if (bufPos) { x1 = bufPos.x; y1 = bufPos.y; }
-            else { x1 = fromStation.x + 40; y1 = fromStation.y; }
+            else { const ep = this._getStationEdgePoint(fromStation, nx, ny); x1 = ep.x; y1 = ep.y; }
         } else {
-            const targetX = (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler'))
-                ? (toStation.x - 40 - 40) : toStation.x;
-            const halfW = fromStation.type === 'moduler' ? this._getModulerSize(fromStation).w / 2 : 40;
-            x1 = targetX >= fromStation.x ? fromStation.x + halfW : fromStation.x - halfW;
-            y1 = fromStation.y;
+            // Exit from the edge of fromStation facing toStation
+            const ep = this._getStationEdgePoint(fromStation, nx, ny);
+            x1 = ep.x; y1 = ep.y;
         }
 
+        // Destination endpoint
         let x2, y2;
-        if (connection.toPortIndex >= 0 && (toStation.type === 'merge' || toStation.type === 'moduler')) {
+        const isToPort = connection.toPortIndex >= 0 &&
+            (toStation.type === 'merge' || toStation.type === 'moduler');
+        if (isToPort) {
             const bufPos = this._getPortPosition(connection.to, connection.toPortIndex, 'input');
             if (bufPos) { x2 = bufPos.x; y2 = bufPos.y; }
-            else { x2 = toStation.x - 40; y2 = toStation.y; }
+            else { const ep = this._getStationEdgePoint(toStation, -nx, -ny); x2 = ep.x; y2 = ep.y; }
         } else {
-            const halfW = toStation.type === 'moduler' ? this._getModulerSize(toStation).w / 2 : 40;
-            x2 = x1 <= toStation.x ? toStation.x - halfW : toStation.x + halfW;
-            y2 = toStation.y;
+            // Enter from the edge of toStation facing fromStation
+            const ep = this._getStationEdgePoint(toStation, -nx, -ny);
+            x2 = ep.x; y2 = ep.y;
         }
 
         return { x1, y1, x2, y2 };
@@ -1386,18 +1431,31 @@ export class Canvas {
                 el.setAttribute('y2', pts.y2);
             } else if (lineStyle === 'bezier') {
                 el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                const dx = Math.abs(pts.x2 - pts.x1) * 0.5;
-                const dirFrom = pts.x2 >= pts.x1 ? 1 : -1;
-                const dirTo = pts.x1 >= pts.x2 ? -1 : -1;
-                const cp1x = pts.x1 + dx * dirFrom;
-                const cp2x = pts.x2 - dx * dirFrom;
-                el.setAttribute('d', `M${pts.x1},${pts.y1} C${cp1x},${pts.y1} ${cp2x},${pts.y2} ${pts.x2},${pts.y2}`);
+                // Direction-aware bezier: tangent follows the line from source to target
+                const bdx = pts.x2 - pts.x1, bdy = pts.y2 - pts.y1;
+                const bLen = Math.sqrt(bdx * bdx + bdy * bdy);
+                const bnx = bLen > 0 ? bdx / bLen : 1;
+                const bny = bLen > 0 ? bdy / bLen : 0;
+                const strength = bLen * 0.4;
+                const cp1x = pts.x1 + bnx * strength, cp1y = pts.y1 + bny * strength;
+                const cp2x = pts.x2 - bnx * strength, cp2y = pts.y2 - bny * strength;
+                el.setAttribute('d', `M${pts.x1},${pts.y1} C${cp1x},${cp1y} ${cp2x},${cp2y} ${pts.x2},${pts.y2}`);
                 el.setAttribute('fill', 'none');
             } else {
-                // orthogonal
+                // orthogonal: choose primary axis based on which dimension is larger
                 el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                const midX = (pts.x1 + pts.x2) / 2;
-                el.setAttribute('d', `M${pts.x1},${pts.y1} H${midX} V${pts.y2} H${pts.x2}`);
+                const odx = Math.abs(pts.x2 - pts.x1), ody = Math.abs(pts.y2 - pts.y1);
+                let od;
+                if (ody > odx * 1.5) {
+                    // Predominantly vertical: go halfway down, then across, then down
+                    const midY = (pts.y1 + pts.y2) / 2;
+                    od = `M${pts.x1},${pts.y1} V${midY} H${pts.x2} V${pts.y2}`;
+                } else {
+                    // Predominantly horizontal (default): go halfway across, then down, then across
+                    const midX = (pts.x1 + pts.x2) / 2;
+                    od = `M${pts.x1},${pts.y1} H${midX} V${pts.y2} H${pts.x2}`;
+                }
+                el.setAttribute('d', od);
                 el.setAttribute('fill', 'none');
             }
 
