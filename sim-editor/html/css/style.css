@@ -481,6 +481,23 @@ body {
     color: var(--accent-color);
 }
 
+/* Alignment toolbar grid */
+.align-toolbar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+}
+
+.align-btn {
+    width: auto;
+    padding: 6px;
+    margin-bottom: 0;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 /* Center: Canvas */
 .canvas-container {
     flex: 1;

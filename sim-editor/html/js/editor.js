@@ -322,15 +322,10 @@ class ScenarioEditor {
             });
         }
 
-        // Auto layout buttons (in tool palette)
-        const autoLayoutHBtn = document.getElementById('auto-layout-h-btn');
-        if (autoLayoutHBtn) {
-            autoLayoutHBtn.addEventListener('click', () => { this.autoLayout('horizontal'); });
-        }
-        const autoLayoutVBtn = document.getElementById('auto-layout-v-btn');
-        if (autoLayoutVBtn) {
-            autoLayoutVBtn.addEventListener('click', () => { this.autoLayout('vertical'); });
-        }
+        // PowerPoint-style alignment buttons (in tool palette)
+        document.querySelectorAll('.align-btn[data-align]').forEach(btn => {
+            btn.addEventListener('click', () => { this.alignStations(btn.dataset.align); });
+        });
 
         // Buffer conveyor template button
         const bufferConveyorBtn = document.getElementById('buffer-conveyor-btn');
@@ -649,6 +644,103 @@ class ScenarioEditor {
         this._markDirty();
         this._render();
         this.triggerFitToScreen();
+    }
+
+    // PowerPoint-style object alignment.
+    // mode: 'left' | 'center-h' | 'right' | 'top' | 'middle-v' | 'bottom' | 'distribute-h' | 'distribute-v'
+    // Operates on selected stations (or all stations when nothing is selected).
+    alignStations(mode) {
+        const allStations = this.scenario.stations;
+        if (allStations.length === 0) return;
+        const hasSelection = this.selectedStationIds.size > 0;
+        const stations = hasSelection
+            ? allStations.filter(s => this.selectedStationIds.has(s.id))
+            : allStations;
+        if (stations.length < 2) return;
+
+        const getBounds = (s) => {
+            if (s.type === 'moduler') {
+                const vc = this.canvas._getModulerVisualCenter(s);
+                const { w, h } = this.canvas._getModulerSize(s);
+                return { left: vc.cx - w / 2, right: vc.cx + w / 2, top: vc.cy - h / 2, bottom: vc.cy + h / 2, cx: vc.cx, cy: vc.cy };
+            }
+            const hw = (s.type === 'entry' || s.type === 'exit') ? 25 : 40;
+            const hh = (s.type === 'entry' || s.type === 'exit') ? 20 : 30;
+            return { left: s.x - hw, right: s.x + hw, top: s.y - hh, bottom: s.y + hh, cx: s.x, cy: s.y };
+        };
+
+        const moveStation = (s, newCx, newCy) => {
+            if (s.type === 'moduler') {
+                const vc = this.canvas._getModulerVisualCenter(s);
+                if (newCx !== null) s.x += newCx - vc.cx;
+                if (newCy !== null) s.y += newCy - vc.cy;
+            } else {
+                if (newCx !== null) s.x = newCx;
+                if (newCy !== null) s.y = newCy;
+            }
+        };
+
+        const bounds = stations.map(s => ({ s, b: getBounds(s) }));
+
+        switch (mode) {
+            case 'left': {
+                const edge = Math.min(...bounds.map(({ b }) => b.left));
+                bounds.forEach(({ s, b }) => moveStation(s, b.cx + (edge - b.left), null));
+                break;
+            }
+            case 'right': {
+                const edge = Math.max(...bounds.map(({ b }) => b.right));
+                bounds.forEach(({ s, b }) => moveStation(s, b.cx + (edge - b.right), null));
+                break;
+            }
+            case 'center-h': {
+                const minL = Math.min(...bounds.map(({ b }) => b.left));
+                const maxR = Math.max(...bounds.map(({ b }) => b.right));
+                const center = (minL + maxR) / 2;
+                bounds.forEach(({ s, b }) => moveStation(s, center, null));
+                break;
+            }
+            case 'top': {
+                const edge = Math.min(...bounds.map(({ b }) => b.top));
+                bounds.forEach(({ s, b }) => moveStation(s, null, b.cy + (edge - b.top)));
+                break;
+            }
+            case 'bottom': {
+                const edge = Math.max(...bounds.map(({ b }) => b.bottom));
+                bounds.forEach(({ s, b }) => moveStation(s, null, b.cy + (edge - b.bottom)));
+                break;
+            }
+            case 'middle-v': {
+                const minT = Math.min(...bounds.map(({ b }) => b.top));
+                const maxB = Math.max(...bounds.map(({ b }) => b.bottom));
+                const middle = (minT + maxB) / 2;
+                bounds.forEach(({ s, b }) => moveStation(s, null, middle));
+                break;
+            }
+            case 'distribute-h': {
+                if (stations.length < 3) break;
+                const sorted = [...bounds].sort((a, b) => a.b.cx - b.b.cx);
+                const totalSpan = sorted[sorted.length - 1].b.cx - sorted[0].b.cx;
+                const step = totalSpan / (sorted.length - 1);
+                sorted.forEach(({ s }, i) => moveStation(s, sorted[0].b.cx + i * step, null));
+                break;
+            }
+            case 'distribute-v': {
+                if (stations.length < 3) break;
+                const sorted = [...bounds].sort((a, b) => a.b.cy - b.b.cy);
+                const totalSpan = sorted[sorted.length - 1].b.cy - sorted[0].b.cy;
+                const step = totalSpan / (sorted.length - 1);
+                sorted.forEach(({ s }, i) => moveStation(s, null, sorted[0].b.cy + i * step));
+                break;
+            }
+        }
+
+        stations.forEach(s => {
+            s.x = this.canvas._snapToGrid(s.x);
+            s.y = this.canvas._snapToGrid(s.y);
+        });
+        this._markDirty();
+        this._render();
     }
 
     deleteStation(stationId) {
