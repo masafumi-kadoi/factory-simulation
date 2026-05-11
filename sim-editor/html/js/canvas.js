@@ -43,6 +43,9 @@ export class Canvas {
         this.gridSize = 20;
         this.snapToGrid = true;
 
+        // Station display size multiplier
+        this.stationSizeMultiplier = 1.0;
+
         // Rectangle selection state
         this.isRectSelecting = false;
         this.rectSelectStart = { x: 0, y: 0 };
@@ -822,12 +825,14 @@ export class Canvas {
                 this._renderModulerStation(g, station);
             } else {
                 // Rectangle (standard)
+                const m = this.stationSizeMultiplier;
+                const hw = 40 * m, hh = 30 * m;
                 const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                rect.setAttribute('x', station.x - 40);
-                rect.setAttribute('y', station.y - 30);
-                rect.setAttribute('width', 80);
-                rect.setAttribute('height', 60);
-                rect.setAttribute('rx', 8);
+                rect.setAttribute('x', station.x - hw);
+                rect.setAttribute('y', station.y - hh);
+                rect.setAttribute('width', hw * 2);
+                rect.setAttribute('height', hh * 2);
+                rect.setAttribute('rx', 8 * m);
 
                 // Text
                 const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -835,7 +840,7 @@ export class Canvas {
                 text.setAttribute('y', station.y);
                 text.setAttribute('text-anchor', 'middle');
                 text.setAttribute('dominant-baseline', 'middle');
-                text.setAttribute('font-size', '12');
+                text.setAttribute('font-size', Math.round(12 * m));
                 text.setAttribute('font-weight', 'bold');
                 text.setAttribute('fill', 'var(--station-stroke)');
                 text.textContent = station.name || station.config?.name || station.id;
@@ -861,27 +866,25 @@ export class Canvas {
         const x = station.x;
         const y = station.y;
         const isEntry = station.type === 'entry';
+        const m = this.stationSizeMultiplier;
 
-        // Triangle pointing right
-        const halfW = 25;
-        const halfH = 20;
+        const halfW = 25 * m;
+        const halfH = 20 * m;
         const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
         if (isEntry) {
-            // Entry: arrow pointing right (incoming)
             polygon.setAttribute('points',
                 `${x - halfW},${y - halfH} ${x + halfW},${y} ${x - halfW},${y + halfH}`);
         } else {
-            // Exit: arrow pointing right (outgoing)
             polygon.setAttribute('points',
                 `${x - halfW},${y - halfH} ${x + halfW},${y} ${x - halfW},${y + halfH}`);
         }
 
         const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', x - 5);
+        text.setAttribute('x', x - 5 * m);
         text.setAttribute('y', y);
         text.setAttribute('text-anchor', 'middle');
         text.setAttribute('dominant-baseline', 'middle');
-        text.setAttribute('font-size', '10');
+        text.setAttribute('font-size', Math.round(10 * m));
         text.setAttribute('font-weight', 'bold');
         text.setAttribute('fill', 'var(--station-stroke)');
         text.textContent = station.name || station.config?.name || station.id;
@@ -1036,29 +1039,31 @@ export class Canvas {
             g.appendChild(subText);
         } else {
             // --- Default mode: standard rectangle ---
+            const m = this.stationSizeMultiplier;
+            const mw = w * m, mh = h * m;
             const outerRect = document.createElementNS(svgNS, 'rect');
-            outerRect.setAttribute('x', x - w / 2);
-            outerRect.setAttribute('y', y - h / 2);
-            outerRect.setAttribute('width', w);
-            outerRect.setAttribute('height', h);
-            outerRect.setAttribute('rx', 8);
+            outerRect.setAttribute('x', x - mw / 2);
+            outerRect.setAttribute('y', y - mh / 2);
+            outerRect.setAttribute('width', mw);
+            outerRect.setAttribute('height', mh);
+            outerRect.setAttribute('rx', 8 * m);
             g.appendChild(outerRect);
 
             const innerRect = document.createElementNS(svgNS, 'rect');
-            innerRect.setAttribute('x', x - w / 2 + 4);
-            innerRect.setAttribute('y', y - h / 2 + 4);
-            innerRect.setAttribute('width', w - 8);
-            innerRect.setAttribute('height', h - 8);
-            innerRect.setAttribute('rx', 5);
+            innerRect.setAttribute('x', x - mw / 2 + 4 * m);
+            innerRect.setAttribute('y', y - mh / 2 + 4 * m);
+            innerRect.setAttribute('width', mw - 8 * m);
+            innerRect.setAttribute('height', mh - 8 * m);
+            innerRect.setAttribute('rx', 5 * m);
             innerRect.classList.add('moduler-inner-rect');
             g.appendChild(innerRect);
 
             const text = document.createElementNS(svgNS, 'text');
             text.setAttribute('x', x);
-            text.setAttribute('y', y - 5);
+            text.setAttribute('y', y - 5 * m);
             text.setAttribute('text-anchor', 'middle');
             text.setAttribute('dominant-baseline', 'middle');
-            text.setAttribute('font-size', '11');
+            text.setAttribute('font-size', Math.round(11 * m));
             text.setAttribute('font-weight', 'bold');
             text.setAttribute('fill', 'var(--station-stroke)');
             text.textContent = station.name || station.config?.name || station.id;
@@ -1066,10 +1071,10 @@ export class Canvas {
 
             const subText = document.createElementNS(svgNS, 'text');
             subText.setAttribute('x', x);
-            subText.setAttribute('y', y + 12);
+            subText.setAttribute('y', y + 12 * m);
             subText.setAttribute('text-anchor', 'middle');
             subText.setAttribute('dominant-baseline', 'middle');
-            subText.setAttribute('font-size', '9');
+            subText.setAttribute('font-size', Math.round(9 * m));
             subText.setAttribute('fill', 'var(--text-secondary)');
             const entryCount = station.config.entryCount || 1;
             const exitCount  = station.config.exitCount  || 1;

@@ -23,10 +23,18 @@ export class Editor3DView {
         this._camera = null;
         this._renderer = null;
         this._controls = null;
+        this._stationSizeMultiplier = 1.0;
+        this._currentScenario = null;
+    }
+
+    setStationSizeMultiplier(m) {
+        this._stationSizeMultiplier = m;
+        if (this._currentScenario) this._build(this._currentScenario);
     }
 
     show(scenario) {
         this._canvas.style.display = 'block';
+        this._currentScenario = scenario;
         this._build(scenario);
     }
 
@@ -195,17 +203,21 @@ export class Editor3DView {
         }
 
         // Standard station: simple box
-        const geom = new THREE.BoxGeometry(STANDARD_W, STATION_H, STANDARD_D);
+        const m = this._stationSizeMultiplier;
+        const w = STANDARD_W * m;
+        const h = STATION_H * m;
+        const d = STANDARD_D * m;
+        const geom = new THREE.BoxGeometry(w, h, d);
         const mat = new THREE.MeshStandardMaterial({
             color,
             roughness: 0.6,
             metalness: 0.1,
         });
         const mesh = new THREE.Mesh(geom, mat);
-        mesh.position.set(px, STATION_H / 2, pz);
+        mesh.position.set(px, h / 2, pz);
         scene.add(mesh);
 
-        this._addLabel(scene, st.name || st.id, px, STATION_H + 0.5, pz);
+        this._addLabel(scene, st.name || st.id, px, h + 0.5, pz);
     }
 
     _buildShellGeometry(cells, cellSize, height, refC, refR) {

@@ -657,11 +657,19 @@ class App {
         document.getElementById('show-internal').addEventListener('change', (e) => {
             this._showInternal = e.target.checked;
             if (this.visualizer) this.visualizer.setShowInternal(e.target.checked);
-            document.getElementById('show-internal-names-label').style.display = e.target.checked ? '' : 'none';
+            const show = e.target.checked ? '' : 'none';
+            document.getElementById('show-internal-names-label').style.display = show;
+            document.getElementById('internal-station-size-label').style.display = show;
             this._refreshWorks();
         });
         document.getElementById('show-internal-names').addEventListener('change', (e) => {
             if (this.visualizer) this.visualizer.setShowInternalNames(e.target.checked);
+        });
+        const sizeSlider = document.getElementById('internal-station-size');
+        sizeSlider.addEventListener('input', (e) => {
+            const r = parseInt(e.target.value);
+            document.getElementById('internal-station-size-value').textContent = r;
+            if (this.visualizer) this.visualizer.setInternalStationRadius(r);
         });
     }
 

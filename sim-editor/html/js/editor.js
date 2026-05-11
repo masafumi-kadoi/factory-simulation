@@ -1938,6 +1938,9 @@ class ScenarioEditor {
     _setup3DToggle() {
         const btn = document.getElementById('toggle-3d-btn');
         if (!btn) return;
+        const sizeSlider = document.getElementById('editor-station-size');
+        const sizeValue = document.getElementById('editor-station-size-value');
+
         btn.addEventListener('click', () => {
             this._is3DMode = !this._is3DMode;
             const svgCanvas = document.getElementById('canvas');
@@ -1955,6 +1958,19 @@ class ScenarioEditor {
                 btn.style.color = '#ccc';
             }
         });
+
+        if (sizeSlider) {
+            sizeSlider.addEventListener('input', () => {
+                const v = parseFloat(sizeSlider.value);
+                if (sizeValue) sizeValue.textContent = v.toFixed(1);
+                if (this._is3DMode) {
+                    this._editor3DView.setStationSizeMultiplier(v);
+                } else {
+                    this.canvas.stationSizeMultiplier = v;
+                    this.canvas.render();
+                }
+            });
+        }
     }
 
     _autoPlaceEntryExit() {

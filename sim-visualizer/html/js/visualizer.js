@@ -38,6 +38,8 @@ export class Visualizer3D {
         this._internalObjects = [];
         this._internalLabels = [];
         this._internalPositions = new Map();
+        this.internalStationRadius = 15;
+        this._lastFlatScenario = null;
         this.ground = null;
         this.gridHelper = null;
         this._raycaster = new THREE.Raycaster();
@@ -904,6 +906,7 @@ export class Visualizer3D {
     }
 
     loadInternalStations(flatScenario) {
+        this._lastFlatScenario = flatScenario;
         this._clearInternalObjects();
         this._internalPositions.clear();
         const PX_PER_M = 80;
@@ -960,7 +963,7 @@ export class Visualizer3D {
             for (const s of internalStations) {
                 const pos = positions.get(s.id);
                 const color = STATION_COLORS[s.type] || 0x6c757d;
-                const radius = 15;
+                const radius = this.internalStationRadius;
                 const discGeo = new THREE.CylinderGeometry(radius, radius, discHeight, 24);
                 const discMat = new THREE.MeshStandardMaterial({
                     color, transparent: true, opacity: 0.5,
@@ -968,7 +971,7 @@ export class Visualizer3D {
                     roughness: 0.4, metalness: 0.1,
                 });
                 const mesh = new THREE.Mesh(discGeo, discMat);
-                const ringGeo = new THREE.RingGeometry(radius - 1.5, radius, 32);
+                const ringGeo = new THREE.RingGeometry(Math.max(0.5, radius - 1.5), radius, 32);
                 const ringMat = new THREE.MeshBasicMaterial({
                     color, transparent: true, opacity: 0.6, side: THREE.DoubleSide,
                 });
@@ -1055,6 +1058,14 @@ export class Visualizer3D {
 
     getInternalPosition(stationId) {
         return this._internalPositions.get(stationId) || null;
+    }
+
+    setInternalStationRadius(r) {
+        this.internalStationRadius = r;
+        if (this._lastFlatScenario) {
+            this.loadInternalStations(this._lastFlatScenario);
+            this._rerouteConnections();
+        }
     }
 
     _clearInternalObjects() {
