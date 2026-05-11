@@ -925,12 +925,23 @@ export class Visualizer3D {
 
             const grid = moduler.config?.model3DGrid;
             let targetExtent = 90;
+            let modelCenterX = parentX;
+            let modelCenterZ = parentZ;
             if (grid?.cells?.length > 0) {
                 const gs = grid.gridSize || 0.5;
                 const cells = grid.cells;
-                const spanC = Math.max(...cells.map(([c]) => c)) - Math.min(...cells.map(([c]) => c)) + 1;
-                const spanR = Math.max(...cells.map(([, r]) => r)) - Math.min(...cells.map(([, r]) => r)) + 1;
+                const cellUnit = gs * PX_PER_M;
+                const minC = Math.min(...cells.map(([c]) => c));
+                const maxC = Math.max(...cells.map(([c]) => c));
+                const minR = Math.min(...cells.map(([, r]) => r));
+                const maxR = Math.max(...cells.map(([, r]) => r));
+                const spanC = maxC - minC + 1;
+                const spanR = maxR - minR + 1;
                 targetExtent = Math.max(spanC, spanR) * gs * PX_PER_M * 0.8;
+                const refC = grid.origin ? grid.origin[0] : (minC + maxC) / 2;
+                const refR = grid.origin ? grid.origin[1] : (minR + maxR) / 2;
+                modelCenterX = parentX + ((minC + maxC + 1) / 2 - refC) * cellUnit;
+                modelCenterZ = parentZ + ((minR + maxR + 1) / 2 - refR) * cellUnit;
             }
 
             const relPositions = internalStations.map(s => ({
@@ -952,9 +963,9 @@ export class Visualizer3D {
                 const s = internalStations[i];
                 const rel = relPositions[i];
                 const pos = {
-                    x: parentX + (rel.x - centerRX) * scale,
+                    x: modelCenterX + (rel.x - centerRX) * scale,
                     y: discHeight / 2,
-                    z: parentZ + (rel.z - centerRZ) * scale,
+                    z: modelCenterZ + (rel.z - centerRZ) * scale,
                 };
                 positions.set(s.id, pos);
                 this._internalPositions.set(s.id, pos);
