@@ -979,8 +979,7 @@ export class Visualizer3D {
             const scaleX = srcExtentX > 0 ? modelExtentX / srcExtentX : 1;
             const scaleZ = srcExtentZ > 0 ? modelExtentZ / srcExtentZ : scaleX;
 
-            // Place discs at the vertical center of the model
-            const posY = modelH / 2;
+            const posY = discHeight / 2;
 
             const positions = new Map();
             for (let i = 0; i < internalStations.length; i++) {
