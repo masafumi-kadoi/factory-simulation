@@ -561,6 +561,15 @@ class ScenarioEditor {
             group.forEach((s, i) => rowPos.set(s.id, i));
         }
 
+        // Detect layout direction from current average X of source vs drain stations.
+        // If sources are to the right of drains, arrange right-to-left.
+        const srcStations   = stations.filter(s => s.type === 'source' || s.type === 'entry');
+        const drainStations = stations.filter(s => s.type === 'drain'  || s.type === 'exit');
+        const avgX = arr => arr.length ? arr.reduce((sum, s) => sum + s.x, 0) / arr.length : null;
+        const avgSrcX   = avgX(srcStations);
+        const avgDrainX = avgX(drainStations);
+        const rtl = avgSrcX !== null && avgDrainX !== null && avgSrcX > avgDrainX;
+
         // Apply positions (one-shot, no lock)
         const xStart = 200;
         const xGap   = 200;
@@ -568,7 +577,9 @@ class ScenarioEditor {
         const yGap   = 120;
 
         stations.forEach(s => {
-            s.x = this.canvas._snapToGrid(xStart + col.get(s.id) * xGap);
+            const c = col.get(s.id);
+            const xCol = rtl ? (maxCol - c) : c;
+            s.x = this.canvas._snapToGrid(xStart + xCol * xGap);
             s.y = this.canvas._snapToGrid(yStart + (rowPos.get(s.id) || 0) * yGap);
         });
 
