@@ -318,12 +318,14 @@ class ScenarioEditor {
             });
         }
 
-        // Auto layout button (in tool palette)
-        const autoLayoutBtn = document.getElementById('auto-layout-btn');
-        if (autoLayoutBtn) {
-            autoLayoutBtn.addEventListener('click', () => {
-                this.autoLayout();
-            });
+        // Auto layout buttons (in tool palette)
+        const autoLayoutHBtn = document.getElementById('auto-layout-h-btn');
+        if (autoLayoutHBtn) {
+            autoLayoutHBtn.addEventListener('click', () => { this.autoLayout('horizontal'); });
+        }
+        const autoLayoutVBtn = document.getElementById('auto-layout-v-btn');
+        if (autoLayoutVBtn) {
+            autoLayoutVBtn.addEventListener('click', () => { this.autoLayout('vertical'); });
         }
 
         // Buffer conveyor template button
@@ -491,9 +493,11 @@ class ScenarioEditor {
         return defaults[type] ? JSON.parse(JSON.stringify(defaults[type])) : {};
     }
 
-    // Auto-layout: arrange stations Source→Drain (left to right) by connection flow.
+    // Auto-layout: arrange stations Source→Drain by connection flow.
+    // axis: 'horizontal' (left↔right) or 'vertical' (up↕down).
+    // Within each axis, direction is inferred from current Source/Drain positions.
     // One-shot: applies positions once; stations can be freely moved afterward.
-    autoLayout() {
+    autoLayout(axis) {
         const stations = this.scenario.stations;
         const connections = this.scenario.connections;
         if (stations.length === 0) return;
@@ -561,9 +565,7 @@ class ScenarioEditor {
             group.forEach((s, i) => rowPos.set(s.id, i));
         }
 
-        // Detect layout axis and direction from current average positions of source vs drain.
-        // Primary axis: whichever of |dx| vs |dy| is larger becomes the "column" axis.
-        // Direction: follows the sign of that component (Source→Drain).
+        // Determine direction (normal vs reverse) from current Source/Drain positions.
         const srcStations   = stations.filter(s => s.type === 'source' || s.type === 'entry');
         const drainStations = stations.filter(s => s.type === 'drain'  || s.type === 'exit');
         const avgPos = arr => arr.length
@@ -573,13 +575,10 @@ class ScenarioEditor {
         const avgSrc   = avgPos(srcStations);
         const avgDrain = avgPos(drainStations);
 
-        let horizontal = true; // true → column axis = X, false → column axis = Y
-        let reverse    = false; // true → column 0 placed at right/bottom
+        const horizontal = (axis === 'horizontal');
+        let reverse = false;
         if (avgSrc && avgDrain) {
-            const dx = avgDrain.x - avgSrc.x;
-            const dy = avgDrain.y - avgSrc.y;
-            horizontal = Math.abs(dx) >= Math.abs(dy);
-            reverse    = horizontal ? dx < 0 : dy < 0;
+            reverse = horizontal ? (avgDrain.x < avgSrc.x) : (avgDrain.y < avgSrc.y);
         }
 
         // Apply positions (one-shot, no lock)
