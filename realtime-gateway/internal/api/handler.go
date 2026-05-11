@@ -225,6 +225,7 @@ var validStationTypes = map[string]bool{
 	"source": true, "processing": true, "drain": true,
 	"merge": true, "split": true, "moduler": true, "entry": true, "exit": true,
 	"machine": true, "conveyor": true, "buffer": true, "input": true, "output": true,
+	"switch": true,
 }
 
 func (h *Handler) handleCSVImport(w http.ResponseWriter, r *http.Request, factoryID string) {

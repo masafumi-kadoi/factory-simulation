@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -124,6 +125,9 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 	e.scenario = FlattenScenario(e.scenario)
 	e.scenario.BuildStationIndex()
 	e.stationModulerMap = e.scenario.StationModulerMap
+
+	// Step 0.5a: Auto-assign port indices for Switch connections (merge→ToPortIndex, divert→FromPortIndex)
+	e.assignSwitchPortIndices()
 
 	// Step 0.5: Normalize factory station types to simulation types
 	// "machine" (factory management term) → "processing" (simulation engine term)
@@ -327,6 +331,14 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		delete(e.reservedStations, e.portReservationKey(station.ID, portIndex))
 		delete(e.workPortReservation, *event.WorkID)
 		return e.handleMergeWorkArrived(work, station, portIndex)
+	}
+
+	// Switch merge: work arrives at a dedicated input port slot
+	if station.Type == domain.StationTypeSwitch && station.GetDirection() == "merge" {
+		portIndex := e.findToPortIndex(*event.WorkID, station.ID)
+		delete(e.reservedStations, e.portReservationKey(station.ID, portIndex))
+		delete(e.workPortReservation, *event.WorkID)
+		return e.handleSwitchMergePortArrived(work, station, portIndex)
 	}
 
 	// Clear station-level reservation
@@ -659,8 +671,11 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return err
 	}
 	if nextStation != nil {
-		// For merge downstream: check port-level inputReady
-		if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToPortIndex >= 0 {
+		// For merge/switch-merge downstream: check port-level inputReady
+		isPortDest := conn != nil && conn.ToPortIndex >= 0 &&
+			(nextStation.Type == domain.StationTypeMerge ||
+				(nextStation.Type == domain.StationTypeSwitch && nextStation.GetDirection() == "merge"))
+		if isPortDest {
 			if !nextStation.IsPortInputReady(conn.ToPortIndex) || e.reservedStations[e.portReservationKey(nextStation.ID, conn.ToPortIndex)] {
 				return nil
 			}
@@ -700,8 +715,11 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 		return nil
 	}
 
-	// Reserve destination (port-level for merge, station-level otherwise)
-	if nextStation.Type == domain.StationTypeMerge && conn != nil && conn.ToPortIndex >= 0 {
+	// Reserve destination (port-level for merge/switch-merge, station-level otherwise)
+	isPortDest := conn != nil && conn.ToPortIndex >= 0 &&
+		(nextStation.Type == domain.StationTypeMerge ||
+			(nextStation.Type == domain.StationTypeSwitch && nextStation.GetDirection() == "merge"))
+	if isPortDest {
 		e.reservedStations[e.portReservationKey(nextStation.ID, conn.ToPortIndex)] = true
 		e.workPortReservation[work.ID] = conn.ToPortIndex
 	} else {
@@ -756,8 +774,11 @@ func (e *Engine) handlePortWorkDeparted(event *Event, station *domain.Station) e
 		return nil
 	}
 
-	// Check downstream readiness
-	if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
+	// Check downstream readiness (port-level for merge/switch-merge, station-level otherwise)
+	isPortDest := conn.ToPortIndex >= 0 &&
+		(toStation.Type == domain.StationTypeMerge ||
+			(toStation.Type == domain.StationTypeSwitch && toStation.GetDirection() == "merge"))
+	if isPortDest {
 		if !toStation.IsPortInputReady(conn.ToPortIndex) || e.reservedStations[e.portReservationKey(toStation.ID, conn.ToPortIndex)] {
 			return nil
 		}
@@ -776,11 +797,18 @@ func (e *Engine) handlePortWorkDeparted(event *Event, station *domain.Station) e
 	// Update port derived signals
 	e.updatePortDerivedSignals(station, portIndex, false)
 
-	// Check if all output ports are empty → reset station for next input
-	if !station.HasOutputPortWorks() {
+	// For switch-divert: body is already empty (cleared in scheduleSwitchDivert); skip body signal reset.
+	// For split: reset station when all output ports are empty so it can accept new input.
+	if station.Type != domain.StationTypeSwitch && !station.HasOutputPortWorks() {
 		station.SetSignal(domain.SignalComplete, false)
 		station.SetSignal(domain.SignalOutputWorkPresent, false)
 		// Evaluate station-level rules to re-enable inputReady
+		if err := e.evaluateAndLogSignals(station); err != nil {
+			return err
+		}
+	} else if station.Type == domain.StationTypeSwitch {
+		// Switch-divert: a port just emptied — trigger checkHandshakes so body work can flow into it.
+		// Call regardless of whether other ports are still full (partial-empty must unblock too).
 		if err := e.evaluateAndLogSignals(station); err != nil {
 			return err
 		}
@@ -790,8 +818,8 @@ func (e *Engine) handlePortWorkDeparted(event *Event, station *domain.Station) e
 	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, portIndex)
 	e.logStationStatus(station, "ワーク出発(バッファ)")
 
-	// Reserve destination
-	if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
+	// Reserve destination (port-level for merge/switch-merge, station-level otherwise)
+	if isPortDest {
 		e.reservedStations[e.portReservationKey(toStation.ID, conn.ToPortIndex)] = true
 		e.workPortReservation[work.ID] = conn.ToPortIndex
 	} else {
@@ -1443,6 +1471,47 @@ func (e *Engine) selectBySequence(state *SwitchState, seq []int, candidates []in
 	return candidates[0]
 }
 
+// assignSwitchPortIndices auto-assigns ToPortIndex for switch-merge incoming connections
+// and FromPortIndex for switch-divert outgoing connections, sorted stably by the remote station ID.
+// This ensures each connection maps to a dedicated port slot in InPorts[1+]/OutPorts[1+].
+func (e *Engine) assignSwitchPortIndices() {
+	for _, station := range e.scenario.Stations {
+		if station.Type != domain.StationTypeSwitch {
+			continue
+		}
+		dir := station.GetDirection()
+		if dir == "merge" {
+			// Collect incoming connection indices, sorted by From station ID for stability
+			var connIndices []int
+			for i, conn := range e.scenario.Connections {
+				if conn.To == station.ID {
+					connIndices = append(connIndices, i)
+				}
+			}
+			sort.Slice(connIndices, func(a, b int) bool {
+				return e.scenario.Connections[connIndices[a]].From < e.scenario.Connections[connIndices[b]].From
+			})
+			for portIdx, connIdx := range connIndices {
+				e.scenario.Connections[connIdx].ToPortIndex = portIdx
+			}
+		} else if dir == "divert" {
+			// Collect outgoing connection indices, sorted by To station ID for stability
+			var connIndices []int
+			for i, conn := range e.scenario.Connections {
+				if conn.From == station.ID {
+					connIndices = append(connIndices, i)
+				}
+			}
+			sort.Slice(connIndices, func(a, b int) bool {
+				return e.scenario.Connections[connIndices[a]].To < e.scenario.Connections[connIndices[b]].To
+			})
+			for portIdx, connIdx := range connIndices {
+				e.scenario.Connections[connIdx].FromPortIndex = portIdx
+			}
+		}
+	}
+}
+
 // collectSwitchMergeCandidates returns indices of upstream connections where the upstream
 // has outputReady=ON with a work present and no pending departure already scheduled.
 func (e *Engine) collectSwitchMergeCandidates(station *domain.Station) ([]int, []domain.Connection) {
@@ -1477,53 +1546,125 @@ func (e *Engine) collectSwitchDivertCandidates(station *domain.Station) ([]int, 
 	return candidates, conns
 }
 
-// scheduleSwitchMerge selects one ready upstream for a Switch merge station and schedules its WorkDeparted.
+// handleSwitchMergePortArrived handles work arriving at a switch-merge input port.
+// Fills the port slot then attempts to pull one work from a port into the body.
+func (e *Engine) handleSwitchMergePortArrived(work *domain.Work, station *domain.Station, portIndex int) error {
+	if err := station.AddWorkToPort(work, portIndex); err != nil {
+		return err
+	}
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type, portIndex)
+	e.logStationStatus(station, "スイッチポート到着")
+	e.updatePortDerivedSignals(station, portIndex, true)
+	// Try to move a work from a port into the body immediately
+	e.scheduleSwitchMerge(station)
+	return nil
+}
+
+// scheduleSwitchMerge selects one filled input port and moves its work into the switch body.
+// Called when body.IR=ON (body is empty and ready) or when a port receives a new work.
 func (e *Engine) scheduleSwitchMerge(station *domain.Station) {
 	if !station.IsInputReady() || e.reservedStations[station.ID] {
 		return
 	}
-	// If any upstream already has a pending departure toward this switch, don't double-schedule
-	for _, conn := range e.scenario.GetConnectionsTo(station.ID) {
-		if e.pendingDepartures[conn.From] {
-			return
+	portCount := station.InputPortCount()
+	if portCount == 0 {
+		return
+	}
+	var candidates []int
+	for i := 0; i < portCount; i++ {
+		port := station.GetInputPort(i)
+		if port != nil && len(port.Works) > 0 {
+			candidates = append(candidates, i)
 		}
 	}
-	candidates, conns := e.collectSwitchMergeCandidates(station)
 	if len(candidates) == 0 {
 		return
 	}
-	sel := e.selectSwitchPort(station, len(conns), candidates)
-	if sel < 0 || sel >= len(conns) {
+	sel := e.selectSwitchPort(station, portCount, candidates)
+	if sel < 0 || sel >= portCount {
 		return
 	}
-	from := e.scenario.GetStation(conns[sel].From)
-	if from == nil {
+	port := station.GetInputPort(sel)
+	if port == nil || len(port.Works) == 0 {
 		return
 	}
-	e.pendingDepartures[from.ID] = true
-	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, from.ID, nil))
+	// Move work from port to body (passthrough: zero processing time)
+	work := port.Works[0]
+	port.Works = port.Works[1:]
+	e.updatePortDerivedSignals(station, sel, true)
+
+	// Fill body (Entry-like passthrough)
+	station.SetWork(work)
+	station.State = domain.StateCompleted
+	station.SetSignal(domain.SignalInputWorkPresent, true)
+	station.SetSignal(domain.SignalOutputWorkPresent, true)
+	setWorkTypeSignal(station.Signals, work.Type)
+
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkArrived), work.Type, -1)
+	e.logStationStatus(station, "スイッチ選択→ボディ")
+
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		log.Printf("[ERROR] scheduleSwitchMerge evaluateAndLogSignals: %v", err)
+	}
 }
 
-// scheduleSwitchDivert selects one ready downstream for a Switch divert station and schedules its WorkDeparted.
+// scheduleSwitchDivert moves the body work into a selected empty output port.
+// The port then departs via the normal port-level WorkDeparted path (handlePortWorkDeparted).
 func (e *Engine) scheduleSwitchDivert(station *domain.Station) {
-	if !station.IsOutputReady() || station.GetWork() == nil || e.pendingDepartures[station.ID] {
+	if !station.IsOutputReady() || station.GetWork() == nil {
 		return
 	}
-	candidates, conns := e.collectSwitchDivertCandidates(station)
+	portCount := station.OutputPortCount()
+	if portCount == 0 {
+		return
+	}
+	// Find empty output ports (ready to receive)
+	var candidates []int
+	for i := 0; i < portCount; i++ {
+		port := station.GetOutputPort(i)
+		if port != nil && len(port.Works) == 0 {
+			candidates = append(candidates, i)
+		}
+	}
 	if len(candidates) == 0 {
 		return
 	}
-	sel := e.selectSwitchPort(station, len(conns), candidates)
-	if sel < 0 || sel >= len(conns) {
+	sel := e.selectSwitchPort(station, portCount, candidates)
+	if sel < 0 || sel >= portCount {
 		return
 	}
-	to := e.scenario.GetStation(conns[sel].To)
-	if to == nil {
+	port := station.GetOutputPort(sel)
+	if port == nil {
 		return
 	}
-	e.switchDivertTarget[station.ID] = to.ID
-	e.pendingDepartures[station.ID] = true
-	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
+	// Get work from body
+	work, err := station.GetOutputWork()
+	if err != nil {
+		return
+	}
+	// Clear body signals
+	station.SetSignal(domain.SignalInputWorkPresent, false)
+	station.SetSignal(domain.SignalProcessingWorkPresent, false)
+	station.SetSignal(domain.SignalOutputWorkPresent, false)
+	station.SetSignal(domain.SignalComplete, false)
+	station.SetSignal(domain.SignalProcessReady, false)
+	clearWorkTypeSignals(station.Signals)
+
+	e.cancelWorkFullTimer(station)
+	e.scheduleWorkEmptyTimer(station)
+
+	// Move work to selected output port
+	port.Works = append(port.Works, work)
+	e.updatePortDerivedSignals(station, sel, false) // port.OWP=T → port.OR=ON
+
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, -1)
+	e.logStationStatus(station, "スイッチ分岐→ポート")
+	delete(e.switchDivertTarget, station.ID)
+
+	// Evaluate body: body is now empty → IR=ON; checkHandshakes fires Case 1b for port
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		log.Printf("[ERROR] scheduleSwitchDivert evaluateAndLogSignals: %v", err)
+	}
 }
 
 // handleSwitchDivertWorkDeparted handles WorkDeparted for a Switch divert station body.
@@ -1597,16 +1738,11 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 				continue
 			}
 
-			// If downstream is Switch merge, delegate scheduling to Switch
-			if toStation.Type == domain.StationTypeSwitch && toStation.GetDirection() == "merge" {
-				if toStation.IsInputReady() && !e.reservedStations[toStation.ID] {
-					e.scheduleSwitchMerge(toStation)
-				}
-				break
-			}
-
-			// Check downstream readiness
-			if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
+			// Check downstream readiness (port-level for merge/switch-merge, station-level otherwise)
+			isPortDest := conn.ToPortIndex >= 0 &&
+				(toStation.Type == domain.StationTypeMerge ||
+					(toStation.Type == domain.StationTypeSwitch && toStation.GetDirection() == "merge"))
+			if isPortDest {
 				resKey := e.portReservationKey(toStation.ID, conn.ToPortIndex)
 				if toStation.IsPortInputReady(conn.ToPortIndex) && !e.reservedStations[resKey] {
 					e.pendingDepartures[station.ID] = true
@@ -1623,8 +1759,10 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 		}
 	}
 
-	// Case 1b: This station is Split — check each output port's outputReady
-	if station.Type == domain.StationTypeSplit {
+	// Case 1b: This station is Split or SwitchDivert — check each output port's outputReady
+	isSplitLike := station.Type == domain.StationTypeSplit ||
+		(station.Type == domain.StationTypeSwitch && station.GetDirection() == "divert")
+	if isSplitLike {
 		for bufIdx := 0; bufIdx < station.OutputPortCount(); bufIdx++ {
 			if !station.IsPortOutputReady(bufIdx) {
 				continue
@@ -1643,7 +1781,10 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 			}
 
 			ready := false
-			if toStation.Type == domain.StationTypeMerge && conn.ToPortIndex >= 0 {
+			isPortDest2 := conn.ToPortIndex >= 0 &&
+				(toStation.Type == domain.StationTypeMerge ||
+					(toStation.Type == domain.StationTypeSwitch && toStation.GetDirection() == "merge"))
+			if isPortDest2 {
 				resKey := e.portReservationKey(toStation.ID, conn.ToPortIndex)
 				ready = toStation.IsPortInputReady(conn.ToPortIndex) && !e.reservedStations[resKey]
 			} else {
@@ -1669,19 +1810,20 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 					continue
 				}
 
-				// If upstream is Switch divert, delegate to Switch selection
-				if fromStation.Type == domain.StationTypeSwitch && fromStation.GetDirection() == "divert" {
-					if fromStation.IsOutputReady() && fromStation.GetWork() != nil && !e.pendingDepartures[fromStation.ID] {
-						e.scheduleSwitchDivert(fromStation)
-					}
-					continue
-				}
-
-				if fromStation.Type == domain.StationTypeSplit && conn.FromPortIndex >= 0 {
+				// Split or SwitchDivert with port: schedule port-level departure
+				isSplitLikeFrom := (fromStation.Type == domain.StationTypeSplit ||
+					(fromStation.Type == domain.StationTypeSwitch && fromStation.GetDirection() == "divert")) &&
+					conn.FromPortIndex >= 0
+				if isSplitLikeFrom {
 					depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
 					if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
 						e.pendingDepartures[depKey] = true
 						e.eventQueue.Push(NewPortEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil, conn.FromPortIndex))
+					}
+				} else if fromStation.Type == domain.StationTypeSwitch && fromStation.GetDirection() == "divert" {
+					// Switch divert body: trigger body→port transfer if body has work
+					if fromStation.IsOutputReady() && fromStation.GetWork() != nil {
+						e.scheduleSwitchDivert(fromStation)
 					}
 				} else {
 					if fromStation.IsOutputReady() && fromStation.GetWork() != nil && !e.pendingDepartures[fromStation.ID] {
@@ -1693,8 +1835,10 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 		}
 	}
 
-	// Case 2b: This station is Merge — check each input port's inputReady
-	if station.Type == domain.StationTypeMerge {
+	// Case 2b: This station is Merge or SwitchMerge — check each input port's inputReady
+	isMergeLike := station.Type == domain.StationTypeMerge ||
+		(station.Type == domain.StationTypeSwitch && station.GetDirection() == "merge")
+	if isMergeLike {
 		for bufIdx := 0; bufIdx < station.InputPortCount(); bufIdx++ {
 			resKey := e.portReservationKey(station.ID, bufIdx)
 			if !station.IsPortInputReady(bufIdx) || e.reservedStations[resKey] {
@@ -1709,7 +1853,10 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 				continue
 			}
 
-			if fromStation.Type == domain.StationTypeSplit && conn.FromPortIndex >= 0 {
+			isSplitLikeUpstream := (fromStation.Type == domain.StationTypeSplit ||
+				(fromStation.Type == domain.StationTypeSwitch && fromStation.GetDirection() == "divert")) &&
+				conn.FromPortIndex >= 0
+			if isSplitLikeUpstream {
 				depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
 				if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
 					e.pendingDepartures[depKey] = true

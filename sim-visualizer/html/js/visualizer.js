@@ -8,6 +8,7 @@ const STATION_COLORS = {
     'processing': 0x007bff,
     'merge': 0x6f42c1,
     'split': 0xfd7e14,
+    'switch': 0x17a2b8,
     'inspection': 0xffc107,
     'discharge': 0xdc3545,
     'drain': 0x6c757d,

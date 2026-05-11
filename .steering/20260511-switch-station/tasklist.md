@@ -72,6 +72,29 @@
 - [x] Switch divert 統合テスト（1上流 → 2下流、round-robin 交互）
 - [x] 既存テストが変化しないこと: `go test ./...`
 
+## フェーズ9: ポートベース設計への再実装（2026-05-11 追加）
+
+- [x] `InputPortCount()` を Switch-merge 対応に拡張
+- [x] `OutputPortCount()` を Switch-divert 対応に拡張
+- [x] `getPortsConfig()` に Switch ケースを追加（portCount から自動生成）
+- [x] `InitializePorts()` に Switch ケースを追加（Merge/Split と同じポートバッファ構造）
+- [x] `AddWorkToPort()` を Switch-merge に拡張
+- [x] `GetDefaultSwitchMergePortInterlockConfig()` / `GetDefaultSwitchDivertPortInterlockConfig()` を追加
+- [x] `assignSwitchPortIndices()` を実装（接続の ToPortIndex / FromPortIndex を自動割り当て）
+- [x] `Run()` Step 0.5a に `assignSwitchPortIndices()` を追加
+- [x] `handleSwitchMergePortArrived()` を実装（ポートにワーク追加→scheduleSwitchMerge）
+- [x] `handleWorkArrived` に Switch-merge ポートパスを追加
+- [x] `scheduleSwitchMerge()` を書き換え（上流 OR を見る → 自ポートのワークを body に引き込む）
+- [x] `scheduleSwitchDivert()` を書き換え（下流 IR を見る → body から選択出力ポートにワーク移動）
+- [x] `handleWorkDeparted` の port-level チェック・予約を Switch-merge 対応に拡張
+- [x] `handlePortWorkDeparted` の downstream チェック・予約を Switch-merge 対応に拡張
+- [x] `handlePortWorkDeparted` の Switch-divert ポート出発後処理を追加
+- [x] `checkHandshakes` Case 1: `isPortDest` で Switch-merge を Merge と同様に処理
+- [x] `checkHandshakes` Case 1b: SwitchDivert ポートを Split と同様に処理
+- [x] `checkHandshakes` Case 2: SwitchDivert upstream をポートレベルで処理
+- [x] `checkHandshakes` Case 2b: `isMergeLike` で Switch-merge を Merge と同様に処理
+- [x] `go test ./...` が全て PASS
+
 ## フェーズ8: デモシナリオ更新
 
 - [x] `demo-2source-7moduler` の `scenario.json` を Switch 対応に更新
@@ -108,6 +131,24 @@
 - `switchDivertTarget` の保存と再試行パターン（target 消滅時に `checkHandshakes` で再選択）は競合状態に強い設計。
 
 ### 次回への改善提案
-- Switch を Moduler 内の subScenario でも使えるか検証（フラット化後の接続インデックスが正しく引けるか）
 - `selectSwitchPort` の `priority` モードで fallback なし（stall）の動作を統合テストで確認するテストを追加
 - Switch divert + Merge のチェーン（1 → N → 1 経路）のテストシナリオを追加
+
+---
+
+## フェーズ9 実装後の振り返り（2026-05-11）
+
+### 背景
+当初「ポートバッファなし設計」で実装したが、ユーザーより「他のステーションと同様のポートベース設計にすべき」との要求。Merge/Split と同じ InPorts[1+]/OutPorts[1+] 構造を Switch にも適用。
+
+### 計画と実績の差分
+- `assignSwitchPortIndices()` による自動ポートインデックス付与で既存シナリオの変更不要を実現
+- `scheduleSwitchMerge` は「上流の OR を監視」→「自ポートからの body 引き込み」に完全再設計
+- `scheduleSwitchDivert` は「下流の IR を監視して WorkDeparted 予約」→「body から出力ポートへの即時移動 + evaluateAndLogSignals で Case 1b を起動」に完全再設計
+- `handleSwitchDivertWorkDeparted` は機能的に不使用（dead code）になったが削除は保留
+- `deriveStationSignals` は Switch に不要（body シグナルは直接制御されるため）
+
+### 設計上の利点
+- Switch の各接続に専用バッファスロットが生まれ、上流は body が空くのを待たずにポートに搬入可能
+- Merge/Split と同じコードパス（handlePortWorkDeparted、Case 2b、portReservationKey 等）を共有
+- デバッグ時にポート単位でワーク在否を確認可能

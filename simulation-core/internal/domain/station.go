@@ -126,17 +126,21 @@ func (s *Station) GetOutputPort(portIndex int) *Port {
 	return &s.OutPorts[idx]
 }
 
-// InputPortCount returns the number of Merge input ports (InPorts[1+])
+// InputPortCount returns the number of Merge/SwitchMerge input ports (InPorts[1+])
 func (s *Station) InputPortCount() int {
-	if s.Type != StationTypeMerge || len(s.InPorts) <= 1 {
+	isMerge := s.Type == StationTypeMerge
+	isSwitchMerge := s.Type == StationTypeSwitch && s.GetDirection() == "merge"
+	if (!isMerge && !isSwitchMerge) || len(s.InPorts) <= 1 {
 		return 0
 	}
 	return len(s.InPorts) - 1
 }
 
-// OutputPortCount returns the number of Split output ports (OutPorts[1+])
+// OutputPortCount returns the number of Split/SwitchDivert output ports (OutPorts[1+])
 func (s *Station) OutputPortCount() int {
-	if s.Type != StationTypeSplit || len(s.OutPorts) <= 1 {
+	isSplit := s.Type == StationTypeSplit
+	isSwitchDivert := s.Type == StationTypeSwitch && s.GetDirection() == "divert"
+	if (!isSplit && !isSwitchDivert) || len(s.OutPorts) <= 1 {
 		return 0
 	}
 	return len(s.OutPorts) - 1
@@ -292,10 +296,17 @@ func (s *Station) InitializePorts() {
 	}
 
 	var getDefaultConfig func() *InterlockConfig
+	isInputPort := false
 	if s.Type == StationTypeMerge {
 		getDefaultConfig = GetDefaultMergePortInterlockConfig
+		isInputPort = true
 	} else if s.Type == StationTypeSplit {
 		getDefaultConfig = GetDefaultSplitPortInterlockConfig
+	} else if s.Type == StationTypeSwitch && s.GetDirection() == "merge" {
+		getDefaultConfig = GetDefaultSwitchMergePortInterlockConfig
+		isInputPort = true
+	} else if s.Type == StationTypeSwitch && s.GetDirection() == "divert" {
+		getDefaultConfig = GetDefaultSwitchDivertPortInterlockConfig
 	} else {
 		return
 	}
@@ -320,9 +331,9 @@ func (s *Station) InitializePorts() {
 		}
 		autoCorrectControlSignals(port.Signals, port.InterlockRules)
 
-		if s.Type == StationTypeMerge {
+		if isInputPort {
 			s.InPorts = append(s.InPorts, port)
-		} else if s.Type == StationTypeSplit {
+		} else {
 			s.OutPorts = append(s.OutPorts, port)
 		}
 	}
@@ -378,7 +389,21 @@ func parseInterlockConfig(raw interface{}) *InterlockConfig {
 
 // getPortsConfig returns the ports config as a slice of maps.
 // Supports new keys (inPorts for Merge, outPorts for Split) and legacy key (ports).
+// For Switch, auto-generates N port entries from portCount config.
 func (s *Station) getPortsConfig() []map[string]interface{} {
+	// Switch: auto-generate N port entries from portCount
+	if s.Type == StationTypeSwitch {
+		portCount := s.GetSwitchPortCount()
+		if portCount < 2 {
+			return nil
+		}
+		configs := make([]map[string]interface{}, portCount)
+		for i := range configs {
+			configs[i] = map[string]interface{}{"capacity": float64(1)}
+		}
+		return configs
+	}
+
 	// Try new config keys first
 	var key string
 	if s.Type == StationTypeMerge {
@@ -411,8 +436,8 @@ func (s *Station) getPortsConfig() []map[string]interface{} {
 
 // AddWorkToPort adds a work to the specified input port (Ports[portIndex+1])
 func (s *Station) AddWorkToPort(work *Work, portIndex int) error {
-	if s.Type != StationTypeMerge {
-		return fmt.Errorf("station %s is not a merge station", s.ID)
+	if s.Type != StationTypeMerge && !(s.Type == StationTypeSwitch && s.GetDirection() == "merge") {
+		return fmt.Errorf("station %s does not support input ports", s.ID)
 	}
 	port := s.GetInputPort(portIndex)
 	if port == nil {

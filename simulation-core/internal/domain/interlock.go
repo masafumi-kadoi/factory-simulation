@@ -277,6 +277,18 @@ func GetDefaultMergePortInterlockConfig() *InterlockConfig {
 	}
 }
 
+// GetDefaultSwitchMergePortInterlockConfig returns the default interlock config for a switch-merge input port.
+// Same semantics as a merge input port: IR=ON when empty, IR=OFF when full.
+func GetDefaultSwitchMergePortInterlockConfig() *InterlockConfig {
+	return GetDefaultMergePortInterlockConfig()
+}
+
+// GetDefaultSwitchDivertPortInterlockConfig returns the default interlock config for a switch-divert output port.
+// Same semantics as a split output port: OR=ON when has work, OR=OFF when empty.
+func GetDefaultSwitchDivertPortInterlockConfig() *InterlockConfig {
+	return GetDefaultSplitPortInterlockConfig()
+}
+
 // GetDefaultSplitPortInterlockConfig returns the default interlock config for a split output port
 func GetDefaultSplitPortInterlockConfig() *InterlockConfig {
 	return &InterlockConfig{
