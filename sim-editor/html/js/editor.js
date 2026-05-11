@@ -561,14 +561,26 @@ class ScenarioEditor {
             group.forEach((s, i) => rowPos.set(s.id, i));
         }
 
-        // Detect layout direction from current average X of source vs drain stations.
-        // If sources are to the right of drains, arrange right-to-left.
+        // Detect layout axis and direction from current average positions of source vs drain.
+        // Primary axis: whichever of |dx| vs |dy| is larger becomes the "column" axis.
+        // Direction: follows the sign of that component (Source→Drain).
         const srcStations   = stations.filter(s => s.type === 'source' || s.type === 'entry');
         const drainStations = stations.filter(s => s.type === 'drain'  || s.type === 'exit');
-        const avgX = arr => arr.length ? arr.reduce((sum, s) => sum + s.x, 0) / arr.length : null;
-        const avgSrcX   = avgX(srcStations);
-        const avgDrainX = avgX(drainStations);
-        const rtl = avgSrcX !== null && avgDrainX !== null && avgSrcX > avgDrainX;
+        const avgPos = arr => arr.length
+            ? { x: arr.reduce((sum, s) => sum + s.x, 0) / arr.length,
+                y: arr.reduce((sum, s) => sum + s.y, 0) / arr.length }
+            : null;
+        const avgSrc   = avgPos(srcStations);
+        const avgDrain = avgPos(drainStations);
+
+        let horizontal = true; // true → column axis = X, false → column axis = Y
+        let reverse    = false; // true → column 0 placed at right/bottom
+        if (avgSrc && avgDrain) {
+            const dx = avgDrain.x - avgSrc.x;
+            const dy = avgDrain.y - avgSrc.y;
+            horizontal = Math.abs(dx) >= Math.abs(dy);
+            reverse    = horizontal ? dx < 0 : dy < 0;
+        }
 
         // Apply positions (one-shot, no lock)
         const xStart = 200;
@@ -577,10 +589,15 @@ class ScenarioEditor {
         const yGap   = 120;
 
         stations.forEach(s => {
-            const c = col.get(s.id);
-            const xCol = rtl ? (maxCol - c) : c;
-            s.x = this.canvas._snapToGrid(xStart + xCol * xGap);
-            s.y = this.canvas._snapToGrid(yStart + (rowPos.get(s.id) || 0) * yGap);
+            const colIdx = reverse ? (maxCol - col.get(s.id)) : col.get(s.id);
+            const rowIdx = rowPos.get(s.id) || 0;
+            if (horizontal) {
+                s.x = this.canvas._snapToGrid(xStart + colIdx * xGap);
+                s.y = this.canvas._snapToGrid(yStart + rowIdx * yGap);
+            } else {
+                s.x = this.canvas._snapToGrid(xStart + rowIdx * xGap);
+                s.y = this.canvas._snapToGrid(yStart + colIdx * yGap);
+            }
         });
 
         this._markDirty();
