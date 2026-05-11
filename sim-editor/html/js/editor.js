@@ -355,6 +355,7 @@ class ScenarioEditor {
             'merge': 'Mergeステーション配置（複数ワークを結合）',
             'split': 'Splitステーション配置（結合ワークを分割）',
             'moduler': 'Modulerステーション配置（内部にSubScenarioを持つ階層ステーション）| ダブルクリックで内部編集',
+            'switch': 'Switchステーション配置（合流: N→1 / 分岐: 1→N | selectMode で選択戦略を指定）',
             'select': '選択/移動モード (V)',
             'connect': '接続作成モード (C) | Shiftキー押しながらドラッグでも接続作成可能',
             'delete': '削除モード (D) | Deleteキーでも削除可能'
@@ -388,6 +389,7 @@ class ScenarioEditor {
             processing: 'クリックでProcessingステーション配置 | マウスホイールでズーム',
             drain: 'クリックでDrainステーション配置 | マウスホイールでズーム',
             moduler: 'クリックでModulerステーション配置 | ダブルクリックで内部編集',
+            switch: 'クリックでSwitchステーション配置 | direction: merge(合流) / divert(分岐)',
             connect: 'ステーションをドラッグして接続作成 | Shiftキー+ドラッグでも可',
             delete: 'クリックで削除 | Deleteキーでも可'
         };
@@ -488,6 +490,13 @@ class ScenarioEditor {
                     ],
                     connections: []
                 }
+            },
+            switch: {
+                direction: 'merge',
+                portCount: 2,
+                selectMode: 'round-robin',
+                arrivalTime: 0.1,
+                departureTime: 0.1
             }
         };
         return defaults[type] ? JSON.parse(JSON.stringify(defaults[type])) : {};

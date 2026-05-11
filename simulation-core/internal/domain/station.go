@@ -11,6 +11,7 @@ const (
 	StationTypeDrain      StationType = "drain"
 	StationTypeMerge      StationType = "merge"
 	StationTypeSplit      StationType = "split"
+	StationTypeSwitch     StationType = "switch"
 	StationTypeModuler    StationType = "moduler"
 	StationTypeEntry      StationType = "entry"
 	StationTypeExit       StationType = "exit"
@@ -643,6 +644,63 @@ func (s *Station) IsPortOutputReady(portIndex int) bool {
 	return s.GetOutputPortSignal(portIndex, "outputReady")
 }
 
+// GetDirection returns the "direction" config value for Switch stations ("merge" or "divert")
+func (s *Station) GetDirection() string {
+	return s.GetStringConfig("direction")
+}
+
+// GetSwitchSelectMode returns the "selectMode" config value for Switch stations
+func (s *Station) GetSwitchSelectMode() string {
+	mode := s.GetStringConfig("selectMode")
+	if mode == "" {
+		return "round-robin"
+	}
+	return mode
+}
+
+// GetSwitchPortCount returns the "portCount" config value for Switch stations
+func (s *Station) GetSwitchPortCount() int {
+	return s.GetIntConfig("portCount")
+}
+
+// GetSwitchSequence parses the "sequence" config array for Switch stations
+func (s *Station) GetSwitchSequence() []int {
+	val, ok := s.Config["sequence"]
+	if !ok {
+		return nil
+	}
+	arr, ok := val.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]int, 0, len(arr))
+	for _, item := range arr {
+		if f, ok := item.(float64); ok {
+			result = append(result, int(f))
+		}
+	}
+	return result
+}
+
+// GetSwitchPriorityOrder parses the "priorityOrder" config array for Switch stations
+func (s *Station) GetSwitchPriorityOrder() []int {
+	val, ok := s.Config["priorityOrder"]
+	if !ok {
+		return nil
+	}
+	arr, ok := val.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]int, 0, len(arr))
+	for _, item := range arr {
+		if f, ok := item.(float64); ok {
+			result = append(result, int(f))
+		}
+	}
+	return result
+}
+
 // CanStartProcessing checks if the station can start processing
 func (s *Station) CanStartProcessing() bool {
 	if s.Type == StationTypeSource || s.Type == StationTypeDrain {
@@ -652,6 +710,9 @@ func (s *Station) CanStartProcessing() bool {
 		return false
 	}
 	if s.Type == StationTypeEntry || s.Type == StationTypeExit || s.Type == StationTypeModuler {
+		return false
+	}
+	if s.Type == StationTypeSwitch {
 		return false
 	}
 	return s.GetWork() != nil && s.State == StateReceiving

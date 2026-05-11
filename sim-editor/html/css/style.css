@@ -687,6 +687,11 @@ body {
     stroke: #fd7e14;
 }
 
+.station-switch rect {
+    fill: rgba(23, 162, 184, 0.2);
+    stroke: #17a2b8;
+}
+
 /* Validation */
 .validation-summary {
     background: var(--warning-bg);

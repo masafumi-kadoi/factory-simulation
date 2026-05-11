@@ -135,14 +135,22 @@ export function validateScenario(scenario) {
         // Count incoming connections (合流チェック)
         const incomingCount = scenario.connections.filter(c => c.to === station.id).length;
 
-        // Source, Processing, Merge can only have 1 outgoing connection (Split/Moduler can have multiple via ports)
+        // Source, Processing, Merge can only have 1 outgoing connection (Split/Moduler/Switch-divert can have multiple)
         if ((stationType === 'source' || stationType === 'processing' || stationType === 'merge') && outgoingCount > 1) {
             errors.push(`${station.id} (${stationType}): 複数のステーションへの分岐は許可されていません（接続数: ${outgoingCount}）`);
         }
+        // Switch divert: 1 outgoing only limitation check (body has 1 in, N out - all N out via regular connections)
+        if (stationType === 'switch' && station.config?.direction === 'merge' && outgoingCount > 1) {
+            errors.push(`${station.id} (switch/merge): 出力接続は1つのみ許可されます（接続数: ${outgoingCount}）`);
+        }
 
-        // Processing, Drain, Split can only have 1 incoming connection (Merge/Moduler can have multiple via ports)
+        // Processing, Drain, Split can only have 1 incoming connection (Merge/Moduler/Switch-merge can have multiple)
         if ((stationType === 'processing' || stationType === 'drain' || stationType === 'split') && incomingCount > 1) {
             errors.push(`${station.id} (${stationType}): 複数のステーションからの合流は許可されていません（接続数: ${incomingCount}）`);
+        }
+        // Switch merge: N incoming allowed; switch divert: 1 incoming only
+        if (stationType === 'switch' && station.config?.direction === 'divert' && incomingCount > 1) {
+            errors.push(`${station.id} (switch/divert): 入力接続は1つのみ許可されます（接続数: ${incomingCount}）`);
         }
 
         // Source should not have incoming connections
@@ -228,6 +236,19 @@ export function validateStation(station) {
             errors.ports = '出力ポートは1つ以上必要です';
         } else if (outPorts.length !== (config.splitCount || 0)) {
             errors.ports = `出力ポート数(${outPorts.length})がsplitCount(${config.splitCount})と一致しません`;
+        }
+    } else if (station.type === 'switch') {
+        if (!config.direction || (config.direction !== 'merge' && config.direction !== 'divert')) {
+            errors.direction = 'direction は "merge" または "divert" を指定してください';
+        }
+        if (!config.portCount || config.portCount < 2) {
+            errors.portCount = 'portCount は 2 以上である必要があります';
+        }
+        if (!config.arrivalTime || config.arrivalTime <= 0) {
+            errors.arrivalTime = 'arrivalTime は 0 より大きい必要があります';
+        }
+        if (!config.departureTime || config.departureTime <= 0) {
+            errors.departureTime = 'departureTime は 0 より大きい必要があります';
         }
     }
 

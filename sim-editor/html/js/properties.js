@@ -228,6 +228,7 @@ export class PropertiesPanel {
         const mergeConfigHtml = station.type === 'merge' ? this._renderMergeConfig(station) : '';
         const splitConfigHtml = station.type === 'split' ? this._renderSplitConfig(station) : '';
         const modulerConfigHtml = station.type === 'moduler' ? this._renderModulerConfig(station) : '';
+        const switchConfigHtml = station.type === 'switch' ? this._renderSwitchConfig(station) : '';
 
         this.container.innerHTML = `
             <div class="property-group">
@@ -262,6 +263,7 @@ export class PropertiesPanel {
             ${mergeConfigHtml}
             ${splitConfigHtml}
             ${modulerConfigHtml}
+            ${switchConfigHtml}
             ${station.type !== 'entry' && station.type !== 'exit' ? this._renderInterlockSection(station) : ''}
             <div class="property-actions">
                 <button class="btn-primary" id="update-btn">更新</button>
@@ -314,6 +316,21 @@ export class PropertiesPanel {
                 newConfig.outPorts = this._collectSplitPorts();
             }
 
+            // Save switch config
+            if (station.type === 'switch') {
+                newConfig.direction = this.container.querySelector('#prop-direction')?.value || 'merge';
+                newConfig.portCount = parseInt(this.container.querySelector('#prop-portCount')?.value) || 2;
+                newConfig.selectMode = this.container.querySelector('#prop-selectMode')?.value || 'round-robin';
+                const seqStr = this.container.querySelector('#prop-sequence')?.value?.trim();
+                if (seqStr) {
+                    newConfig.sequence = seqStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                }
+                const priStr = this.container.querySelector('#prop-priorityOrder')?.value?.trim();
+                if (priStr) {
+                    newConfig.priorityOrder = priStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                }
+            }
+
             // Save moduler config (preserve subScenario)
             if (station.type === 'moduler') {
                 newConfig.entryCount = parseInt(this.container.querySelector('#prop-entryCount')?.value) || 1;
@@ -354,6 +371,19 @@ export class PropertiesPanel {
                 this.editor.deleteStation(stationId);
             }
         });
+
+        // Switch: selectMode change → show/hide sequence/priority fields
+        const selectModeEl = this.container.querySelector('#prop-selectMode');
+        if (selectModeEl) {
+            const updateSwitchGroups = () => {
+                const mode = selectModeEl.value;
+                const seqGroup = this.container.querySelector('#switch-sequence-group');
+                const priGroup = this.container.querySelector('#switch-priority-group');
+                if (seqGroup) seqGroup.style.display = mode === 'sequence' ? 'block' : 'none';
+                if (priGroup) priGroup.style.display = mode === 'priority' ? 'block' : 'none';
+            };
+            selectModeEl.addEventListener('change', updateSwitchGroups);
+        }
 
         // Merge port count change handler
         const mergeCountInput = this.container.querySelector('#prop-mergeCount');
@@ -663,7 +693,11 @@ export class PropertiesPanel {
             ],
             moduler: [],
             entry: [],
-            exit: []
+            exit: [],
+            switch: [
+                { key: 'arrivalTime', label: 'Arrival Time (s)', step: '0.1', min: '0.1' },
+                { key: 'departureTime', label: 'Departure Time (s)', step: '0.1', min: '0.1' }
+            ]
         };
         return fields[type] || [];
     }
@@ -855,6 +889,51 @@ export class PropertiesPanel {
                 sub.connections = sub.connections.filter(c => c.from !== exit.id && c.to !== exit.id);
             });
         }
+    }
+
+    _renderSwitchConfig(station) {
+        const direction = station.config.direction || 'merge';
+        const portCount = station.config.portCount || 2;
+        const selectMode = station.config.selectMode || 'round-robin';
+        const sequence = (station.config.sequence || []).join(', ');
+        const priorityOrder = (station.config.priorityOrder || []).join(', ');
+        const showSequence = selectMode === 'sequence';
+        const showPriority = selectMode === 'priority';
+
+        return `
+            <div class="property-group" style="border-top: 1px solid #dee2e6; padding-top: 0.5rem;">
+                <label class="property-label">Direction</label>
+                <select class="property-input" id="prop-direction">
+                    <option value="merge" ${direction === 'merge' ? 'selected' : ''}>merge（N→1 合流）</option>
+                    <option value="divert" ${direction === 'divert' ? 'selected' : ''}>divert（1→N 分岐）</option>
+                </select>
+                <div class="property-hint">merge: 複数上流→1下流 / divert: 1上流→複数下流</div>
+            </div>
+            <div class="property-group">
+                <label class="property-label">Port Count</label>
+                <input type="number" class="property-input" id="prop-portCount" value="${portCount}" min="2" step="1">
+                <div class="property-hint">接続先の数（2以上）</div>
+            </div>
+            <div class="property-group">
+                <label class="property-label">Select Mode</label>
+                <select class="property-input" id="prop-selectMode">
+                    <option value="round-robin" ${selectMode === 'round-robin' ? 'selected' : ''}>round-robin（交互）</option>
+                    <option value="sequence" ${selectMode === 'sequence' ? 'selected' : ''}>sequence（指定順序）</option>
+                    <option value="priority" ${selectMode === 'priority' ? 'selected' : ''}>priority（優先順位）</option>
+                    <option value="first-available" ${selectMode === 'first-available' ? 'selected' : ''}>first-available（先着）</option>
+                </select>
+            </div>
+            <div class="property-group" id="switch-sequence-group" style="display: ${showSequence ? 'block' : 'none'}">
+                <label class="property-label">Sequence（カンマ区切り）</label>
+                <input type="text" class="property-input" id="prop-sequence" value="${sequence}" placeholder="例: 0, 1, 0, 1">
+                <div class="property-hint">繰り返すポートインデックスの順序（0始まり）</div>
+            </div>
+            <div class="property-group" id="switch-priority-group" style="display: ${showPriority ? 'block' : 'none'}">
+                <label class="property-label">Priority Order（カンマ区切り）</label>
+                <input type="text" class="property-input" id="prop-priorityOrder" value="${priorityOrder}" placeholder="例: 0, 1">
+                <div class="property-hint">優先順位（先頭が最高優先、準備中なら stall）</div>
+            </div>
+        `;
     }
 
     _renderModulerConfig(station) {

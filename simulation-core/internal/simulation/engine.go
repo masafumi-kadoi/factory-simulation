@@ -68,6 +68,13 @@ type Engine struct {
 	initialWorks       map[string]InitialWorkCondition // Initial work conditions by station ID
 	pendingTimers      map[string]float64     // Timer tracking: key="stationID:timerType" → scheduledTime
 	stationModulerMap  map[string]string       // station ID -> parent Moduler station ID (empty for top-level stations)
+	switchStates       map[string]*SwitchState // Switch station round-robin/sequence state (stationID -> state)
+	switchDivertTarget map[string]string       // Switch divert selected target (stationID -> targetStationID)
+}
+
+// SwitchState tracks the current sequence position for a Switch station
+type SwitchState struct {
+	SeqIndex int
 }
 
 // InitialWorkCondition represents a work already present at a station at simulation start
@@ -104,6 +111,8 @@ func NewEngineWithInitialConditions(scenario *domain.Scenario, workIDsByStation 
 		mergeInProgress:    make(map[string]bool),
 		initialWorks:       initialWorks,
 		pendingTimers:      make(map[string]float64),
+		switchStates:       make(map[string]*SwitchState),
+		switchDivertTarget: make(map[string]string),
 	}
 }
 
@@ -629,6 +638,11 @@ func (e *Engine) handleWorkDeparted(event *Event, station *domain.Station) error
 	// Dispatch port-level departures (Split output ports)
 	if event.PortIndex >= 0 {
 		return e.handlePortWorkDeparted(event, station)
+	}
+
+	// Switch divert: use selected target from switchDivertTarget
+	if station.Type == domain.StationTypeSwitch && station.GetDirection() == "divert" {
+		return e.handleSwitchDivertWorkDeparted(event, station)
 	}
 
 	// Clear pending departure flag
@@ -1361,17 +1375,234 @@ func (e *Engine) triggerProcessReady(station *domain.Station) {
 	}
 }
 
+// getSwitchState returns (or lazily creates) the SwitchState for a Switch station
+func (e *Engine) getSwitchState(stationID string) *SwitchState {
+	if s, ok := e.switchStates[stationID]; ok {
+		return s
+	}
+	s := &SwitchState{}
+	e.switchStates[stationID] = s
+	return s
+}
+
+// selectSwitchPort picks one index from candidates based on the station's selectMode.
+// candidates: slice of 0-based connection indices that are currently ready.
+// numPorts: total number of connections (governs round-robin cycling).
+// Returns the selected index, or -1 if selection is impossible (priority stall or empty candidates).
+func (e *Engine) selectSwitchPort(station *domain.Station, numPorts int, candidates []int) int {
+	if len(candidates) == 0 {
+		return -1
+	}
+	mode := station.GetSwitchSelectMode()
+	switch mode {
+	case "round-robin":
+		state := e.getSwitchState(station.ID)
+		seq := make([]int, numPorts)
+		for i := range seq {
+			seq[i] = i
+		}
+		return e.selectBySequence(state, seq, candidates)
+	case "sequence":
+		state := e.getSwitchState(station.ID)
+		seq := station.GetSwitchSequence()
+		if len(seq) == 0 {
+			seq = make([]int, numPorts)
+			for i := range seq {
+				seq[i] = i
+			}
+		}
+		return e.selectBySequence(state, seq, candidates)
+	case "priority":
+		order := station.GetSwitchPriorityOrder()
+		candidateSet := make(map[int]bool, len(candidates))
+		for _, c := range candidates {
+			candidateSet[c] = true
+		}
+		for _, portIdx := range order {
+			if candidateSet[portIdx] {
+				return portIdx
+			}
+		}
+		return -1 // Stall: no candidate matches priority order
+	default: // "first-available" and unknown modes
+		return candidates[0]
+	}
+}
+
+// selectBySequence advances seqIndex and returns the preferred candidate (with fallback to candidates[0])
+func (e *Engine) selectBySequence(state *SwitchState, seq []int, candidates []int) int {
+	preferred := seq[state.SeqIndex%len(seq)]
+	state.SeqIndex++
+	candidateSet := make(map[int]bool, len(candidates))
+	for _, c := range candidates {
+		candidateSet[c] = true
+	}
+	if candidateSet[preferred] {
+		return preferred
+	}
+	return candidates[0]
+}
+
+// collectSwitchMergeCandidates returns indices of upstream connections where the upstream
+// has outputReady=ON with a work present and no pending departure already scheduled.
+func (e *Engine) collectSwitchMergeCandidates(station *domain.Station) ([]int, []domain.Connection) {
+	conns := e.scenario.GetConnectionsTo(station.ID)
+	var candidates []int
+	for i, conn := range conns {
+		from := e.scenario.GetStation(conn.From)
+		if from == nil {
+			continue
+		}
+		if from.IsOutputReady() && from.GetWork() != nil && !e.pendingDepartures[from.ID] {
+			candidates = append(candidates, i)
+		}
+	}
+	return candidates, conns
+}
+
+// collectSwitchDivertCandidates returns indices of downstream connections where the downstream
+// has inputReady=ON and is not reserved.
+func (e *Engine) collectSwitchDivertCandidates(station *domain.Station) ([]int, []domain.Connection) {
+	conns := e.scenario.GetConnectionsFrom(station.ID)
+	var candidates []int
+	for i, conn := range conns {
+		to := e.scenario.GetStation(conn.To)
+		if to == nil {
+			continue
+		}
+		if to.IsInputReady() && !e.reservedStations[to.ID] {
+			candidates = append(candidates, i)
+		}
+	}
+	return candidates, conns
+}
+
+// scheduleSwitchMerge selects one ready upstream for a Switch merge station and schedules its WorkDeparted.
+func (e *Engine) scheduleSwitchMerge(station *domain.Station) {
+	if !station.IsInputReady() || e.reservedStations[station.ID] {
+		return
+	}
+	// If any upstream already has a pending departure toward this switch, don't double-schedule
+	for _, conn := range e.scenario.GetConnectionsTo(station.ID) {
+		if e.pendingDepartures[conn.From] {
+			return
+		}
+	}
+	candidates, conns := e.collectSwitchMergeCandidates(station)
+	if len(candidates) == 0 {
+		return
+	}
+	sel := e.selectSwitchPort(station, len(conns), candidates)
+	if sel < 0 || sel >= len(conns) {
+		return
+	}
+	from := e.scenario.GetStation(conns[sel].From)
+	if from == nil {
+		return
+	}
+	e.pendingDepartures[from.ID] = true
+	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, from.ID, nil))
+}
+
+// scheduleSwitchDivert selects one ready downstream for a Switch divert station and schedules its WorkDeparted.
+func (e *Engine) scheduleSwitchDivert(station *domain.Station) {
+	if !station.IsOutputReady() || station.GetWork() == nil || e.pendingDepartures[station.ID] {
+		return
+	}
+	candidates, conns := e.collectSwitchDivertCandidates(station)
+	if len(candidates) == 0 {
+		return
+	}
+	sel := e.selectSwitchPort(station, len(conns), candidates)
+	if sel < 0 || sel >= len(conns) {
+		return
+	}
+	to := e.scenario.GetStation(conns[sel].To)
+	if to == nil {
+		return
+	}
+	e.switchDivertTarget[station.ID] = to.ID
+	e.pendingDepartures[station.ID] = true
+	e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, station.ID, nil))
+}
+
+// handleSwitchDivertWorkDeparted handles WorkDeparted for a Switch divert station body.
+func (e *Engine) handleSwitchDivertWorkDeparted(event *Event, station *domain.Station) error {
+	delete(e.pendingDepartures, station.ID)
+
+	if !station.IsOutputReady() || station.GetWork() == nil {
+		return nil
+	}
+
+	targetID, ok := e.switchDivertTarget[station.ID]
+	if !ok {
+		return e.checkHandshakes(station)
+	}
+	targetStation := e.scenario.GetStation(targetID)
+	if targetStation == nil || !targetStation.IsInputReady() || e.reservedStations[targetID] {
+		delete(e.switchDivertTarget, station.ID)
+		return e.checkHandshakes(station)
+	}
+
+	work, err := station.GetOutputWork()
+	if err != nil {
+		return err
+	}
+
+	station.SetSignal(domain.SignalInputWorkPresent, false)
+	station.SetSignal(domain.SignalProcessingWorkPresent, false)
+	station.SetSignal(domain.SignalOutputWorkPresent, false)
+	station.SetSignal(domain.SignalComplete, false)
+	station.SetSignal(domain.SignalProcessReady, false)
+	clearWorkTypeSignals(station.Signals)
+
+	e.cancelWorkFullTimer(station)
+	e.scheduleWorkEmptyTimer(station)
+
+	e.logWorkEvent(work.ID, work.FriendlyName, station.ID, e.currentTime, string(EventWorkDeparted), work.Type, -1)
+	e.logStationStatus(station, "ワーク出発(Switch)")
+
+	if err := e.evaluateAndLogSignals(station); err != nil {
+		return err
+	}
+
+	e.reservedStations[targetID] = true
+	delete(e.switchDivertTarget, station.ID)
+	e.worksInTransit[work.ID] = work
+
+	departureTime := station.GetFloatConfig("departureTime")
+	arrivalTime := targetStation.GetFloatConfig("arrivalTime")
+	transitTime := departureTime + arrivalTime
+	e.eventQueue.Push(NewEvent(EventWorkArrived, e.currentTime+transitTime, targetID, &work.ID))
+
+	return nil
+}
+
 // checkHandshakes checks if transfer handshakes are satisfied after signal changes.
 // A transfer begins when upstream.outputReady=ON AND downstream.inputReady=ON.
 // For Merge: uses per-port inputReady. For Split: uses per-port outputReady.
 // Uses indexed connection lookups for O(degree) instead of O(E) per call.
 func (e *Engine) checkHandshakes(station *domain.Station) error {
-	// Case 1: This station is upstream (non-Split) — its outputReady may have just turned ON
-	if station.Type != domain.StationTypeSplit && station.IsOutputReady() && station.GetWork() != nil && !e.pendingDepartures[station.ID] {
+	// Case 1c: Switch divert — select one downstream and schedule departure
+	if station.Type == domain.StationTypeSwitch && station.GetDirection() == "divert" {
+		e.scheduleSwitchDivert(station)
+	}
+
+	// Case 1: This station is upstream (non-Split, non-SwitchDivert) — its outputReady may have just turned ON
+	if station.Type != domain.StationTypeSplit && !(station.Type == domain.StationTypeSwitch && station.GetDirection() == "divert") &&
+		station.IsOutputReady() && station.GetWork() != nil && !e.pendingDepartures[station.ID] {
 		for _, conn := range e.scenario.GetConnectionsFrom(station.ID) {
 			toStation := e.scenario.GetStation(conn.To)
 			if toStation == nil {
 				continue
+			}
+
+			// If downstream is Switch merge, delegate scheduling to Switch
+			if toStation.Type == domain.StationTypeSwitch && toStation.GetDirection() == "merge" {
+				if toStation.IsInputReady() && !e.reservedStations[toStation.ID] {
+					e.scheduleSwitchMerge(toStation)
+				}
+				break
 			}
 
 			// Check downstream readiness
@@ -1428,22 +1659,35 @@ func (e *Engine) checkHandshakes(station *domain.Station) error {
 
 	// Case 2: This station is downstream (non-Merge) — its inputReady may have just turned ON
 	if station.Type != domain.StationTypeMerge && station.IsInputReady() && !e.reservedStations[station.ID] {
-		for _, conn := range e.scenario.GetConnectionsTo(station.ID) {
-			fromStation := e.scenario.GetStation(conn.From)
-			if fromStation == nil {
-				continue
-			}
-
-			if fromStation.Type == domain.StationTypeSplit && conn.FromPortIndex >= 0 {
-				depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
-				if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
-					e.pendingDepartures[depKey] = true
-					e.eventQueue.Push(NewPortEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil, conn.FromPortIndex))
+		// Case 2c: Switch merge — select one upstream via selectSwitchPort
+		if station.Type == domain.StationTypeSwitch && station.GetDirection() == "merge" {
+			e.scheduleSwitchMerge(station)
+		} else {
+			for _, conn := range e.scenario.GetConnectionsTo(station.ID) {
+				fromStation := e.scenario.GetStation(conn.From)
+				if fromStation == nil {
+					continue
 				}
-			} else {
-				if fromStation.IsOutputReady() && fromStation.GetWork() != nil && !e.pendingDepartures[fromStation.ID] {
-					e.pendingDepartures[fromStation.ID] = true
-					e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil))
+
+				// If upstream is Switch divert, delegate to Switch selection
+				if fromStation.Type == domain.StationTypeSwitch && fromStation.GetDirection() == "divert" {
+					if fromStation.IsOutputReady() && fromStation.GetWork() != nil && !e.pendingDepartures[fromStation.ID] {
+						e.scheduleSwitchDivert(fromStation)
+					}
+					continue
+				}
+
+				if fromStation.Type == domain.StationTypeSplit && conn.FromPortIndex >= 0 {
+					depKey := e.portDepartureKey(fromStation.ID, conn.FromPortIndex)
+					if fromStation.IsPortOutputReady(conn.FromPortIndex) && !e.pendingDepartures[depKey] {
+						e.pendingDepartures[depKey] = true
+						e.eventQueue.Push(NewPortEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil, conn.FromPortIndex))
+					}
+				} else {
+					if fromStation.IsOutputReady() && fromStation.GetWork() != nil && !e.pendingDepartures[fromStation.ID] {
+						e.pendingDepartures[fromStation.ID] = true
+						e.eventQueue.Push(NewEvent(EventWorkDeparted, e.currentTime, fromStation.ID, nil))
+					}
 				}
 			}
 		}

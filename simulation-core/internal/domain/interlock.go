@@ -103,6 +103,8 @@ func GetDefaultInterlockConfig(stationType StationType) *InterlockConfig {
 		return getMergeDefaultConfig()
 	case StationTypeSplit:
 		return getSplitDefaultConfig()
+	case StationTypeSwitch:
+		return getSwitchDefaultConfig()
 	case StationTypeEntry:
 		return getEntryDefaultConfig()
 	case StationTypeExit:
@@ -326,6 +328,10 @@ func getEntryDefaultConfig() *InterlockConfig {
 }
 
 func getExitDefaultConfig() *InterlockConfig {
+	return getEntryDefaultConfig()
+}
+
+func getSwitchDefaultConfig() *InterlockConfig {
 	return getEntryDefaultConfig()
 }
 
