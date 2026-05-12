@@ -117,14 +117,35 @@ export class Editor3DView {
         // Build connections
         const conns = scenario.connections || [];
         const stMap = new Map(stations.map(s => [s.id, s]));
+        // Get the SVG visual center of a station (moduler origin may differ from visual center)
+        const svgCenter = (st) => {
+            const grid = st.config?.model3DGrid;
+            if (st.type === 'moduler' && grid?.cells?.length > 0 && grid.origin) {
+                const cells = grid.cells;
+                const minC = Math.min(...cells.map(([c]) => c));
+                const maxC = Math.max(...cells.map(([c]) => c));
+                const minR = Math.min(...cells.map(([, r]) => r));
+                const maxR = Math.max(...cells.map(([, r]) => r));
+                const gs = (grid.gridSize || 1) * 80;
+                const startX = st.x - (grid.origin[0] - minC + 0.5) * gs;
+                const startY = st.y - (grid.origin[1] - minR + 0.5) * gs;
+                return {
+                    x: startX + (maxC - minC + 1) * gs / 2,
+                    y: startY + (maxR - minR + 1) * gs / 2,
+                };
+            }
+            return { x: st.x, y: st.y };
+        };
         for (const c of conns) {
             const from = stMap.get(c.from);
             const to = stMap.get(c.to);
             if (!from || !to) continue;
-            const fx = (from.x - centerX) * SCALE;
-            const fz = (from.y - centerZ) * SCALE;
-            const tx = (to.x - centerX) * SCALE;
-            const tz = (to.y - centerZ) * SCALE;
+            const fc = svgCenter(from);
+            const tc = svgCenter(to);
+            const fx = (fc.x - centerX) * SCALE;
+            const fz = (fc.y - centerZ) * SCALE;
+            const tx = (tc.x - centerX) * SCALE;
+            const tz = (tc.y - centerZ) * SCALE;
             const points = [
                 new THREE.Vector3(fx, STATION_H / 2, fz),
                 new THREE.Vector3(tx, STATION_H / 2, tz),

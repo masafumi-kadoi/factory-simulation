@@ -655,11 +655,24 @@ export class Canvas {
             const x2 = Math.max(this.rectSelectStart.x, pt.x);
             const y2 = Math.max(this.rectSelectStart.y, pt.y);
             // Select all stations whose bounding box intersects the selection rectangle.
-            // s.x / s.y are the CENTER of each station in SVG coordinates.
-            const hw = 40 * this.stationSizeMultiplier;
-            const hh = 30 * this.stationSizeMultiplier;
+            // Use each station's actual bounding box (entry/exit are smaller than standard).
+            const m = this.stationSizeMultiplier;
             const ids = this.editor.scenario.stations
-                .filter(s => s.x + hw >= x1 && s.x - hw <= x2 && s.y + hh >= y1 && s.y - hh <= y2)
+                .filter(s => {
+                    let hw, hh;
+                    if (s.type === 'moduler') {
+                        const { w, h } = this._getModulerSize(s);
+                        const vc = this._getModulerVisualCenter(s);
+                        return vc.cx + w / 2 >= x1 && vc.cx - w / 2 <= x2 &&
+                               vc.cy + h / 2 >= y1 && vc.cy - h / 2 <= y2;
+                    } else if (s.type === 'entry' || s.type === 'exit') {
+                        hw = 25 * m; hh = 20 * m;
+                    } else {
+                        hw = 40 * m; hh = 30 * m;
+                    }
+                    return s.x + hw >= x1 && s.x - hw <= x2 &&
+                           s.y + hh >= y1 && s.y - hh <= y2;
+                })
                 .map(s => s.id);
             if (ids.length > 0) {
                 this.editor.setSelection(ids);
@@ -920,8 +933,18 @@ export class Canvas {
     // in the normalized direction (dirX, dirY) from the station center.
     _getStationEdgePoint(station, dirX, dirY) {
         const { x: cx, y: cy } = this._getStationCenter(station);
-        const hw = station.type === 'moduler' ? this._getModulerSize(station).w / 2 : 40;
-        const hh = station.type === 'moduler' ? this._getModulerSize(station).h / 2 : 30;
+        const m = this.stationSizeMultiplier;
+        let hw, hh;
+        if (station.type === 'moduler') {
+            hw = this._getModulerSize(station).w / 2;
+            hh = this._getModulerSize(station).h / 2;
+        } else if (station.type === 'entry' || station.type === 'exit') {
+            hw = 25 * m;
+            hh = 20 * m;
+        } else {
+            hw = 40 * m;
+            hh = 30 * m;
+        }
         const absX = Math.abs(dirX), absY = Math.abs(dirY);
         const tx = absX > 1e-9 ? hw / absX : Infinity;
         const ty = absY > 1e-9 ? hh / absY : Infinity;
@@ -969,8 +992,10 @@ export class Canvas {
             ? cx - w / 2 + portWidth / 2
             : cx + w / 2 - portWidth / 2;
 
-        // Y: map from sub-scenario Y range (all stations) to moduler height proportionally.
-        const ys = subStations.map(s => s.y);
+        // Y: map from sub-scenario Y range (Entry/Exit targets only) to moduler height proportionally.
+        // Using all sub-stations would skew the range when processing stations lie outside the
+        // Entry/Exit Y span, displacing port indicators away from their intended positions.
+        const ys = targets.map(s => s.y);
         const subMinY = Math.min(...ys);
         const subMaxY = Math.max(...ys);
         const rangeY = subMaxY - subMinY;
