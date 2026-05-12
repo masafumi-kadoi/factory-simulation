@@ -64,7 +64,7 @@ class ScenarioEditor {
         // Settings
         this._lineStyle = localStorage.getItem('sim-editor-line-style') || 'bezier';
         this._minimapVisible = localStorage.getItem('sim-editor-minimap') !== 'false';
-        this._gridSnap = localStorage.getItem('sim-editor-grid-snap') === 'true';
+        this._gridSnap = localStorage.getItem('sim-editor-grid-snap') !== 'false'; // default ON (matches HTML checked)
         this._alignmentGuide = localStorage.getItem('sim-editor-alignment-guide') !== 'false';
 
         // Drill-down state for ModulerStation editing
@@ -138,6 +138,9 @@ class ScenarioEditor {
 
         // Render
         this._render();
+
+        // Expose instance for Playwright tests and DevTools
+        window._editorInstance = this;
     }
 
     async _loadScenario() {

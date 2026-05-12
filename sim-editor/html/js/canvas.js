@@ -39,7 +39,7 @@ export class Canvas {
         this.connectDragPendingStationId = null;
         this.connectDragPendingPortIndex = -1;
         this.connectDragPendingIsPort = false;
-        this.suppressNextClick = false; // suppress click event after drag-based connection
+        this._suppressClickUntil = 0; // timestamp: suppress clicks until this time (ms)
 
         // Pan/Zoom state
         this.viewBox = { x: 0, y: 0, width: 2000, height: 1200 };
@@ -96,6 +96,8 @@ export class Canvas {
         this.svg.setAttribute('viewBox',
             `${this.viewBox.x} ${this.viewBox.y} ${this.viewBox.width} ${this.viewBox.height}`
         );
+        // Re-render grid so stroke-width and extent stay in sync with current zoom/pan
+        this._renderGrid();
         if (this.editor.minimap) this.editor.minimap.render();
     }
 
@@ -107,11 +109,12 @@ export class Canvas {
     }
 
     _handleClick(e) {
-        // Suppress click event that fires after a drag-based connection
-        if (this.suppressNextClick) {
-            this.suppressNextClick = false;
+        // Suppress click event that fires immediately after a drag ends (within 100ms)
+        if (this._suppressClickUntil && Date.now() < this._suppressClickUntil) {
+            this._suppressClickUntil = 0;
             return;
         }
+        this._suppressClickUntil = 0;
 
         const target = e.target;
         const tool = this.editor.currentTool;
@@ -181,7 +184,7 @@ export class Canvas {
             this._lastClickStationId = null;
             // Clicked on empty space
             if (tool === 'source' || tool === 'processing' || tool === 'drain' || tool === 'merge' || tool === 'split' || tool === 'moduler' || tool === 'switch') {
-                this.editor.addStation(tool, pt.x, pt.y);
+                this.editor.addStation(tool, this._snapToGrid(pt.x), this._snapToGrid(pt.y));
             } else if (tool === 'select') {
                 this.editor.selectItem(null);
             } else if (tool === 'connect') {
@@ -626,7 +629,7 @@ export class Canvas {
             this._clearConnectHighlight();
             this.connectFrom = null;
             this.connectFromPortIndex = -1;
-            this.suppressNextClick = true; // suppress the click event that follows mouseup
+            this._suppressClickUntil = Date.now() + 100; // suppress the click event that follows mouseup
             return;
         }
 
@@ -686,6 +689,7 @@ export class Canvas {
                 .map(s => s.id);
             if (ids.length > 0) {
                 this.editor.setSelection(ids);
+                this._suppressClickUntil = Date.now() + 100; // prevent the click event from clearing this selection
             }
             return;
         }
