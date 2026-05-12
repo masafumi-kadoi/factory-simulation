@@ -1088,17 +1088,29 @@ export class Canvas {
             ss.stations.filter(s => s.type !== 'entry' && s.type !== 'exit')
                 .forEach(s => { s.x -= cx0; s.y -= cy0; });
         } else {
-            // Default box (w=100, hw=50): centre Entry/Exit around (0,0).
-            const io = ss.stations.filter(s => s.type === 'entry' || s.type === 'exit');
+            // Default box (w=100, h=70): snap Entry/Exit to left/right edges, Y evenly spaced.
+            const hw = 50;
+            const hh = 35;
+            const entries = ss.stations.filter(s => s.type === 'entry').sort((a, b) => a.y - b.y);
+            const exits   = ss.stations.filter(s => s.type === 'exit').sort((a, b) => a.y - b.y);
+
+            // Shift Processing/Switch stations by IO centroid so they remain centred
+            const io = [...entries, ...exits];
             if (io.length > 0) {
                 const cx0 = io.reduce((s, st) => s + st.x, 0) / io.length;
                 const cy0 = io.reduce((s, st) => s + st.y, 0) / io.length;
-                ss.stations.forEach(s => { s.x -= cx0; s.y -= cy0; });
+                ss.stations.filter(s => s.type !== 'entry' && s.type !== 'exit')
+                    .forEach(s => { s.x -= cx0; s.y -= cy0; });
             }
-            // Snap Entry to left side (-50) and Exit to right side (+50)
-            const hw = 50;
-            ss.stations.filter(s => s.type === 'entry').forEach(e => { e.x = -hw; });
-            ss.stations.filter(s => s.type === 'exit').forEach(e => { e.x = +hw; });
+            // Compute canonical X/Y for Entry (left edge) and Exit (right edge)
+            entries.forEach((e, i) => {
+                e.x = -hw;
+                e.y = -hh + hh * 2 * (i + 1) / (entries.length + 1);
+            });
+            exits.forEach((e, i) => {
+                e.x = +hw;
+                e.y = -hh + hh * 2 * (i + 1) / (exits.length + 1);
+            });
         }
         ss.localCoords = true;
     }

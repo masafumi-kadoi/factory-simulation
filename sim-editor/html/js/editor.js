@@ -1468,6 +1468,10 @@ class ScenarioEditor {
         if (!station || station.type !== 'moduler') return;
         if (!station.config.subScenario) return;
 
+        // Ensure sub-scenario is in local coords BEFORE entering sub-canvas.
+        // This makes sub-canvas and parent canvas use the same coordinate system.
+        this.canvas._migrateSubScenarioToLocalCoords(station);
+
         // Push current state to stack
         this._editStack.push({
             scenario: this.scenario,
@@ -1476,15 +1480,15 @@ class ScenarioEditor {
         });
         this._currentSubScenarioPath.push(stationId);
 
-        // Create a virtual scenario from the SubScenario
+        // Create a virtual scenario from the SubScenario (already in local coords)
         const sub = station.config.subScenario;
         this.scenario = {
             id: this.scenario.id,
             name: this.scenario.name,
             stations: sub.stations || [],
             connections: sub.connections || [],
-            localCoords: sub.localCoords,
-            _parentStation: station, // reference back to parent for saving
+            localCoords: true,              // always true after migration
+            _parentStation: station,
             _isSubScenario: true
         };
 
@@ -1511,7 +1515,7 @@ class ScenarioEditor {
             this.scenario._parentStation.config.subScenario = {
                 stations: this.scenario.stations,
                 connections: this.scenario.connections,
-                localCoords: this.scenario.localCoords || false  // preserve false/undefined → don't mark as migrated
+                localCoords: true  // drillDown always migrates first, so always true
             };
         }
 
@@ -1536,7 +1540,8 @@ class ScenarioEditor {
             if (this.scenario._parentStation) {
                 this.scenario._parentStation.config.subScenario = {
                     stations: this.scenario.stations,
-                    connections: this.scenario.connections
+                    connections: this.scenario.connections,
+                    localCoords: true
                 };
             }
             const prev = this._editStack.pop();
@@ -1981,27 +1986,39 @@ class ScenarioEditor {
     }
 
     _autoPlaceEntryExit() {
+        // drillDown always runs migration first, so localCoords is always true here.
+        // Only move stations that haven't been explicitly placed (still at origin 0,0).
         const entries = this.scenario.stations.filter(s => s.type === 'entry');
         const exits   = this.scenario.stations.filter(s => s.type === 'exit');
-        const isLocal = this.scenario.localCoords;
 
-        // Local-coord defaults: Entry left (-50), Exit right (+50), y evenly spaced
-        // Legacy defaults (global coords): Entry at x=100, Exit at x=700
-        const entryX = isLocal ? -50 : 100;
-        const exitX  = isLocal ?  50 : 700;
-        const yGap   = 80;
+        // Compute entry/exit X from model3DGrid if present, else use default box edges.
+        const parent   = this.scenario._parentStation;
+        const grid     = parent?.config?.model3DGrid;
+        const PX_PER_M = 80;
+        let entryX = -50, exitX = 50, topY = -35, botY = 35;
+        if (grid?.cells?.length > 0 && grid.origin) {
+            const gs   = (grid.gridSize || 1) * PX_PER_M;
+            const minC = Math.min(...grid.cells.map(([c]) => c));
+            const maxC = Math.max(...grid.cells.map(([c]) => c));
+            const minR = Math.min(...grid.cells.map(([, r]) => r));
+            const maxR = Math.max(...grid.cells.map(([, r]) => r));
+            entryX = (minC - grid.origin[0]) * gs - gs / 2;
+            exitX  = (maxC - grid.origin[0] + 1) * gs - gs / 2;
+            topY   = (minR - grid.origin[1]) * gs - gs / 2;
+            botY   = (maxR - grid.origin[1] + 1) * gs - gs / 2;
+        }
+        const totalH = botY - topY;
 
         entries.forEach((entry, i) => {
             if (entry.x === 0 && entry.y === 0) {
                 entry.x = entryX;
-                entry.y = isLocal ? (i - (entries.length - 1) / 2) * yGap : 200 + i * yGap;
+                entry.y = topY + totalH * (i + 1) / (entries.length + 1);
             }
         });
-
         exits.forEach((exit, i) => {
             if (exit.x === 0 && exit.y === 0) {
                 exit.x = exitX;
-                exit.y = isLocal ? (i - (exits.length - 1) / 2) * yGap : 200 + i * yGap;
+                exit.y = topY + totalH * (i + 1) / (exits.length + 1);
             }
         });
     }
