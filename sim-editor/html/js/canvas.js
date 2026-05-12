@@ -768,7 +768,7 @@ export class Canvas {
         if (!parentScenario) return;
 
         // Parent moduler being edited — its x/y is the local origin (0,0) of the sub-canvas
-        const parentModuler = this.scenario._parentStation;
+        const parentModuler = this.editor.scenario._parentStation;
         const offsetX = parentModuler?.x || 0;
         const offsetY = parentModuler?.y || 0;
 
