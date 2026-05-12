@@ -1348,7 +1348,8 @@ class ScenarioEditor {
                     condition: c.condition || 'default',
                     fromPortIndex: c.fromPortIndex != null ? c.fromPortIndex : -1,
                     toPortIndex: c.toPortIndex != null ? c.toPortIndex : -1
-                }))
+                })),
+                localCoords: s.subScenario.localCoords || false
             };
         }
 
@@ -1378,7 +1379,8 @@ class ScenarioEditor {
                     condition: c.condition || 'default',
                     fromPortIndex: c.fromPortIndex != null ? c.fromPortIndex : -1,
                     toPortIndex: c.toPortIndex != null ? c.toPortIndex : -1
-                }))
+                })),
+                localCoords: s.config.subScenario.localCoords || false
             };
         }
 
@@ -1506,7 +1508,7 @@ class ScenarioEditor {
             this.scenario._parentStation.config.subScenario = {
                 stations: this.scenario.stations,
                 connections: this.scenario.connections,
-                localCoords: this.scenario.localCoords ?? true
+                localCoords: this.scenario.localCoords || false  // preserve false/undefined → don't mark as migrated
             };
         }
 

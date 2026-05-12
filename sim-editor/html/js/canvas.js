@@ -1055,18 +1055,44 @@ export class Canvas {
     }
 
     // Returns the port indicator CENTER in global SVG coordinates.
-    // t.x/y (local) is the CONNECTION ATTACHMENT POINT (outer edge of port indicator).
-    // The indicator centre is offset inward by MODULER_PORT_W/2.
+    // For model3DGrid stations: always computed from grid geometry (immune to sub-canvas edits).
+    // For default-box stations: derived from sub-scenario Entry/Exit local coords (migrated once).
     _getModulerPortPos(station, portIndex, portType) {
+        const isInput = portType === 'input';
+        const count = isInput ? (station.config.entryCount || 1) : (station.config.exitCount || 1);
+        if (portIndex < 0 || portIndex >= count) return null;
+
+        // Model3DGrid: derive attachment point from physical grid geometry
+        const grid = station.config?.model3DGrid;
+        if (grid?.cells?.length > 0 && grid.origin) {
+            const gs    = (grid.gridSize || 1) * PX_PER_M;
+            const cells = grid.cells;
+            const minC  = Math.min(...cells.map(([c]) => c));
+            const maxC  = Math.max(...cells.map(([c]) => c));
+            const minR  = Math.min(...cells.map(([, r]) => r));
+            const maxR  = Math.max(...cells.map(([, r]) => r));
+            // Local X: outer edge of model (left for input, right for output)
+            const localX = isInput
+                ? (minC - grid.origin[0] - 0.5) * gs   // left edge attachment
+                : (maxC - grid.origin[0] + 0.5) * gs;  // right edge attachment
+            // Local Y: evenly spaced within row span
+            const topY   = (minR - grid.origin[1] - 0.5) * gs;
+            const botY   = (maxR - grid.origin[1] + 0.5) * gs;
+            const localY = (botY - topY) > 0 ? topY + (botY - topY) * (portIndex + 1) / (count + 1) : 0;
+            // Indicator centre = attachment ± half portWidth (inward)
+            const cx = station.x + localX + (isInput ? MODULER_PORT_W / 2 : -MODULER_PORT_W / 2);
+            return { x: cx, y: station.y + localY };
+        }
+
+        // Default box: use sub-scenario Entry/Exit local coords (run migration on first access)
         const ss = station.config?.subScenario;
         if (!ss?.stations) return null;
         if (!ss.localCoords) this._migrateSubScenarioToLocalCoords(station);
-        const stype   = portType === 'input' ? 'entry' : 'exit';
+        const stype   = isInput ? 'entry' : 'exit';
         const targets = ss.stations.filter(s => s.type === stype).sort((a, b) => a.y - b.y);
         const t = targets[portIndex];
         if (!t) return null;
-        // Indicator centre = attachment ± half portWidth (inward)
-        const cx = station.x + t.x + (portType === 'input' ? MODULER_PORT_W / 2 : -MODULER_PORT_W / 2);
+        const cx = station.x + t.x + (isInput ? MODULER_PORT_W / 2 : -MODULER_PORT_W / 2);
         return { x: cx, y: station.y + t.y };
     }
 

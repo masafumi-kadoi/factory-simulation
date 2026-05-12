@@ -478,12 +478,30 @@ export class Visualizer3D {
         const labelZ = pos.z + ((minR + maxR) / 2 - refR) * cellUnit;
         const label = this._createLabel(station.name || stationId, labelX, modelH + 15, labelZ);
 
+        // Compute port slots from physical grid geometry so connection lines attach at model edges
+        const portSlots = [];
+        const leftEdgeX  = pos.x + (minC - refC - 0.5) * cellUnit;
+        const rightEdgeX = pos.x + (maxC - refC + 0.5) * cellUnit;
+        const topZ   = pos.z + (minR - refR - 0.5) * cellUnit;
+        const botZ   = pos.z + (maxR - refR + 0.5) * cellUnit;
+        const portY  = modelH / 2;
+        const entryCount = station.config?.entryCount || 1;
+        const exitCount  = station.config?.exitCount  || 1;
+        for (let i = 0; i < entryCount; i++) {
+            portSlots.push({ portIndex: i, portType: 'entry',
+                position: { x: leftEdgeX,  y: portY, z: topZ + (botZ - topZ) * (i + 1) / (entryCount + 1) } });
+        }
+        for (let i = 0; i < exitCount; i++) {
+            portSlots.push({ portIndex: i, portType: 'exit',
+                position: { x: rightEdgeX, y: portY, z: topZ + (botZ - topZ) * (i + 1) / (exitCount  + 1) } });
+        }
+
         this.stations.set(stationId, {
             mesh: group,
             position: pos,
             label,
             stationType: 'moduler',
-            portSlots: [],
+            portSlots,
             portConfig: station.config?.ports || [],
             bufferSlots: station.config?.bufferSlots || null,
             stationName: station.name || stationId,
