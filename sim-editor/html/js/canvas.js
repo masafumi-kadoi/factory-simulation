@@ -68,6 +68,18 @@ export class Canvas {
 
         this._setupEventListeners();
         this._updateViewBox();
+        // Correct aspect ratio once layout is known (avoids letterboxing with default preserveAspectRatio)
+        requestAnimationFrame(() => this._initViewBoxAspect());
+    }
+
+    _initViewBoxAspect() {
+        const rect = this.svg.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+            const aspect = rect.width / rect.height;
+            this.viewBox.height = this.viewBox.width / aspect;
+            this.zoom = rect.width / this.viewBox.width;
+            this._updateViewBox();
+        }
     }
 
     _setupEventListeners() {
@@ -682,7 +694,7 @@ export class Canvas {
     _handleWheel(e) {
         e.preventDefault();
 
-        const delta = e.deltaY > 0 ? 1.1 : 0.9;
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
         const newZoom = this.zoom * delta;
 
         // Limit zoom range
