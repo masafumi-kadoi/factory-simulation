@@ -767,9 +767,38 @@ export class Canvas {
         const parentScenario = stack[stack.length - 1].scenario;
         if (!parentScenario) return;
 
-        // Draw local origin crosshair at (0, 0) — the point that maps to the parent moduler's x/y
+        // Parent moduler being edited — its x/y is the local origin (0,0) of the sub-canvas
+        const parentModuler = this.scenario._parentStation;
+        const offsetX = parentModuler?.x || 0;
+        const offsetY = parentModuler?.y || 0;
+
         const mkLen = 40;
         const svgNS = 'http://www.w3.org/2000/svg';
+
+        // Draw model3DGrid cells of the current moduler at local coords as reference background
+        const grid = parentModuler?.config?.model3DGrid;
+        if (grid?.cells?.length > 0 && grid.origin) {
+            const gs = (grid.gridSize || 1) * PX_PER_M;
+            const [refC, refR] = grid.origin;
+            for (const [c, r] of grid.cells) {
+                const rx = (c - refC) * gs;
+                const ry = (r - refR) * gs;
+                const gap = Math.max(gs * 0.05, 0.5);
+                const cr = document.createElementNS(svgNS, 'rect');
+                cr.setAttribute('x',      rx - gs / 2 + gap);
+                cr.setAttribute('y',      ry - gs / 2 + gap);
+                cr.setAttribute('width',  gs - gap * 2);
+                cr.setAttribute('height', gs - gap * 2);
+                cr.setAttribute('rx', Math.max(gs * 0.1, 1));
+                cr.setAttribute('fill',   'rgba(74,20,140,0.18)');
+                cr.setAttribute('stroke', '#7b1fa260');
+                cr.setAttribute('stroke-width', 1);
+                cr.style.pointerEvents = 'none';
+                ghostLayer.appendChild(cr);
+            }
+        }
+
+        // Draw local origin crosshair at (0, 0) — the point that maps to the parent moduler's x/y
         [['x1', -mkLen, 'y1', 0, 'x2', mkLen, 'y2', 0],
          ['x1', 0, 'y1', -mkLen, 'x2', 0, 'y2', mkLen]].forEach(([k1, v1, k2, v2, k3, v3, k4, v4]) => {
             const ln = document.createElementNS(svgNS, 'line');
@@ -788,22 +817,25 @@ export class Canvas {
         lbl.textContent = 'origin';
         ghostLayer.appendChild(lbl);
 
-        // Draw parent stations as simple rectangles
+        // Draw parent stations in LOCAL coords (translate global → local by subtracting parent moduler position)
         parentScenario.stations.forEach(s => {
             const { cx, cy, hw, hh } = this._getStationBounds(s);
+            const lx = cx - offsetX;
+            const ly = cy - offsetY;
             const rect = document.createElementNS(svgNS, 'rect');
-            rect.setAttribute('x', cx - hw);
-            rect.setAttribute('y', cy - hh);
+            rect.setAttribute('x', lx - hw);
+            rect.setAttribute('y', ly - hh);
             rect.setAttribute('width', hw * 2);
             rect.setAttribute('height', hh * 2);
             rect.setAttribute('rx', 8);
             rect.setAttribute('fill', '#888');
             rect.setAttribute('stroke', '#666');
             rect.setAttribute('stroke-width', 1);
+            rect.style.pointerEvents = 'none';
             ghostLayer.appendChild(rect);
         });
 
-        // Draw parent connections
+        // Draw parent connections in LOCAL coords
         parentScenario.connections.forEach(c => {
             const from = parentScenario.stations.find(s => s.id === c.from);
             const to = parentScenario.stations.find(s => s.id === c.to);
@@ -811,10 +843,11 @@ export class Canvas {
             const fc = this._getStationCenter(from);
             const tc = this._getStationCenter(to);
             const line = document.createElementNS(svgNS, 'line');
-            line.setAttribute('x1', fc.x); line.setAttribute('y1', fc.y);
-            line.setAttribute('x2', tc.x); line.setAttribute('y2', tc.y);
+            line.setAttribute('x1', fc.x - offsetX); line.setAttribute('y1', fc.y - offsetY);
+            line.setAttribute('x2', tc.x - offsetX); line.setAttribute('y2', tc.y - offsetY);
             line.setAttribute('stroke', '#888');
             line.setAttribute('stroke-width', 1);
+            line.style.pointerEvents = 'none';
             ghostLayer.appendChild(line);
         });
     }
