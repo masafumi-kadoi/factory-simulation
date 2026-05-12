@@ -1646,11 +1646,10 @@ export class Canvas {
             this.viewBox.y = startVB.y + (endVB.y - startVB.y) * ease;
             this.viewBox.width = startVB.width + (endVB.width - startVB.width) * ease;
             this.viewBox.height = startVB.height + (endVB.height - startVB.height) * ease;
+            this.zoom = svgRect.width / this.viewBox.width; // keep zoom in sync each frame
             this._updateViewBox();
             if (t < 1) {
                 requestAnimationFrame(animate);
-            } else {
-                this.zoom = svgRect.width / finalW;
             }
         };
         requestAnimationFrame(animate);
