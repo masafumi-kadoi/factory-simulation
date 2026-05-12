@@ -462,10 +462,11 @@ export class Canvas {
     _handleMouseMove(e) {
         const pt = this._getSVGPoint(e);
 
-        // Handle panning
+        // Handle panning — use viewBox/rect ratio, never rely on this.zoom
         if (this.isPanning) {
-            const dx = (e.clientX - this.panStart.x) / this.zoom;
-            const dy = (e.clientY - this.panStart.y) / this.zoom;
+            const rect = this.svg.getBoundingClientRect();
+            const dx = (e.clientX - this.panStart.x) * (this.viewBox.width  / rect.width);
+            const dy = (e.clientY - this.panStart.y) * (this.viewBox.height / rect.height);
 
             this.viewBox.x -= dx;
             this.viewBox.y -= dy;
@@ -514,9 +515,10 @@ export class Canvas {
             newX = this._snapToGrid(newX);
             newY = this._snapToGrid(newY);
 
-            // Alignment guide snapping
+            // Alignment guide snapping — use viewBox/rect ratio, never rely on this.zoom
             if (this.editor._alignmentGuide) {
-                const threshold = 5 / this.zoom;
+                const rect = this.svg.getBoundingClientRect();
+                const threshold = 5 * (this.viewBox.width / rect.width);
                 const selected = this.editor.selectedStationIds;
                 const others = this.editor.scenario.stations.filter(s => !selected.has(s.id));
                 let snapX = null, snapY = null;
@@ -695,19 +697,17 @@ export class Canvas {
         const svgX = this.viewBox.x + (mouseX / rect.width) * this.viewBox.width;
         const svgY = this.viewBox.y + (mouseY / rect.height) * this.viewBox.height;
 
-        // Update zoom
-        this.zoom = newZoom;
+        // Scale viewBox by inverse zoom ratio — never touch hardcoded 2000/1200
+        const scale = this.zoom / newZoom;
+        this.viewBox.width  *= scale;
+        this.viewBox.height *= scale;
 
-        // Adjust viewBox to zoom towards cursor
-        const newWidth = 2000 / this.zoom;
-        const newHeight = 1200 / this.zoom;
+        // Keep cursor position fixed in SVG space
+        this.viewBox.x = svgX - (mouseX / rect.width)  * this.viewBox.width;
+        this.viewBox.y = svgY - (mouseY / rect.height) * this.viewBox.height;
 
-        this.viewBox.width = newWidth;
-        this.viewBox.height = newHeight;
-
-        // Keep cursor position fixed
-        this.viewBox.x = svgX - (mouseX / rect.width) * newWidth;
-        this.viewBox.y = svgY - (mouseY / rect.height) * newHeight;
+        // Update zoom as derived value (rect.width / viewBox.width)
+        this.zoom = rect.width / this.viewBox.width;
 
         this._updateViewBox();
     }
@@ -1581,15 +1581,14 @@ export class Canvas {
         const stations = this.editor.scenario.stations;
         if (stations.length === 0) return;
 
-        // Calculate bounding box of all stations
-        const halfW = 50; // max half-width (moduler)
-        const halfH = 30;
+        // Calculate bounding box using actual station bounds (handles Moduler correctly)
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         stations.forEach(s => {
-            minX = Math.min(minX, s.x - halfW);
-            minY = Math.min(minY, s.y - halfH);
-            maxX = Math.max(maxX, s.x + halfW);
-            maxY = Math.max(maxY, s.y + halfH);
+            const { cx, cy, hw, hh } = this._getStationBounds(s);
+            minX = Math.min(minX, cx - hw);
+            minY = Math.min(minY, cy - hh);
+            maxX = Math.max(maxX, cx + hw);
+            maxY = Math.max(maxY, cy + hh);
         });
 
         const padding = 80;

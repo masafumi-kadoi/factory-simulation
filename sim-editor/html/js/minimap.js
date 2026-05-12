@@ -64,12 +64,14 @@ export class Minimap {
         if (stations.length === 0) return null;
 
         const pad = 100;
+        const canvas = this.editor.canvas;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         stations.forEach(s => {
-            minX = Math.min(minX, s.x - 50);
-            minY = Math.min(minY, s.y - 30);
-            maxX = Math.max(maxX, s.x + 50);
-            maxY = Math.max(maxY, s.y + 30);
+            const { cx, cy, hw, hh } = canvas._getStationBounds(s);
+            minX = Math.min(minX, cx - hw);
+            minY = Math.min(minY, cy - hh);
+            maxX = Math.max(maxX, cx + hw);
+            maxY = Math.max(maxY, cy + hh);
         });
 
         // Include viewport bounds too
@@ -107,30 +109,34 @@ export class Minimap {
         const toMiniX = (x) => offsetX + (x - bounds.minX) * scale;
         const toMiniY = (y) => offsetY + (y - bounds.minY) * scale;
 
-        // Draw connections
+        // Draw connections — use visual centers (correct for Moduler stations)
+        const canvas = this.editor.canvas;
         ctx.strokeStyle = isDark ? '#555' : '#bbb';
         ctx.lineWidth = 0.5;
         this.editor.scenario.connections.forEach(c => {
             const from = this.editor.getStation(c.from);
             const to = this.editor.getStation(c.to);
             if (!from || !to) return;
+            const { cx: fx, cy: fy } = canvas._getStationBounds(from);
+            const { cx: tx, cy: ty } = canvas._getStationBounds(to);
             ctx.beginPath();
-            ctx.moveTo(toMiniX(from.x), toMiniY(from.y));
-            ctx.lineTo(toMiniX(to.x), toMiniY(to.y));
+            ctx.moveTo(toMiniX(fx), toMiniY(fy));
+            ctx.lineTo(toMiniX(tx), toMiniY(ty));
             ctx.stroke();
         });
 
-        // Draw stations
+        // Draw stations — use actual bounds for position and size
         const colors = {
             source: '#4CAF50', processing: '#2196F3', drain: '#f44336',
             merge: '#FF9800', split: '#9C27B0', moduler: '#607D8B',
             entry: '#00BCD4', exit: '#795548'
         };
         this.editor.scenario.stations.forEach(s => {
-            const x = toMiniX(s.x);
-            const y = toMiniY(s.y);
-            const hw = Math.max(2, 40 * scale);
-            const hh = Math.max(1.5, 20 * scale);
+            const { cx, cy, hw: shw, hh: shh } = canvas._getStationBounds(s);
+            const x  = toMiniX(cx);
+            const y  = toMiniY(cy);
+            const hw = Math.max(2,   shw * scale);
+            const hh = Math.max(1.5, shh * scale);
             ctx.fillStyle = colors[s.type] || '#888';
             ctx.fillRect(x - hw, y - hh, hw * 2, hh * 2);
         });
