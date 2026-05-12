@@ -4,6 +4,14 @@ import { MoveStationCommand, MoveMultipleStationsCommand } from './undo.js';
 // 1 meter = 80 SVG pixels (standard station is 80×60px ≈ 1m wide)
 const PX_PER_M = 80;
 
+// Port indicator dimensions — single source of truth used by rendering, hit-test, and layout
+const MODULER_PORT_W   = 20;
+const MODULER_PORT_H   = 14;
+const MODULER_PORT_GAP = 20;
+const SPLIT_PORT_W     = 30;
+const SPLIT_PORT_H     = 20;
+const SPLIT_PORT_GAP   = 25;
+
 export class Canvas {
     constructor(svg, editor) {
         this.svg = svg;
@@ -655,23 +663,11 @@ export class Canvas {
             const x2 = Math.max(this.rectSelectStart.x, pt.x);
             const y2 = Math.max(this.rectSelectStart.y, pt.y);
             // Select all stations whose bounding box intersects the selection rectangle.
-            // Use each station's actual bounding box (entry/exit are smaller than standard).
-            const m = this.stationSizeMultiplier;
             const ids = this.editor.scenario.stations
                 .filter(s => {
-                    let hw, hh;
-                    if (s.type === 'moduler') {
-                        const { w, h } = this._getModulerSize(s);
-                        const vc = this._getModulerVisualCenter(s);
-                        return vc.cx + w / 2 >= x1 && vc.cx - w / 2 <= x2 &&
-                               vc.cy + h / 2 >= y1 && vc.cy - h / 2 <= y2;
-                    } else if (s.type === 'entry' || s.type === 'exit') {
-                        hw = 25 * m; hh = 20 * m;
-                    } else {
-                        hw = 40 * m; hh = 30 * m;
-                    }
-                    return s.x + hw >= x1 && s.x - hw <= x2 &&
-                           s.y + hh >= y1 && s.y - hh <= y2;
+                    const { cx, cy, hw, hh } = this._getStationBounds(s);
+                    return cx + hw >= x1 && cx - hw <= x2 &&
+                           cy + hh >= y1 && cy - hh <= y2;
                 })
                 .map(s => s.id);
             if (ids.length > 0) {
@@ -755,14 +751,35 @@ export class Canvas {
         const parentScenario = stack[stack.length - 1].scenario;
         if (!parentScenario) return;
 
+        // Draw local origin crosshair at (0, 0) — the point that maps to the parent moduler's x/y
+        const mkLen = 40;
+        const svgNS = 'http://www.w3.org/2000/svg';
+        [['x1', -mkLen, 'y1', 0, 'x2', mkLen, 'y2', 0],
+         ['x1', 0, 'y1', -mkLen, 'x2', 0, 'y2', mkLen]].forEach(([k1, v1, k2, v2, k3, v3, k4, v4]) => {
+            const ln = document.createElementNS(svgNS, 'line');
+            ln.setAttribute(k1, v1); ln.setAttribute(k2, v2);
+            ln.setAttribute(k3, v3); ln.setAttribute(k4, v4);
+            ln.setAttribute('stroke', '#ff6600');
+            ln.setAttribute('stroke-width', 1.5);
+            ln.setAttribute('stroke-dasharray', '4,3');
+            ln.style.pointerEvents = 'none';
+            ghostLayer.appendChild(ln);
+        });
+        const lbl = document.createElementNS(svgNS, 'text');
+        lbl.setAttribute('x', mkLen + 4); lbl.setAttribute('y', -4);
+        lbl.setAttribute('font-size', '10'); lbl.setAttribute('fill', '#ff6600');
+        lbl.style.pointerEvents = 'none';
+        lbl.textContent = 'origin';
+        ghostLayer.appendChild(lbl);
+
         // Draw parent stations as simple rectangles
         parentScenario.stations.forEach(s => {
-            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            const hw = s.type === 'moduler' ? 50 : 40;
-            rect.setAttribute('x', s.x - hw);
-            rect.setAttribute('y', s.y - 30);
+            const { cx, cy, hw, hh } = this._getStationBounds(s);
+            const rect = document.createElementNS(svgNS, 'rect');
+            rect.setAttribute('x', cx - hw);
+            rect.setAttribute('y', cy - hh);
             rect.setAttribute('width', hw * 2);
-            rect.setAttribute('height', 60);
+            rect.setAttribute('height', hh * 2);
             rect.setAttribute('rx', 8);
             rect.setAttribute('fill', '#888');
             rect.setAttribute('stroke', '#666');
@@ -775,11 +792,11 @@ export class Canvas {
             const from = parentScenario.stations.find(s => s.id === c.from);
             const to = parentScenario.stations.find(s => s.id === c.to);
             if (!from || !to) return;
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', from.x);
-            line.setAttribute('y1', from.y);
-            line.setAttribute('x2', to.x);
-            line.setAttribute('y2', to.y);
+            const fc = this._getStationCenter(from);
+            const tc = this._getStationCenter(to);
+            const line = document.createElementNS(svgNS, 'line');
+            line.setAttribute('x1', fc.x); line.setAttribute('y1', fc.y);
+            line.setAttribute('x2', tc.x); line.setAttribute('y2', tc.y);
             line.setAttribute('stroke', '#888');
             line.setAttribute('stroke-width', 1);
             ghostLayer.appendChild(line);
@@ -921,30 +938,30 @@ export class Canvas {
 
     // Returns the visual center {x, y} of any station type.
     // For moduler, accounts for origin offset.  For all others, returns station.x/y.
-    _getStationCenter(station) {
+    // Single source of truth for station bounding box.
+    // Returns { cx, cy, hw, hh } in SVG (global) coordinates.
+    _getStationBounds(station) {
+        const m = this.stationSizeMultiplier;
         if (station.type === 'moduler') {
             const { cx, cy } = this._getModulerVisualCenter(station);
-            return { x: cx, y: cy };
+            const { w, h }   = this._getModulerSize(station);
+            return { cx, cy, hw: w / 2, hh: h / 2 };
         }
-        return { x: station.x, y: station.y };
+        const small = station.type === 'entry' || station.type === 'exit';
+        return { cx: station.x, cy: station.y,
+                 hw: (small ? 25 : 40) * m,
+                 hh: (small ? 20 : 30) * m };
+    }
+
+    _getStationCenter(station) {
+        const { cx, cy } = this._getStationBounds(station);
+        return { x: cx, y: cy };
     }
 
     // Returns the point on station's axis-aligned bounding-box edge
     // in the normalized direction (dirX, dirY) from the station center.
     _getStationEdgePoint(station, dirX, dirY) {
-        const { x: cx, y: cy } = this._getStationCenter(station);
-        const m = this.stationSizeMultiplier;
-        let hw, hh;
-        if (station.type === 'moduler') {
-            hw = this._getModulerSize(station).w / 2;
-            hh = this._getModulerSize(station).h / 2;
-        } else if (station.type === 'entry' || station.type === 'exit') {
-            hw = 25 * m;
-            hh = 20 * m;
-        } else {
-            hw = 40 * m;
-            hh = 30 * m;
-        }
+        const { cx, cy, hw, hh } = this._getStationBounds(station);
         const absX = Math.abs(dirX), absY = Math.abs(dirY);
         const tx = absX > 1e-9 ? hw / absX : Infinity;
         const ty = absY > 1e-9 ? hh / absY : Infinity;
@@ -973,44 +990,84 @@ export class Canvas {
         return { cx: station.x, cy: station.y };
     }
 
-    _getModulerPortPos(station, portIndex, portType) {
-        const subStations = station.config?.subScenario?.stations;
-        if (!subStations || subStations.length === 0) return null;
-        const portStationType = portType === 'input' ? 'entry' : 'exit';
-        const targets = subStations
-            .filter(s => s.type === portStationType)
-            .sort((a, b) => a.y - b.y);
-        if (portIndex < 0 || portIndex >= targets.length) return null;
+    // ── Local coordinate system helpers ─────────────────────────────────────
+    // station.x/y is the moduler's anchor in global SVG space.
+    // Sub-scenario station positions are stored in LOCAL coords (relative to anchor).
+    // Existing scenarios in "old format" (large absolute sub-canvas coords) are migrated
+    // automatically on first access via _migrateSubScenarioToLocalCoords().
 
-        const { w, h } = this._getModulerSize(station);
-        const { cx, cy } = this._getModulerVisualCenter(station);
-        const portWidth = 20;
+    _toGlobal(moduler, localX, localY) {
+        return { x: moduler.x + localX, y: moduler.y + localY };
+    }
 
-        // X is always fixed: entry ports on the left edge, exit ports on the right edge.
-        // The X position inside the sub-scenario is irrelevant — type determines side.
-        const portCenterX = portType === 'input'
-            ? cx - w / 2 + portWidth / 2
-            : cx + w / 2 - portWidth / 2;
+    _migrateSubScenarioToLocalCoords(station) {
+        const ss = station.config?.subScenario;
+        if (!ss || ss.localCoords) return;
 
-        // Y: map from sub-scenario Y range (Entry/Exit targets only) to moduler height proportionally.
-        // Using all sub-stations would skew the range when processing stations lie outside the
-        // Entry/Exit Y span, displacing port indicators away from their intended positions.
-        const ys = targets.map(s => s.y);
-        const subMinY = Math.min(...ys);
-        const subMaxY = Math.max(...ys);
-        const rangeY = subMaxY - subMinY;
-        const t = targets[portIndex];
-        let portCenterY;
-        if (rangeY > 0) {
-            const raw = (cy - h / 2) + ((t.y - subMinY) / rangeY) * h;
-            // Clamp inside the moduler rectangle with a small margin
-            const margin = portWidth / 2;
-            portCenterY = Math.max(cy - h / 2 + margin, Math.min(cy + h / 2 - margin, raw));
+        const grid = station.config?.model3DGrid;
+        const gs   = (grid?.gridSize || 1) * PX_PER_M;
+
+        if (grid?.cells?.length > 0 && grid.origin) {
+            // Model-based moduler: place Entry at physical left edge, Exit at right edge.
+            const cells = grid.cells;
+            const minC  = Math.min(...cells.map(([c]) => c));
+            const maxC  = Math.max(...cells.map(([c]) => c));
+            const minR  = Math.min(...cells.map(([, r]) => r));
+            const maxR  = Math.max(...cells.map(([, r]) => r));
+            // Attachment points in local coords (outer edge of port indicator)
+            const leftX  = (minC - grid.origin[0]) * gs - gs / 2;
+            const rightX = (maxC - grid.origin[0] + 1) * gs - gs / 2;
+            const topY   = (minR - grid.origin[1]) * gs - gs / 2;
+            const botY   = (maxR - grid.origin[1] + 1) * gs - gs / 2;
+            const totalH = botY - topY;
+
+            const entries = ss.stations.filter(s => s.type === 'entry').sort((a, b) => a.y - b.y);
+            const exits   = ss.stations.filter(s => s.type === 'exit').sort((a, b) => a.y - b.y);
+
+            entries.forEach((e, i) => {
+                e.x = leftX;
+                e.y = topY + totalH * (i + 1) / (entries.length + 1);
+            });
+            exits.forEach((e, i) => {
+                e.x = rightX;
+                e.y = topY + totalH * (i + 1) / (exits.length + 1);
+            });
+            // Shift other stations (Processing, Switch…) by the IO centroid so they stay centred
+            const io  = [...entries, ...exits];
+            const cx0 = io.reduce((s, st) => s + st.x, 0) / io.length;
+            const cy0 = io.reduce((s, st) => s + st.y, 0) / io.length;
+            ss.stations.filter(s => s.type !== 'entry' && s.type !== 'exit')
+                .forEach(s => { s.x -= cx0; s.y -= cy0; });
         } else {
-            // All sub-stations at the same Y: distribute targets evenly around center
-            portCenterY = cy + (portIndex - (targets.length - 1) / 2) * 20;
+            // Default box (w=100, hw=50): centre Entry/Exit around (0,0).
+            const io = ss.stations.filter(s => s.type === 'entry' || s.type === 'exit');
+            if (io.length > 0) {
+                const cx0 = io.reduce((s, st) => s + st.x, 0) / io.length;
+                const cy0 = io.reduce((s, st) => s + st.y, 0) / io.length;
+                ss.stations.forEach(s => { s.x -= cx0; s.y -= cy0; });
+            }
+            // Snap Entry to left side (-50) and Exit to right side (+50)
+            const hw = 50;
+            ss.stations.filter(s => s.type === 'entry').forEach(e => { e.x = -hw; });
+            ss.stations.filter(s => s.type === 'exit').forEach(e => { e.x = +hw; });
         }
-        return { x: portCenterX, y: portCenterY };
+        ss.localCoords = true;
+    }
+
+    // Returns the port indicator CENTER in global SVG coordinates.
+    // t.x/y (local) is the CONNECTION ATTACHMENT POINT (outer edge of port indicator).
+    // The indicator centre is offset inward by MODULER_PORT_W/2.
+    _getModulerPortPos(station, portIndex, portType) {
+        const ss = station.config?.subScenario;
+        if (!ss?.stations) return null;
+        if (!ss.localCoords) this._migrateSubScenarioToLocalCoords(station);
+        const stype   = portType === 'input' ? 'entry' : 'exit';
+        const targets = ss.stations.filter(s => s.type === stype).sort((a, b) => a.y - b.y);
+        const t = targets[portIndex];
+        if (!t) return null;
+        // Indicator centre = attachment ± half portWidth (inward)
+        const cx = station.x + t.x + (portType === 'input' ? MODULER_PORT_W / 2 : -MODULER_PORT_W / 2);
+        return { x: cx, y: station.y + t.y };
     }
 
     _renderModulerStation(g, station) {
@@ -1145,9 +1202,9 @@ export class Canvas {
         const { w, h } = this._getModulerSize(station);
         const { cx, cy } = this._getModulerVisualCenter(station);
 
-        const portWidth = 20;
-        const portHeight = 14;
-        const gap = 20;
+        const portWidth  = MODULER_PORT_W;
+        const portHeight = MODULER_PORT_H;
+        const gap        = MODULER_PORT_GAP;
 
         // Fallback even-spacing helpers (use visual center)
         const entryTotalH = entryCount * portHeight + (entryCount - 1) * (gap - portHeight);
@@ -1214,14 +1271,15 @@ export class Canvas {
         const count = ports.length;
         if (count === 0) return;
 
-        const portWidth = 30;
-        const portHeight = 20;
-        const gap = 25;
+        const portWidth  = SPLIT_PORT_W;
+        const portHeight = SPLIT_PORT_H;
+        const gap        = SPLIT_PORT_GAP;
+        const { cx, cy, hw } = this._getStationBounds(station);
         const totalHeight = count * portHeight + (count - 1) * (gap - portHeight);
-        const startY = station.y - totalHeight / 2;
+        const startY = cy - totalHeight / 2;
 
         ports.forEach((buf, i) => {
-            const bufX = station.x - 40 - portWidth - 10; // Left of station
+            const bufX = cx - hw - portWidth - 10; // Left of station
             const bufY = startY + i * gap;
 
             const bufGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -1262,8 +1320,8 @@ export class Canvas {
             const connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
             connLine.setAttribute('x1', bufX + portWidth);
             connLine.setAttribute('y1', bufY + portHeight / 2);
-            connLine.setAttribute('x2', station.x - 40);
-            connLine.setAttribute('y2', station.y);
+            connLine.setAttribute('x2', cx - hw);
+            connLine.setAttribute('y2', cy);
             connLine.setAttribute('stroke', '#6f42c180');
             connLine.setAttribute('stroke-width', '1');
             connLine.setAttribute('stroke-dasharray', '3,2');
@@ -1276,14 +1334,15 @@ export class Canvas {
         const count = ports.length;
         if (count === 0) return;
 
-        const portWidth = 30;
-        const portHeight = 20;
-        const gap = 25;
+        const portWidth  = SPLIT_PORT_W;
+        const portHeight = SPLIT_PORT_H;
+        const gap        = SPLIT_PORT_GAP;
+        const { cx, cy, hw } = this._getStationBounds(station);
         const totalHeight = count * portHeight + (count - 1) * (gap - portHeight);
-        const startY = station.y - totalHeight / 2;
+        const startY = cy - totalHeight / 2;
 
         ports.forEach((buf, i) => {
-            const bufX = station.x + 40 + 10; // Right of station
+            const bufX = cx + hw + 10; // Right of station
             const bufY = startY + i * gap;
 
             const bufGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -1322,8 +1381,8 @@ export class Canvas {
 
             // Line from station body to port
             const connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            connLine.setAttribute('x1', station.x + 40);
-            connLine.setAttribute('y1', station.y);
+            connLine.setAttribute('x1', cx + hw);
+            connLine.setAttribute('y1', cy);
             connLine.setAttribute('x2', bufX);
             connLine.setAttribute('y2', bufY + portHeight / 2);
             connLine.setAttribute('stroke', '#fd7e1480');
@@ -1342,9 +1401,9 @@ export class Canvas {
         if (station.type === 'moduler') {
             const { w } = this._getModulerSize(station);
             const { cx, cy } = this._getModulerVisualCenter(station);
-            const portWidth = 20;
-            const portHeight = 14;
-            const gap = 20;
+            const portWidth  = MODULER_PORT_W;
+            const portHeight = MODULER_PORT_H;
+            const gap        = MODULER_PORT_GAP;
 
             if (portType === 'input') {
                 const count = station.config.entryCount || 1;
@@ -1374,20 +1433,21 @@ export class Canvas {
         const count = ports.length;
         if (portIndex < 0 || portIndex >= count) return null;
 
-        const portWidth = 30;
-        const portHeight = 20;
-        const gap = 25;
+        const portWidth  = SPLIT_PORT_W;
+        const portHeight = SPLIT_PORT_H;
+        const gap        = SPLIT_PORT_GAP;
+        const { cx, cy, hw } = this._getStationBounds(station);
         const totalHeight = count * portHeight + (count - 1) * (gap - portHeight);
-        const startY = station.y - totalHeight / 2;
+        const startY = cy - totalHeight / 2;
         const bufY = startY + portIndex * gap + portHeight / 2;
 
         if (portType === 'input') {
             // Merge input port: left side
-            const bufX = station.x - 40 - portWidth - 10;
+            const bufX = cx - hw - portWidth - 10;
             return { x: bufX, y: bufY }; // Left edge of port
         } else {
             // Split output port: right side
-            const bufX = station.x + 40 + 10 + portWidth;
+            const bufX = cx + hw + 10 + portWidth;
             return { x: bufX, y: bufY }; // Right edge of port
         }
     }

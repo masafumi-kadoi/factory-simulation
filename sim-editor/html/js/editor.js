@@ -485,10 +485,11 @@ class ScenarioEditor {
                 exitCount: 1,
                 subScenario: {
                     stations: [
-                        { id: 'entry-0', name: '', type: 'entry', config: {}, x: 100, y: 300 },
-                        { id: 'exit-0', name: '', type: 'exit', config: {}, x: 700, y: 300 }
+                        { id: 'entry-0', name: '', type: 'entry', config: {}, x: -50, y: 0 },
+                        { id: 'exit-0',  name: '', type: 'exit',  config: {}, x:  50, y: 0 }
                     ],
-                    connections: []
+                    connections: [],
+                    localCoords: true
                 }
             },
             switch: {
@@ -659,14 +660,8 @@ class ScenarioEditor {
         if (stations.length < 2) return;
 
         const getBounds = (s) => {
-            if (s.type === 'moduler') {
-                const vc = this.canvas._getModulerVisualCenter(s);
-                const { w, h } = this.canvas._getModulerSize(s);
-                return { left: vc.cx - w / 2, right: vc.cx + w / 2, top: vc.cy - h / 2, bottom: vc.cy + h / 2, cx: vc.cx, cy: vc.cy };
-            }
-            const hw = (s.type === 'entry' || s.type === 'exit') ? 25 : 40;
-            const hh = (s.type === 'entry' || s.type === 'exit') ? 20 : 30;
-            return { left: s.x - hw, right: s.x + hw, top: s.y - hh, bottom: s.y + hh, cx: s.x, cy: s.y };
+            const { cx, cy, hw, hh } = this.canvas._getStationBounds(s);
+            return { left: cx - hw, right: cx + hw, top: cy - hh, bottom: cy + hh, cx, cy };
         };
 
         const moveStation = (s, newCx, newCy) => {
@@ -1483,6 +1478,7 @@ class ScenarioEditor {
             name: this.scenario.name,
             stations: sub.stations || [],
             connections: sub.connections || [],
+            localCoords: sub.localCoords,
             _parentStation: station, // reference back to parent for saving
             _isSubScenario: true
         };
@@ -1509,7 +1505,8 @@ class ScenarioEditor {
         if (this.scenario._parentStation) {
             this.scenario._parentStation.config.subScenario = {
                 stations: this.scenario.stations,
-                connections: this.scenario.connections
+                connections: this.scenario.connections,
+                localCoords: this.scenario.localCoords ?? true
             };
         }
 
@@ -1980,25 +1977,26 @@ class ScenarioEditor {
 
     _autoPlaceEntryExit() {
         const entries = this.scenario.stations.filter(s => s.type === 'entry');
-        const exits = this.scenario.stations.filter(s => s.type === 'exit');
+        const exits   = this.scenario.stations.filter(s => s.type === 'exit');
+        const isLocal = this.scenario.localCoords;
 
-        // Place entries on the left
-        const entryX = 100;
-        const exitX = 700;
-        const yStart = 200;
-        const yGap = 100;
+        // Local-coord defaults: Entry left (-50), Exit right (+50), y evenly spaced
+        // Legacy defaults (global coords): Entry at x=100, Exit at x=700
+        const entryX = isLocal ? -50 : 100;
+        const exitX  = isLocal ?  50 : 700;
+        const yGap   = 80;
 
         entries.forEach((entry, i) => {
             if (entry.x === 0 && entry.y === 0) {
                 entry.x = entryX;
-                entry.y = yStart + i * yGap;
+                entry.y = isLocal ? (i - (entries.length - 1) / 2) * yGap : 200 + i * yGap;
             }
         });
 
         exits.forEach((exit, i) => {
             if (exit.x === 0 && exit.y === 0) {
                 exit.x = exitX;
-                exit.y = yStart + i * yGap;
+                exit.y = isLocal ? (i - (exits.length - 1) / 2) * yGap : 200 + i * yGap;
             }
         });
     }
