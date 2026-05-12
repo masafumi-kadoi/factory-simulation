@@ -12,6 +12,10 @@ const SPLIT_PORT_W     = 30;
 const SPLIT_PORT_H     = 20;
 const SPLIT_PORT_GAP   = 25;
 
+// Entry/Exit triangle size relative to the physical cell size (15% of PX_PER_M ≈ 12px)
+const MODULER_TRIANGLE_W = Math.round(PX_PER_M * 0.15);       // half-width  (~12)
+const MODULER_TRIANGLE_H = Math.round(MODULER_TRIANGLE_W * 2 / 3); // half-height (~8)
+
 export class Canvas {
     constructor(svg, editor) {
         this.svg = svg;
@@ -985,6 +989,29 @@ export class Canvas {
         return { w: 100, h: 70 };
     }
 
+    // Returns the LOCAL attachment bounds for Entry/Exit ports.
+    // entryX/exitX = left/right attachment X in local coords (= outer edge of model bounding box)
+    // topY/botY = top/bottom of model bounding box in local coords
+    _getModulerPortBounds(station) {
+        const grid = station.config?.model3DGrid;
+        if (grid?.cells?.length > 0 && grid.origin) {
+            const gs    = (grid.gridSize || 1) * PX_PER_M;
+            const cells = grid.cells;
+            const minC  = Math.min(...cells.map(([c]) => c));
+            const maxC  = Math.max(...cells.map(([c]) => c));
+            const minR  = Math.min(...cells.map(([, r]) => r));
+            const maxR  = Math.max(...cells.map(([, r]) => r));
+            return {
+                entryX: (minC - grid.origin[0]) * gs - gs / 2,
+                exitX:  (maxC - grid.origin[0] + 1) * gs - gs / 2,
+                topY:   (minR - grid.origin[1]) * gs - gs / 2,
+                botY:   (maxR - grid.origin[1] + 1) * gs - gs / 2,
+            };
+        }
+        const { w, h } = this._getModulerSize(station);
+        return { entryX: -w / 2, exitX: w / 2, topY: -h / 2, botY: h / 2 };
+    }
+
     // Returns the visual center {x, y} of any station type.
     // For moduler, accounts for origin offset.  For all others, returns station.x/y.
     // Single source of truth for station bounding box.
@@ -1053,65 +1080,31 @@ export class Canvas {
         const ss = station.config?.subScenario;
         if (!ss || ss.localCoords) return;
 
-        const grid = station.config?.model3DGrid;
-        const gs   = (grid?.gridSize || 1) * PX_PER_M;
+        // Use _getModulerPortBounds — works for both grid and default-box modulers
+        const { entryX, exitX, topY, botY } = this._getModulerPortBounds(station);
+        const totalH = botY - topY;
 
-        if (grid?.cells?.length > 0 && grid.origin) {
-            // Model-based moduler: place Entry at physical left edge, Exit at right edge.
-            const cells = grid.cells;
-            const minC  = Math.min(...cells.map(([c]) => c));
-            const maxC  = Math.max(...cells.map(([c]) => c));
-            const minR  = Math.min(...cells.map(([, r]) => r));
-            const maxR  = Math.max(...cells.map(([, r]) => r));
-            // Attachment points in local coords (outer edge of port indicator)
-            const leftX  = (minC - grid.origin[0]) * gs - gs / 2;
-            const rightX = (maxC - grid.origin[0] + 1) * gs - gs / 2;
-            const topY   = (minR - grid.origin[1]) * gs - gs / 2;
-            const botY   = (maxR - grid.origin[1] + 1) * gs - gs / 2;
-            const totalH = botY - topY;
+        const entries = ss.stations.filter(s => s.type === 'entry').sort((a, b) => a.y - b.y);
+        const exits   = ss.stations.filter(s => s.type === 'exit').sort((a, b) => a.y - b.y);
 
-            const entries = ss.stations.filter(s => s.type === 'entry').sort((a, b) => a.y - b.y);
-            const exits   = ss.stations.filter(s => s.type === 'exit').sort((a, b) => a.y - b.y);
+        entries.forEach((e, i) => {
+            e.x = entryX;
+            e.y = topY + totalH * (i + 1) / (entries.length + 1);
+        });
+        exits.forEach((e, i) => {
+            e.x = exitX;
+            e.y = topY + totalH * (i + 1) / (exits.length + 1);
+        });
 
-            entries.forEach((e, i) => {
-                e.x = leftX;
-                e.y = topY + totalH * (i + 1) / (entries.length + 1);
-            });
-            exits.forEach((e, i) => {
-                e.x = rightX;
-                e.y = topY + totalH * (i + 1) / (exits.length + 1);
-            });
-            // Shift other stations (Processing, Switch…) by the IO centroid so they stay centred
-            const io  = [...entries, ...exits];
+        // Shift non-IO stations (Processing, Switch…) by the IO centroid so they stay centred
+        const io = [...entries, ...exits];
+        if (io.length > 0) {
             const cx0 = io.reduce((s, st) => s + st.x, 0) / io.length;
             const cy0 = io.reduce((s, st) => s + st.y, 0) / io.length;
             ss.stations.filter(s => s.type !== 'entry' && s.type !== 'exit')
                 .forEach(s => { s.x -= cx0; s.y -= cy0; });
-        } else {
-            // Default box (w=100, h=70): snap Entry/Exit to left/right edges, Y evenly spaced.
-            const hw = 50;
-            const hh = 35;
-            const entries = ss.stations.filter(s => s.type === 'entry').sort((a, b) => a.y - b.y);
-            const exits   = ss.stations.filter(s => s.type === 'exit').sort((a, b) => a.y - b.y);
-
-            // Shift Processing/Switch stations by IO centroid so they remain centred
-            const io = [...entries, ...exits];
-            if (io.length > 0) {
-                const cx0 = io.reduce((s, st) => s + st.x, 0) / io.length;
-                const cy0 = io.reduce((s, st) => s + st.y, 0) / io.length;
-                ss.stations.filter(s => s.type !== 'entry' && s.type !== 'exit')
-                    .forEach(s => { s.x -= cx0; s.y -= cy0; });
-            }
-            // Compute canonical X/Y for Entry (left edge) and Exit (right edge)
-            entries.forEach((e, i) => {
-                e.x = -hw;
-                e.y = -hh + hh * 2 * (i + 1) / (entries.length + 1);
-            });
-            exits.forEach((e, i) => {
-                e.x = +hw;
-                e.y = -hh + hh * 2 * (i + 1) / (exits.length + 1);
-            });
         }
+
         ss.localCoords = true;
     }
 
@@ -1231,17 +1224,24 @@ export class Canvas {
 
     // Renders the sub-scenario Entry/Exit stations as mini triangle icons directly inside the moduler.
     // Replaces the old port indicator rectangles — connections attach to these icons.
+    // Triangle outer edge (flat base for Entry, tip for Exit) is flush with the model boundary.
+    // Connection attachment point (_getModulerPortPos) = station.x + t.x = the boundary edge.
     _renderModulerSubStations(parentGroup, station) {
         const ss = station.config?.subScenario;
         if (!ss?.stations) return;
         if (!ss.localCoords) this._migrateSubScenarioToLocalCoords(station);
 
         const svgNS  = 'http://www.w3.org/2000/svg';
-        const halfW  = 12;
-        const halfH  = 8;
+        const halfW  = MODULER_TRIANGLE_W;
+        const halfH  = MODULER_TRIANGLE_H;
 
         const render = (subStation, portType, portIndex) => {
-            const gx = station.x + subStation.x;
+            // t.x is the LOCAL attachment coordinate (model left edge for Entry, right edge for Exit).
+            // Shift the triangle CENTER inward so the outer edge (flat base / tip) sits at t.x.
+            const attachX = station.x + subStation.x;
+            const gx = portType === 'input'
+                ? attachX + halfW   // Entry: flat base at attachX, center halfW inside model
+                : attachX - halfW;  // Exit:  tip     at attachX, center halfW inside model
             const gy = station.y + subStation.y;
 
             const g = document.createElementNS(svgNS, 'g');

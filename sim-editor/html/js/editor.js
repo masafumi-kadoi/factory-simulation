@@ -1991,22 +1991,10 @@ class ScenarioEditor {
         const entries = this.scenario.stations.filter(s => s.type === 'entry');
         const exits   = this.scenario.stations.filter(s => s.type === 'exit');
 
-        // Compute entry/exit X from model3DGrid if present, else use default box edges.
-        const parent   = this.scenario._parentStation;
-        const grid     = parent?.config?.model3DGrid;
-        const PX_PER_M = 80;
-        let entryX = -50, exitX = 50, topY = -35, botY = 35;
-        if (grid?.cells?.length > 0 && grid.origin) {
-            const gs   = (grid.gridSize || 1) * PX_PER_M;
-            const minC = Math.min(...grid.cells.map(([c]) => c));
-            const maxC = Math.max(...grid.cells.map(([c]) => c));
-            const minR = Math.min(...grid.cells.map(([, r]) => r));
-            const maxR = Math.max(...grid.cells.map(([, r]) => r));
-            entryX = (minC - grid.origin[0]) * gs - gs / 2;
-            exitX  = (maxC - grid.origin[0] + 1) * gs - gs / 2;
-            topY   = (minR - grid.origin[1]) * gs - gs / 2;
-            botY   = (maxR - grid.origin[1] + 1) * gs - gs / 2;
-        }
+        // Delegate bounds computation to canvas (works for both grid and default-box modulers)
+        const parent = this.scenario._parentStation;
+        if (!parent) return;
+        const { entryX, exitX, topY, botY } = this.canvas._getModulerPortBounds(parent);
         const totalH = botY - topY;
 
         entries.forEach((entry, i) => {
