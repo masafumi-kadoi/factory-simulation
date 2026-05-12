@@ -228,11 +228,13 @@ export class Visualizer3D {
 
         const groundGeometry = new THREE.PlaneGeometry(size, size);
         const groundMaterial = new THREE.MeshStandardMaterial({
-            color: 0x1a1a2e, roughness: 0.8, metalness: 0.2
+            color: 0x1a1a2e, roughness: 0.8, metalness: 0.2,
+            depthWrite: false,
         });
         this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
         this.ground.rotation.x = -Math.PI / 2;
         this.ground.receiveShadow = true;
+        this.ground.renderOrder = -1;
         this.scene.add(this.ground);
 
         const divisions = Math.max(10, Math.round(size / 50));

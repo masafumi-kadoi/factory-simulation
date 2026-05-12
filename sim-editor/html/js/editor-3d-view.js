@@ -87,6 +87,9 @@ export class Editor3DView {
 
         // Ground
         const gridHelper = new THREE.GridHelper(200, 200, 0x333333, 0x222222);
+        gridHelper.renderOrder = -1;
+        const gridMats = Array.isArray(gridHelper.material) ? gridHelper.material : [gridHelper.material];
+        gridMats.forEach(m => { m.depthWrite = false; });
         scene.add(gridHelper);
 
         // Compute center of all stations for camera target
