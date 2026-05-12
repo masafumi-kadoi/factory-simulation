@@ -1998,14 +1998,14 @@ class ScenarioEditor {
         const totalH = botY - topY;
 
         entries.forEach((entry, i) => {
-            if (entry.x === 0 && entry.y === 0) {
-                entry.x = entryX;
+            entry.x = entryX;
+            if (entry.y === 0) {
                 entry.y = topY + totalH * (i + 1) / (entries.length + 1);
             }
         });
         exits.forEach((exit, i) => {
-            if (exit.x === 0 && exit.y === 0) {
-                exit.x = exitX;
+            exit.x = exitX;
+            if (exit.y === 0) {
                 exit.y = topY + totalH * (i + 1) / (exits.length + 1);
             }
         });

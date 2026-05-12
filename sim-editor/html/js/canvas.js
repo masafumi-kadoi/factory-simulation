@@ -1118,7 +1118,10 @@ export class Canvas {
         const targets = ss.stations.filter(s => s.type === stype).sort((a, b) => a.y - b.y);
         const t = targets[portIndex];
         if (!t) return null;
-        return { x: station.x + t.x, y: station.y + t.y };
+        // Always derive x from _getModulerPortBounds to stay in sync with the visual model boundary.
+        const { entryX, exitX } = this._getModulerPortBounds(station);
+        const xLocal = portType === 'input' ? entryX : exitX;
+        return { x: station.x + xLocal, y: station.y + t.y };
     }
 
     _renderModulerStation(g, station) {
@@ -1235,10 +1238,13 @@ export class Canvas {
         const halfW  = MODULER_TRIANGLE_W;
         const halfH  = MODULER_TRIANGLE_H;
 
+        const { entryX: portEntryX, exitX: portExitX } = this._getModulerPortBounds(station);
+
         const render = (subStation, portType, portIndex) => {
-            // t.x is the LOCAL attachment coordinate (model left edge for Entry, right edge for Exit).
-            // Shift the triangle CENTER inward so the outer edge (flat base / tip) sits at t.x.
-            const attachX = station.x + subStation.x;
+            // Always derive x from _getModulerPortBounds so it matches the actual model boundary,
+            // regardless of what is stored in subStation.x (which may be a stale default like ±50).
+            const localX  = portType === 'input' ? portEntryX : portExitX;
+            const attachX = station.x + localX;
             const gx = portType === 'input'
                 ? attachX + halfW   // Entry: flat base at attachX, center halfW inside model
                 : attachX - halfW;  // Exit:  tip     at attachX, center halfW inside model
