@@ -79,28 +79,30 @@ DB スキーマ（Phase 1）
 ## Phase 2: realtime-gateway リファクタリング
 
 ### 実装
-- [ ] `FactoryStation` 構造体に `ParentID`, `PositionZ` 追加
-- [ ] `GET /api/factories/{id}/stations` レスポンスに parent_id, position_z, locationId 追加
-- [ ] `POST /api/factories/{id}/stations` に parent_id, position_z 受付追加
-- [ ] `station_id` バリデーションパターン緩和（`^[^.]+\..+$`）
-- [ ] `PUT /api/factories/{id}/stations/{sid}` 新規実装（ステーション更新）
-- [ ] `GET /api/factories/{id}/connections` 新規実装
-- [ ] `POST /api/factories/{id}/connections` 新規実装
-- [ ] `DELETE /api/factories/{id}/connections/{cid}` 新規実装
-- [ ] `PUT /api/factories/{id}/machines/{sid}/logic` 新規実装（バッチ保存）
-- [ ] `GET /api/factories/{id}/simdb/locations` 新規実装（sim-executor-backend から移植）
-- [ ] `POST /api/factories/{id}/simdb/initial-conditions` 新規実装（同上）
-- [ ] `POST /api/factories/{id}/simdb/test-connection` 新規実装（同上）
-- [ ] `POST /api/executions` に factoryId 対応追加
-- [ ] `/api/scenarios` エンドポイント削除
-- [ ] `/api/executor/` 互換レイヤー削除
+- [x] `FactoryStation` 構造体に `ParentID`, `PositionZ` 追加、`SeqNumber` 削除
+- [x] `GET /api/factories/{id}/stations` レスポンスに parent_id, position_z, locationId 追加
+- [x] `POST /api/factories/{id}/stations` に parent_id, position_z 受付追加
+- [x] `station_id` バリデーションパターン緩和（`^[^.]+\..+$`）
+- [x] `PUT /api/factories/{id}/stations/{sid}` 新規実装（ステーション更新）
+- [x] `GET /api/factories/{id}/connections` 新規実装
+- [x] `POST /api/factories/{id}/connections` 新規実装
+- [x] `DELETE /api/factories/{id}/connections/{cid}` 新規実装
+- [x] `PUT /api/factories/{id}/machines/{sid}/logic` 新規実装（バッチ保存）
+- [x] `GET /api/factories/{id}/simdb/locations` 新規実装（sim-executor-backend から移植）
+- [x] `POST /api/factories/{id}/simdb/initial-conditions` 新規実装（同上）
+- [x] `POST /api/factories/{id}/simdb/test-connection` 新規実装（同上）
+- [x] `POST /api/executions` に factoryId 対応追加
+- [x] `/api/scenarios` エンドポイント削除
+- [x] `/api/executor/` 互換レイヤー削除
+- [x] `internal/simdb` パッケージ新設（sim-executor-backend SimDB ロジック移植）
 
 ### テスト
-- [ ] `GET /api/factories/{id}/stations` で parent_id, position_z が返ることを確認（curl）
-- [ ] `POST /api/factories/{id}/connections` で接続が作成できることを確認
-- [ ] `PUT /api/factories/{id}/machines/{sid}/logic` でバッチ保存が動作することを確認
-- [ ] `POST /api/factories/{id}/simdb/test-connection` で SimDB 接続テストが動作することを確認
-- [ ] Playwright: API エンドポイントの E2E テスト
+- [x] `GET /api/factories/{id}/stations` で parent_id, position_z が返ることを確認
+- [x] `POST /api/factories/{id}/connections` で接続が作成できることを確認
+- [x] `PUT /api/factories/{id}/machines/{sid}/logic` でバッチ保存が動作することを確認（HTTP/1.0 netcat）
+- [x] `POST /api/factories/{id}/simdb/test-connection` で SimDB 接続テストが動作することを確認（接続失敗→ok:false）
+- [x] `/api/scenarios`, `/api/executor/` が 404 を返すことを確認
+- [ ] Playwright: API エンドポイントの E2E テスト（Phase 4 ブラウザテストで実施）
 
 ---
 
