@@ -4,26 +4,217 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Factory Visualizer</title>
-    <style>
-        body {
-            margin: 0;
-            background: #0d1b2a;
-            color: #e0e6f0;
-            font-family: system-ui, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            text-align: center;
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
         }
-        h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-        p { color: #7a9cc0; }
-    </style>
+    }
+    </script>
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div>
-        <h1>Factory Visualizer</h1>
-        <p>Phase 4 implementation in progress...</p>
+    <div id="app">
+        <!-- Menu bar -->
+        <header id="menubar">
+            <div class="menu-brand">Factory Visualizer</div>
+            <nav class="menu-items">
+                <div class="menu-item" data-menu="file">ファイル</div>
+                <div class="menu-item" data-menu="edit">編集</div>
+                <div class="menu-item" data-menu="select">選択</div>
+                <div class="menu-item" data-menu="view">表示</div>
+                <div class="menu-item" data-menu="navigate">移動</div>
+            </nav>
+        </header>
+
+        <!-- Tool ribbon -->
+        <div id="toolbar">
+            <div class="toolbar-group">
+                <select id="factory-select" title="工場を選択">
+                    <option value="">工場を選択...</option>
+                </select>
+            </div>
+            <div class="toolbar-group">
+                <button class="toolbar-btn" id="btn-run" title="シミュレーション実行">▶ 実行</button>
+                <button class="toolbar-btn" id="btn-stop-sim" title="実行停止" disabled>■ 停止</button>
+            </div>
+            <div class="toolbar-group">
+                <button class="toolbar-btn" id="btn-fit" title="全体表示">⊡ フィット</button>
+                <button class="toolbar-btn" id="btn-top" title="上面視">↧ 上面</button>
+            </div>
+            <div class="toolbar-group toolbar-status">
+                <span id="status-text" class="status-idle">待機中</span>
+            </div>
+        </div>
+
+        <!-- Main content -->
+        <div id="content">
+            <!-- Left panel -->
+            <aside id="left-panel">
+                <div class="panel-section" id="section-objects">
+                    <div class="section-header" data-toggle="objects">
+                        <span>オブジェクト</span>
+                        <span class="toggle-icon">▾</span>
+                    </div>
+                    <div class="section-body" id="objects-body">
+                        <div class="filter-row">
+                            <button class="filter-btn active" data-filter="machine">設備</button>
+                            <button class="filter-btn active" data-filter="station">ステーション</button>
+                            <button class="filter-btn active" data-filter="work">ワーク</button>
+                        </div>
+                        <div id="object-list" class="object-list">
+                            <div class="empty-hint">工場を選択してください</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section" id="section-display">
+                    <div class="section-header" data-toggle="display">
+                        <span>表示設定</span>
+                        <span class="toggle-icon">▾</span>
+                    </div>
+                    <div class="section-body" id="display-body">
+                        <div class="setting-row">
+                            <label>シーンテーマ</label>
+                            <select id="scene-theme">
+                                <option value="auto">テーマに合わせる</option>
+                                <option value="dark" selected>ダークネイビー</option>
+                                <option value="light">ライト</option>
+                            </select>
+                        </div>
+                        <div class="setting-row">
+                            <label>設備シェル透明度</label>
+                            <input type="range" id="shell-opacity" min="0.1" max="1.0" step="0.05" value="0.6">
+                            <span class="slider-val" id="shell-opacity-val">0.6</span>
+                        </div>
+                        <div class="setting-row">
+                            <label>内部ステーション径</label>
+                            <input type="range" id="internal-radius" min="5" max="30" step="1" value="15">
+                            <span class="slider-val" id="internal-radius-val">15</span>
+                        </div>
+                        <div class="setting-row">
+                            <label>内部表示</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="show-internal">
+                                <span class="toggle-track"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <label>ステーション名</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="show-station-names" checked>
+                                <span class="toggle-track"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <label>ワーク表示</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="show-works" checked>
+                                <span class="toggle-track"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <label>インターロック表示</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="show-interlocks">
+                                <span class="toggle-track"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section" id="section-sim">
+                    <div class="section-header" data-toggle="sim">
+                        <span>シミュレーション</span>
+                        <span class="toggle-icon">▾</span>
+                    </div>
+                    <div class="section-body" id="sim-body">
+                        <div class="setting-row">
+                            <label>開始日時</label>
+                            <input type="datetime-local" id="sim-start" class="input-dark">
+                        </div>
+                        <div class="setting-row">
+                            <label>シミュレーション時間(h)</label>
+                            <input type="number" id="sim-hours" value="24" min="1" max="720" class="input-dark input-short">
+                        </div>
+                        <div class="setting-row">
+                            <button class="btn-primary" id="btn-fetch-ic">初期条件取得</button>
+                        </div>
+                        <div id="ic-status" class="ic-status"></div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 3D scene -->
+            <main id="scene-container">
+                <div id="scene-canvas-wrapper"></div>
+                <div id="connection-overlay"></div>
+            </main>
+        </div>
+
+        <!-- Timeline bar -->
+        <footer id="timeline-bar">
+            <div id="timeline-track">
+                <canvas id="timeline-canvas"></canvas>
+            </div>
+            <div id="timeline-controls">
+                <button class="tl-btn" id="tl-rewind" title="先頭へ">⏮</button>
+                <button class="tl-btn" id="tl-play" title="再生">▶</button>
+                <button class="tl-btn" id="tl-ffwd" title="末尾へ">⏭</button>
+                <select id="tl-speed" title="再生速度">
+                    <option value="0.5">0.5x</option>
+                    <option value="1" selected>1x</option>
+                    <option value="2">2x</option>
+                    <option value="5">5x</option>
+                    <option value="10">10x</option>
+                </select>
+                <span id="tl-time" class="tl-time">--:--:--</span>
+            </div>
+        </footer>
     </div>
+
+    <!-- Floating panels container -->
+    <div id="floating-panels"></div>
+
+    <!-- AI Agent panel -->
+    <div id="ai-agent-panel" class="ai-panel">
+        <div class="ai-panel-header" id="ai-panel-header">
+            <span>AI エージェント</span>
+            <button class="ai-panel-close" id="ai-panel-toggle">−</button>
+        </div>
+        <div class="ai-panel-body" id="ai-panel-body">
+            <div class="ai-quick-actions">
+                <button class="ai-action-btn">異常検知</button>
+                <button class="ai-action-btn">ボトルネック分析</button>
+                <button class="ai-action-btn">最適化提案</button>
+                <button class="ai-action-btn">レポート生成</button>
+                <button class="ai-action-btn">予測シミュレーション</button>
+            </div>
+            <div class="ai-input-row">
+                <input type="text" class="ai-input" placeholder="質問を入力..." id="ai-input">
+                <button class="ai-send-btn">送信</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Run simulation modal -->
+    <div id="run-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>シミュレーション実行</h3>
+                <button class="modal-close" id="run-modal-close">✕</button>
+            </div>
+            <div class="modal-body" id="run-modal-body">
+                <div class="modal-running">
+                    <div class="spinner"></div>
+                    <p id="run-modal-status">実行中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
 </body>
 </html>

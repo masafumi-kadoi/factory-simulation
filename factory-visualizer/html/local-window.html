@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Editor</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body { background: var(--bg-primary); overflow: auto; }
+        #local-app { display: flex; flex-direction: column; min-height: 100vh; }
+        #local-toolbar {
+            height: 36px;
+            background: var(--bg-panel-hdr);
+            border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; gap: 8px; padding: 0 12px;
+            flex-shrink: 0;
+        }
+        #local-title { font-size: 13px; font-weight: 600; flex: 1; }
+        .tab-bar {
+            display: flex;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .tab {
+            padding: 8px 16px;
+            font-size: 12px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+            user-select: none;
+        }
+        .tab.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+        }
+        .tab-content { display: none; flex: 1; padding: 16px; }
+        .tab-content.active { display: block; }
+        .field-group { margin-bottom: 14px; }
+        .field-group label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+        .field-group input, .field-group textarea, .field-group select {
+            width: 100%;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 6px 8px;
+            font-size: 12px;
+            font-family: inherit;
+        }
+        .field-group textarea { min-height: 80px; resize: vertical; }
+        #logic-canvas-wrapper {
+            width: 100%; height: 400px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            position: relative;
+            overflow: hidden;
+        }
+        #logic-canvas { width: 100%; height: 100%; }
+        .station-list { margin-top: 12px; }
+        .station-list-item {
+            display: flex; gap: 8px; align-items: center;
+            padding: 4px 0;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+        }
+        .station-list-item span { flex: 1; }
+        .bottom-bar {
+            background: var(--bg-panel);
+            border-top: 1px solid var(--border-color);
+            padding: 10px 16px;
+            display: flex; justify-content: flex-end; gap: 8px;
+            flex-shrink: 0;
+        }
+        .btn-secondary {
+            background: var(--bg-surface);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 6px 14px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .voxel-info {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 10px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="local-app">
+        <div id="local-toolbar">
+            <span id="local-title">Machine Editor</span>
+            <span id="local-factory-info" style="color:var(--text-muted);font-size:11px;"></span>
+        </div>
+        <div class="tab-bar">
+            <div class="tab active" data-tab="info">モデル情報編集</div>
+            <div class="tab" data-tab="model3d">3Dモデル編集</div>
+            <div class="tab" data-tab="logic">ロジック編集</div>
+        </div>
+
+        <!-- Tab: Info -->
+        <div class="tab-content active" id="tab-info">
+            <div class="field-group">
+                <label>設備名 (name)</label>
+                <input type="text" id="info-name" placeholder="設備名を入力">
+            </div>
+            <div class="field-group">
+                <label>メタデータ (JSON)</label>
+                <textarea id="info-metadata" placeholder='{"description": ""}'></textarea>
+            </div>
+            <div class="field-group">
+                <label>Station ID</label>
+                <input type="text" id="info-sid" readonly style="opacity:0.6">
+            </div>
+        </div>
+
+        <!-- Tab: 3D Model -->
+        <div class="tab-content" id="tab-model3d">
+            <div class="voxel-info">
+                <strong>3Dモデル設定</strong><br>
+                現在: <span id="model-current-type">なし（円柱フォールバック）</span>
+            </div>
+            <div class="field-group" style="margin-top:12px;">
+                <label>グリッドサイズ (voxel grid)</label>
+                <input type="number" id="model-gridsize" value="20" min="5" max="100">
+            </div>
+            <div class="field-group">
+                <label>セル高さ</label>
+                <input type="number" id="model-height" value="40" min="5" max="500">
+            </div>
+            <div class="field-group">
+                <label>セル座標 (例: [[0,0],[1,0],[2,0]])</label>
+                <textarea id="model-cells" placeholder="[[0,0],[1,0]]"></textarea>
+            </div>
+            <div class="field-group">
+                <label>回転Y (度)</label>
+                <input type="number" id="model-rotation" value="0" step="15">
+            </div>
+        </div>
+
+        <!-- Tab: Logic -->
+        <div class="tab-content" id="tab-logic">
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">
+                設備内のステーション一覧と接続を管理します。
+            </div>
+            <div id="logic-canvas-wrapper">
+                <canvas id="logic-canvas"></canvas>
+                <div id="logic-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;">
+                    ステーション・接続を読み込み中...
+                </div>
+            </div>
+            <div class="station-list" id="station-list"></div>
+        </div>
+
+        <div class="bottom-bar">
+            <button class="btn-secondary" id="btn-cancel">キャンセル</button>
+            <button class="btn-primary" id="btn-save" style="width:auto;padding:6px 20px;">保存して閉じる</button>
+        </div>
+    </div>
+
+    <script type="module" src="js/local-window.js"></script>
+</body>
+</html>
