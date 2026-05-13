@@ -168,3 +168,24 @@ DB スキーマ（Phase 1）
 - ツールリボンのボタン詳細
 - ワーク一覧パネルの表示内容詳細
 - カメラ吹き出しオブジェクトの 3D 表現詳細
+
+---
+
+## 実装後の振り返り
+
+**実装完了日**: 2026-05-14
+
+**計画と実績の差分**:
+- Phase 3 の `sim-executor-backend` 廃止: 前のフェーズで既にアーキテクチャ統合済みだったため実施不要
+- API フィールド名の不一致: realtime-gateway が camelCase を返すのに対し、フロントエンドが snake_case でアクセスしていた → 全ファイルで sed 一括置換により修正
+- local-window の 3D エディタ: 設計書では Three.js での 2D 上面視エディタを想定していたが、Canvas 2D API によるシンプルな SVG ライクな描画に変更（実装コスト削減）
+- カメラパネル: 3D 空間内配置は複雑なため、AIエージェントパネルを右下フローティングとして実装（仕様通り）
+
+**学んだこと**:
+- realtime-gateway の JSON レスポンスは Go の json タグ（camelCase）に従うため、フロントエンドは必ず camelCase を使う
+- `DEFERRABLE INITIALLY DEFERRED` FK を使うことで親子順序を気にせず一括 INSERT が可能（SaveMachineLogic で活用）
+- WebSocket の /ws/live エンドポイントは既存実装を変更せず再利用できた
+
+**次回への改善提案**:
+- API 型定義を TypeScript 型または JSDoc で共有し、フィールド名の不一致を事前に防ぐ
+- Playwright による E2E テストを Phase 4 の必須テストとして組み込む
