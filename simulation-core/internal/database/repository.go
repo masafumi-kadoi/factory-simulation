@@ -660,6 +660,110 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 	return scenario, nil
 }
 
+// GetScenarioFromFactory builds a domain.Scenario directly from factory_stations and factory_connections.
+// Machine-type stations are skipped (they are physical containers, not simulation nodes).
+// Entry/Exit stations are included and handled as transparent pass-through by the simulation engine.
+func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario, error) {
+	var factoryName string
+	err := r.db.GetConnection().QueryRow(
+		`SELECT name FROM factories WHERE id = $1`, factoryID,
+	).Scan(&factoryName)
+	if err != nil {
+		return nil, fmt.Errorf("factory not found: %s", factoryID)
+	}
+
+	// Load all non-machine stations (child stations that participate in simulation)
+	stationRows, err := r.db.GetConnection().Query(`
+		SELECT station_id, station_type, parent_id, name, position_x, position_y, config
+		FROM factory_stations
+		WHERE factory_id = $1 AND station_type != 'machine'
+		ORDER BY station_id
+	`, factoryID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query factory stations: %w", err)
+	}
+	defer stationRows.Close()
+
+	var stations []domain.Station
+	for stationRows.Next() {
+		var stationID, stationType string
+		var parentID *string
+		var stationName *string
+		var posX, posY float64
+		var configJSON []byte
+
+		if err := stationRows.Scan(&stationID, &stationType, &parentID, &stationName, &posX, &posY, &configJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan factory station: %w", err)
+		}
+
+		config := make(map[string]interface{})
+		if len(configJSON) > 0 {
+			if err := json.Unmarshal(configJSON, &config); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal station config: %w", err)
+			}
+		}
+
+		// Extract locationId from config for SimDB mapping
+		var locationID *int64
+		if lid, ok := config["locationId"]; ok {
+			switch v := lid.(type) {
+			case float64:
+				id := int64(v)
+				locationID = &id
+			case int64:
+				locationID = &v
+			}
+		}
+
+		station := domain.NewStation(stationID, domain.StationType(stationType), config)
+		if stationName != nil {
+			station.Name = *stationName
+		}
+		station.ParentID = parentID
+		station.LocationID = locationID
+		px, py := posX, posY
+		station.PositionX = &px
+		station.PositionY = &py
+		stations = append(stations, *station)
+	}
+	if err := stationRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate factory stations: %w", err)
+	}
+
+	// Load connections
+	connRows, err := r.db.GetConnection().Query(`
+		SELECT from_station, to_station, condition, from_port_index, to_port_index
+		FROM factory_connections
+		WHERE factory_id = $1
+		ORDER BY id
+	`, factoryID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query factory connections: %w", err)
+	}
+	defer connRows.Close()
+
+	var connections []domain.Connection
+	for connRows.Next() {
+		var from, to, condition string
+		var fromPort, toPort int
+		if err := connRows.Scan(&from, &to, &condition, &fromPort, &toPort); err != nil {
+			return nil, fmt.Errorf("failed to scan factory connection: %w", err)
+		}
+		connections = append(connections, domain.Connection{
+			From:          from,
+			To:            to,
+			Condition:     domain.RoutingCondition(condition),
+			FromPortIndex: fromPort,
+			ToPortIndex:   toPort,
+		})
+	}
+	if err := connRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate factory connections: %w", err)
+	}
+
+	return domain.NewScenario(factoryID, factoryName, stations, connections), nil
+}
+
 // ListScenarios retrieves all scenarios from the database
 func (r *Repository) ListScenarios() ([]*domain.Scenario, error) {
 	// Get all scenario IDs

@@ -13,6 +13,7 @@ import (
 // RunRequest is the internal request from realtime-gateway
 type RunRequest struct {
 	ScenarioID        string                             `json:"scenarioId"`
+	FactoryID         string                             `json:"factoryId"`
 	DataSourceID      string                             `json:"dataSourceId"`
 	SimulationTime    float64                            `json:"simulationTime"`
 	StartDatetime     string                             `json:"startDatetime"`
@@ -40,8 +41,12 @@ func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.ScenarioID == "" || req.DataSourceID == "" {
-		respondError(w, http.StatusBadRequest, "scenarioId and dataSourceId are required")
+	if req.ScenarioID == "" && req.FactoryID == "" {
+		respondError(w, http.StatusBadRequest, "scenarioId or factoryId is required")
+		return
+	}
+	if req.DataSourceID == "" {
+		respondError(w, http.StatusBadRequest, "dataSourceId is required")
 		return
 	}
 	if req.SimulationTime <= 0 {
@@ -58,11 +63,21 @@ func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fetch scenario
-	scenario, err := h.GetScenario(req.ScenarioID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
-		return
+	// Fetch scenario — from factory_stations/connections or from scenarios table
+	var scenario *domain.Scenario
+	var fetchErr error
+	if req.FactoryID != "" {
+		scenario, fetchErr = h.repo.GetScenarioFromFactory(req.FactoryID)
+		if fetchErr != nil {
+			respondError(w, http.StatusNotFound, fetchErr.Error())
+			return
+		}
+	} else {
+		scenario, fetchErr = h.GetScenario(req.ScenarioID)
+		if fetchErr != nil {
+			respondError(w, http.StatusNotFound, fetchErr.Error())
+			return
+		}
 	}
 
 	// Apply migrations

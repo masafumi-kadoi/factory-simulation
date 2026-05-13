@@ -2,11 +2,10 @@
 // All API calls go through the reverse proxy (same origin)
 
 const SIMULATION_CORE_URL = '/api';
-const EXECUTOR_API_URL = '/api/executor';
 
 const SERVICE_URLS = {
     'sim-editor': '/editor',
-    'sim-executor': '/executor',
+    'factory-visualizer': '/factory-visualizer',
     'sim-visualizer': '/visualizer',
     'sim-factory-manager': '/factory',
 };
@@ -14,24 +13,18 @@ const SERVICE_URLS = {
 const HEALTH_CHECK_TIMEOUT = 3000;
 
 const PortalAPI = {
-    // --- Scenario APIs (via sim-executor for execution count) ---
+    // --- Factory APIs ---
 
-    async getScenarios() {
-        const response = await fetch(`${EXECUTOR_API_URL}/scenarios`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-    },
-
-    async getScenario(scenarioId) {
-        const response = await fetch(`${SIMULATION_CORE_URL}/scenarios/${scenarioId}`);
+    async getFactories() {
+        const response = await fetch(`${SIMULATION_CORE_URL}/factories`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
     },
 
     // --- Execution APIs ---
 
-    async getExecutions(scenarioId) {
-        const response = await fetch(`${EXECUTOR_API_URL}/executions?scenarioId=${encodeURIComponent(scenarioId)}`);
+    async getExecutions() {
+        const response = await fetch(`${SIMULATION_CORE_URL}/executions`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
     },
@@ -60,7 +53,7 @@ const PortalAPI = {
             { name: 'realtime-gateway', url: '/api/data-sources', port: null },
             { name: 'sim-factory-manager', url: '/factory/', port: null },
             { name: 'sim-editor', url: '/editor/', port: null },
-            { name: 'sim-executor', url: '/executor/', port: null },
+            { name: 'factory-visualizer', url: '/factory-visualizer/', port: null },
             { name: 'sim-visualizer', url: '/visualizer/', port: null },
         ];
 

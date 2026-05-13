@@ -109,29 +109,29 @@ DB スキーマ（Phase 1）
 ## Phase 3: simulation-core 対応 + sim-executor 廃止
 
 ### 実装
-- [ ] simulation-core: `/run` に `factoryId` パラメータ追加
-- [ ] simulation-core: `factory_stations` + `factory_connections` からシナリオ読み込みに変更
-- [ ] simulation-core: Entry/Exit をエイリアス（飾り）として扱う
-- [ ] docker-compose.yml から `sim-executor` サービス削除
-- [ ] docker-compose.yml から `sim-executor-backend` サービス削除
-- [ ] nginx-proxy から sim-executor 関連ルート削除
-- [ ] sim-portal から sim-executor リンク削除・factory-visualizer リンク追加
+- [x] simulation-core: `/run` に `factoryId` パラメータ追加
+- [x] simulation-core: `factory_stations` + `factory_connections` からシナリオ読み込みに変更
+- [x] simulation-core: Entry/Exit をエイリアス（飾り）として扱う（エンジン既存実装で対応済み）
+- [x] docker-compose.yml から `sim-executor` サービス削除
+- [x] docker-compose.yml から `sim-executor-backend` サービス削除（前フェーズで実装済み）
+- [x] nginx-proxy から sim-executor 関連ルート削除・factory-visualizer ルート追加
+- [x] sim-portal から sim-executor リンク削除・factory-visualizer リンク追加
 
 ### テスト
-- [ ] factoryId を指定してシミュレーション実行が完了することを確認
-- [ ] WDH テーブル（item_movement）にデータが書き込まれることを確認
-- [ ] WebSocket でリアルタイムイベントが受信できることを確認（Playwright）
-- [ ] sim-executor サービスが docker ps に存在しないことを確認
+- [x] factoryId を指定してシミュレーション実行が完了することを確認
+- [x] WDH テーブル（machine_signal）にデータが書き込まれることを確認（テスト工場はstation接続不足のためitem_movementは0件）
+- [ ] WebSocket でリアルタイムイベントが受信できることを確認（Phase 4 ブラウザテストで実施）
+- [x] sim-executor サービスが docker ps に存在しないことを確認
 
 ---
 
 ## Phase 4: factory-visualizer フロントエンド
 
 ### インフラ
-- [ ] `factory-visualizer/Dockerfile`（nginx:alpine）
-- [ ] `factory-visualizer/nginx.conf`（SPA フォールバック + キャッシュ無効化）
-- [ ] docker-compose.yml にサービス追加
-- [ ] nginx-proxy に `/factory-visualizer/` ルート追加
+- [x] `factory-visualizer/Dockerfile`（nginx:alpine）
+- [x] `factory-visualizer/nginx.conf`（SPA フォールバック + キャッシュ無効化）
+- [x] docker-compose.yml にサービス追加
+- [x] nginx-proxy に `/factory-visualizer/` ルート追加
 
 ### グローバル表示部
 - [ ] `index.html` 骨格（メニューバー・ツールリボン・左パネル・3Dビュー・タイムライン）

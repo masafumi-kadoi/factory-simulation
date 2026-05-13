@@ -116,11 +116,11 @@ services:
     networks:
       - factory-network
 
-  sim-executor:
+  factory-visualizer:
     build:
-      context: ./sim-executor
+      context: ./factory-visualizer
       dockerfile: Dockerfile
-    container_name: factory-sim-executor
+    container_name: factory-visualizer
     expose:
       - "80"
     healthcheck:
@@ -158,7 +158,7 @@ services:
         condition: service_healthy
       sim-editor:
         condition: service_healthy
-      sim-executor:
+      factory-visualizer:
         condition: service_healthy
       sim-factory-manager:
         condition: service_healthy
@@ -185,7 +185,7 @@ services:
         condition: service_healthy
       sim-editor:
         condition: service_healthy
-      sim-executor:
+      factory-visualizer:
         condition: service_healthy
       sim-factory-manager:
         condition: service_healthy

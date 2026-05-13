@@ -18,11 +18,11 @@ const TOOLS = [
         status: 'online'
     },
     {
-        name: 'sim-executor',
+        name: 'factory-visualizer',
         icon: '\u25B6\uFE0F',
-        title: 'Simulation Executor',
-        desc: 'Execute simulations with initial conditions from SimDB.',
-        url: SERVICE_URLS['sim-executor'],
+        title: 'Factory Visualizer',
+        desc: 'Visualize and manage factories in 3D. Run simulations with initial conditions from SimDB.',
+        url: SERVICE_URLS['factory-visualizer'],
         status: 'online'
     },
     {
@@ -76,12 +76,15 @@ function renderToolCards() {
 
 async function loadStats() {
     try {
-        const data = await PortalAPI.getScenarios();
-        const scenarios = data.scenarios || [];
-        const totalExecutions = scenarios.reduce((sum, s) => sum + (s.executionCount || 0), 0);
+        const [factoriesData, execsData] = await Promise.all([
+            PortalAPI.getFactories().catch(() => ({ factories: [] })),
+            PortalAPI.getExecutions().catch(() => [])
+        ]);
+        const factories = factoriesData.factories || [];
+        const execs = Array.isArray(execsData) ? execsData : [];
 
-        document.getElementById('stat-scenarios').textContent = scenarios.length;
-        document.getElementById('stat-executions').textContent = totalExecutions;
+        document.getElementById('stat-scenarios').textContent = factories.length;
+        document.getElementById('stat-executions').textContent = execs.length;
     } catch (err) {
         document.getElementById('stat-scenarios').textContent = '?';
         document.getElementById('stat-executions').textContent = '?';
@@ -101,59 +104,36 @@ async function loadRecentExecutions() {
     const container = document.getElementById('recent-container');
 
     try {
-        const data = await PortalAPI.getScenarios();
-        const scenarios = data.scenarios || [];
+        const execsData = await PortalAPI.getExecutions();
+        const allExecutions = Array.isArray(execsData) ? execsData : [];
 
-        if (scenarios.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">\uD83D\uDCCB</div>
-                    <p>No scenarios yet</p>
-                    <p class="text-muted">Create a scenario in sim-editor to get started</p>
-                </div>
-            `;
-            return;
-        }
-
-        // Fetch executions for all scenarios in parallel
-        const executionResults = await Promise.all(
-            scenarios.map(async (s) => {
-                try {
-                    const execData = await PortalAPI.getExecutions(s.scenarioId);
-                    return (execData.executions || []).map(e => ({ ...e, scenarioName: s.name }));
-                } catch {
-                    return [];
-                }
-            })
-        );
-
-        const allExecutions = executionResults.flat();
-        allExecutions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        const recent = allExecutions.slice(0, 5);
-
-        if (recent.length === 0) {
+        if (allExecutions.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">\u23F3</div>
                     <p>No executions yet</p>
-                    <p class="text-muted">Run a simulation in sim-executor</p>
+                    <p class="text-muted">Run a simulation in Factory Visualizer</p>
                 </div>
             `;
             return;
         }
+
+        allExecutions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const recent = allExecutions.slice(0, 5);
 
         container.innerHTML = '<div class="recent-list">' +
             recent.map(exec => {
                 const statusClass = `status-${escapeHtml(exec.status || 'unknown')}`;
                 const time = formatDateTime(exec.createdAt);
-                const dsId = exec.dataSourceId || exec.simulationId;
+                const dsId = exec.dataSourceId;
+                const label = exec.factoryId ? `Factory: ${escapeHtml(exec.factoryId.substring(0, 8))}` : escapeHtml(exec.scenarioId || '-');
                 const viewLink = exec.status === 'completed' && dsId
                     ? `<a href="${SERVICE_URLS['sim-visualizer']}/?ds=${encodeURIComponent(dsId)}" target="_blank" class="btn btn-outline btn-sm">View</a>`
                     : '';
 
                 return `
                     <div class="recent-item">
-                        <span class="recent-scenario">${escapeHtml(exec.scenarioName)}</span>
+                        <span class="recent-scenario">${label}</span>
                         <span class="status-badge ${statusClass}">${escapeHtml(exec.status || 'unknown')}</span>
                         <span class="recent-time">${time}</span>
                         <span class="recent-actions">${viewLink}</span>
