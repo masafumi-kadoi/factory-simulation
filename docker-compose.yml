@@ -23,6 +23,8 @@ services:
       - ./database/migrations/011_add_quality_status_to_work_events.sql:/docker-entrypoint-initdb.d/011_add_quality_status_to_work_events.sql
       - ./database/migrations/012_phase1_reconstruction.sql:/docker-entrypoint-initdb.d/012_phase1_reconstruction.sql
       - ./database/migrations/013_datasource_factory_link.sql:/docker-entrypoint-initdb.d/013_datasource_factory_link.sql
+      - ./database/migrations/014_recreate_simulation_tables.sql:/docker-entrypoint-initdb.d/014_recreate_simulation_tables.sql
+      - ./database/migrations/015_unified_factory_schema.sql:/docker-entrypoint-initdb.d/015_unified_factory_schema.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s

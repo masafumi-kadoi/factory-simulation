@@ -57,7 +57,7 @@ DB スキーマ（Phase 1）
 ## Phase 1: DB統合マイグレーション
 
 ### 実装
-- [ ] `015_unified_factory_schema.sql` 作成
+- [x] `015_unified_factory_schema.sql` 作成
   - `factory_stations` に `parent_id` TEXT, `position_z` DOUBLE PRECISION 追加
   - `factory_stations.position_x/y` を REAL → DOUBLE PRECISION に変更
   - `factory_stations.seq_number` DROP
@@ -66,12 +66,13 @@ DB スキーマ（Phase 1）
   - `station_type = 'moduler'` の既存データを `'machine'` に UPDATE
   - `scenarios` / `scenario_stations` / `scenario_connections` DROP（既存データは破棄）
   - `execution_configs` に `factory_id UUID REFERENCES factories(id)` 追加、`scenario_id` NOT NULL 解除
+- [x] docker-compose.yml に 014 / 015 マイグレーションのマウントを追加
 
 ### テスト
-- [ ] docker compose up でマイグレーション正常完了を確認
-- [ ] `factory_stations` の新カラム（parent_id, position_z）が存在することを確認
-- [ ] `scenarios` テーブルが削除されていることを確認
-- [ ] 既存の factory_stations データが `station_type = 'machine'` になっていることを確認
+- [x] docker compose up でマイグレーション正常完了を確認
+- [x] `factory_stations` の新カラム（parent_id, position_z）が存在することを確認
+- [x] `scenarios` テーブルが削除されていることを確認
+- [x] 既存の factory_stations データが `station_type = 'machine'` になっていることを確認（UPDATE文を確認）
 
 ---
 
