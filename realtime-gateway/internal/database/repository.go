@@ -669,6 +669,30 @@ func (r *Repository) ListExecutions() ([]ExecutionConfig, error) {
 	return result, rows.Err()
 }
 
+func (r *Repository) ListExecutionsByFactory(factoryID string) ([]ExecutionConfig, error) {
+	rows, err := r.db.Conn().Query(
+		`SELECT id, scenario_id, factory_id, start_time, end_condition_type, end_condition_value,
+		        initial_conditions, status, data_source_id, error_message, created_at, updated_at
+		 FROM execution_configs
+		 WHERE factory_id=$1 AND status='completed'
+		 ORDER BY created_at DESC LIMIT 50`,
+		factoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]ExecutionConfig, 0)
+	for rows.Next() {
+		var e ExecutionConfig
+		if err := rows.Scan(&e.ID, &e.ScenarioID, &e.FactoryID, &e.StartTime, &e.EndConditionType, &e.EndConditionValue,
+			&e.InitialConditions, &e.Status, &e.DataSourceID, &e.ErrorMessage, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, e)
+	}
+	return result, rows.Err()
+}
+
 func (r *Repository) GetExecution(id string) (*ExecutionConfig, error) {
 	var e ExecutionConfig
 	err := r.db.Conn().QueryRow(

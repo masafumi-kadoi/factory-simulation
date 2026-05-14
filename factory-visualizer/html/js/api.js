@@ -109,6 +109,10 @@ export async function fetchExecutions() {
     return req('GET', '/executions');
 }
 
+export async function fetchFactoryExecutions(factoryId) {
+    return req('GET', `/factories/${encodeURIComponent(factoryId)}/executions`);
+}
+
 export async function fetchExecution(execId) {
     return req('GET', `/executions/${encodeURIComponent(execId)}`);
 }

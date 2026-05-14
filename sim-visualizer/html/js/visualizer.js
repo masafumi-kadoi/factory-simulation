@@ -17,6 +17,34 @@ const STATION_COLORS = {
     'exit': 0xe65100
 };
 
+// Tetris-block geometry constants
+const TETRIS_CELL = 14;   // grid pitch (world units per cell)
+const TETRIS_BOX  = 12;   // actual block face size (CELL - gap)
+const TETRIS_H    = 18;   // block height
+
+// Tetris piece shapes per station type: array of [col, row] cells
+const STATION_SHAPES = {
+    'source':     [[0,0],[1,0],[2,0],[3,0]],              // I-piece  ████
+    'drain':      [[0,0],[1,0],[0,1],[1,1]],              // O-piece  ██
+                                                          //           ██
+    'processing': [[0,0],[1,0],[2,0],[2,1]],              // L-piece  ███
+                                                          //             █
+    'merge':      [[0,0],[1,0],[2,0],[1,1]],              // T-down   ███
+                                                          //            █
+    'split':      [[1,0],[0,1],[1,1],[2,1]],              // T-up       █
+                                                          //           ███
+    'switch':     [[0,1],[1,1],[1,0],[2,0]],              // S-piece   ██
+                                                          //          ██
+    'moduler':    [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]],  // 3×2 rect ███
+                                                          //           ███
+    'entry':      [[0,0]],                                // single █
+    'exit':       [[0,0]],                                // single █
+    'inspection': [[0,0],[1,0],[2,0],[0,1]],              // J-piece  ███
+                                                          //          █
+    'discharge':  [[0,0],[1,0],[1,1]],                    // short-L  ██
+                                                          //            █
+};
+
 export class Visualizer3D {
     constructor(container, mouseConfig) {
         this.container = container;
@@ -285,6 +313,14 @@ export class Visualizer3D {
     _animate() {
         this._animFrameId = requestAnimationFrame(() => this._animate());
         if (this.controls) this.controls.update();
+
+        // Spin work cubes for a Tetris-like falling-block feel
+        const t = Date.now() * 0.001;
+        this.works.forEach((work) => {
+            work.mesh.rotation.x = t * 0.5;
+            work.mesh.rotation.y = t * 0.8;
+        });
+
         if (this.renderer && this.scene && this.camera) {
             this.renderer.render(this.scene, this.camera);
         }
@@ -755,52 +791,57 @@ export class Visualizer3D {
     }
 
     _createStation(station, position) {
+        const cells = STATION_SHAPES[station.type] || [[0, 0]];
         const color = STATION_COLORS[station.type] || 0x6c757d;
 
-        const isModuler = station.type === 'moduler';
-        const radius = isModuler ? 45 : 30;
-        const discHeight = 4;
+        const minC = Math.min(...cells.map(([c]) => c));
+        const maxC = Math.max(...cells.map(([c]) => c));
+        const minR = Math.min(...cells.map(([, r]) => r));
+        const maxR = Math.max(...cells.map(([, r]) => r));
+        const cx = (minC + maxC) / 2;
+        const cz = (minR + maxR) / 2;
 
-        const discGeo = new THREE.CylinderGeometry(radius, radius, discHeight, 32);
-        const discMat = new THREE.MeshStandardMaterial({
-            color, transparent: true, opacity: isModuler ? 0.3 : 0.4,
-            emissive: color, emissiveIntensity: 0.4,
-            roughness: 0.4, metalness: 0.1
-        });
-        const discMesh = new THREE.Mesh(discGeo, discMat);
-
-        const ringGeo = new THREE.RingGeometry(radius - 2, radius, 48);
-        const ringMat = new THREE.MeshBasicMaterial({
-            color, transparent: true, opacity: 0.8, side: THREE.DoubleSide
-        });
-        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-        ringMesh.rotation.x = -Math.PI / 2;
-        ringMesh.position.y = discHeight / 2 + 0.1;
+        const edgeColor = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55).getHex();
 
         const group = new THREE.Group();
-        group.add(discMesh);
-        group.add(ringMesh);
 
-        if (isModuler) {
-            const innerRingGeo = new THREE.RingGeometry(radius - 8, radius - 6, 48);
-            const innerRingMat = new THREE.MeshBasicMaterial({
-                color, transparent: true, opacity: 0.5, side: THREE.DoubleSide
+        for (const [c, r] of cells) {
+            const ox = (c - cx) * TETRIS_CELL;
+            const oz = (r - cz) * TETRIS_CELL;
+
+            const geo = new THREE.BoxGeometry(TETRIS_BOX, TETRIS_H, TETRIS_BOX);
+            const mat = new THREE.MeshStandardMaterial({
+                color,
+                emissive: color,
+                emissiveIntensity: 0.15,
+                roughness: 0.3,
+                metalness: 0.35,
             });
-            const innerRingMesh = new THREE.Mesh(innerRingGeo, innerRingMat);
-            innerRingMesh.rotation.x = -Math.PI / 2;
-            innerRingMesh.position.y = discHeight / 2 + 0.2;
-            group.add(innerRingMesh);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(ox, TETRIS_H / 2, oz);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            group.add(mesh);
+
+            const edgeGeo = new THREE.EdgesGeometry(geo, 30);
+            const edgeMat = new THREE.LineBasicMaterial({
+                color: edgeColor,
+                transparent: true,
+                opacity: 0.9,
+            });
+            const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+            edgeMesh.position.copy(mesh.position);
+            group.add(edgeMesh);
         }
 
-        group.position.set(position.x, discHeight / 2, position.z);
+        group.position.set(position.x, 0, position.z);
         group.userData = { stationId: station.id, type: station.type };
-
         this.scene.add(group);
 
-        const labelText = station.name || station.id;
-        const labelY = isModuler ? 25 : 20;
-        const label = this._createLabel(labelText, position.x, labelY, position.z);
-
+        const label = this._createLabel(
+            station.name || station.id,
+            position.x, TETRIS_H + 16, position.z
+        );
         return { mesh: group, label };
     }
 
@@ -862,6 +903,25 @@ export class Visualizer3D {
 
         this.scene.add(sprite);
         return sprite;
+    }
+
+    _workColor(workId, workType) {
+        // Named workType presets
+        const PRESET = {
+            'frame':         0xdd8833,
+            'engine':        0x2288ee,
+            'assembled-car': 0xeebb00,
+            'raw-part':      0x11ccaa,
+            'typeA':         0xff3355,
+            'typeB':         0x3355ff,
+            'typeC':         0xcc33ff,
+        };
+        if (workType && PRESET[workType]) return PRESET[workType];
+        // Hash workId for a stable per-work color
+        const key = workType || workId || 'default';
+        let h = 0;
+        for (let i = 0; i < key.length; i++) h = (h * 127 + key.charCodeAt(i)) >>> 0;
+        return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.62).getHex();
     }
 
     getWorkInfo(workId) {
@@ -1320,21 +1380,27 @@ export class Visualizer3D {
 
         activeWorks.forEach((workInfo, workId) => {
             if (!this.works.has(workId)) {
-                const geometry = new THREE.SphereGeometry(12, 32, 32);
+                const WBOX = 11;
+                const wColor = this._workColor(workId, workInfo.workType);
+                const geometry = new THREE.BoxGeometry(WBOX, WBOX, WBOX);
                 const fillMaterial = new THREE.MeshStandardMaterial({
-                    color: 0xff4444, transparent: false, opacity: 1.0,
-                    emissive: 0xff0000, emissiveIntensity: 0.3,
-                    roughness: 0.3, metalness: 0.7
+                    color: wColor,
+                    emissive: wColor,
+                    emissiveIntensity: 0.5,
+                    roughness: 0.2,
+                    metalness: 0.6,
                 });
                 const fillMesh = new THREE.Mesh(geometry, fillMaterial);
 
-                const wireframeGeometry = new THREE.WireframeGeometry(geometry);
-                const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0xff8888, linewidth: 1 });
-                const wireframeMesh = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+                const edgeGeometry = new THREE.EdgesGeometry(geometry);
+                const edgeMaterial = new THREE.LineBasicMaterial({
+                    color: 0xffffff, transparent: true, opacity: 0.9,
+                });
+                const edgeMesh = new THREE.LineSegments(edgeGeometry, edgeMaterial);
 
                 const group = new THREE.Group();
                 group.add(fillMesh);
-                group.add(wireframeMesh);
+                group.add(edgeMesh);
                 group.userData = { workId };
 
                 const label = this._createWorkLabel(this._shortWorkId(workId), 0, 60, 0);

@@ -1,0 +1,122 @@
+{
+  "name": "複合テスト13 - 初期条件テスト (workIds事前定義 + workTypeルーティング)",
+  "description": "3種ワーク(typeA/typeB/typeC)を生成するラインで、ワークIDを事前定義し、workTypeに基づいた接続ルーティングを検証。シミュレーション途中状態(elapsedTime付き初期ワーク)も使用。",
+  "scenario": {
+    "name": "Test13_InitialConditionsWorkTypeRouting",
+    "stations": [
+      {
+        "id": "src-type-a",
+        "type": "source",
+        "config": {
+          "workType": "typeA",
+          "workCount": 3,
+          "departureTime": 4.0
+        }
+      },
+      {
+        "id": "src-type-b",
+        "type": "source",
+        "config": {
+          "workType": "typeB",
+          "workCount": 3,
+          "departureTime": 4.0
+        }
+      },
+      {
+        "id": "proc-router",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 2.0,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-router-b",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 1.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-type-a",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 2.0,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-type-b",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 1.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "mod-typeA-finish",
+        "type": "moduler",
+        "entryCount": 1,
+        "exitCount": 1,
+        "config": {},
+        "subScenario": {
+          "stations": [
+            {"id": "entry-0", "type": "entry", "config": {}},
+            {"id": "proc-qa", "type": "processing", "config": {"arrivalTime": 0.5, "processingTime": 1.5, "departureTime": 0.5}},
+            {"id": "exit-0", "type": "exit", "config": {}}
+          ],
+          "connections": [
+            {"from": "entry-0", "to": "proc-qa", "fromPortIndex": -1, "toPortIndex": -1},
+            {"from": "proc-qa", "to": "exit-0",  "fromPortIndex": -1, "toPortIndex": -1}
+          ]
+        }
+      },
+      {
+        "id": "drain-type-a",
+        "type": "drain",
+        "config": {"arrivalTime": 0.5}
+      },
+      {
+        "id": "drain-type-b",
+        "type": "drain",
+        "config": {"arrivalTime": 0.5}
+      }
+    ],
+    "connections": [
+      {"from": "src-type-a",      "to": "proc-router",        "condition": "default",      "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "src-type-b",      "to": "proc-router-b",      "condition": "default",      "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-router",     "to": "proc-type-a",        "condition": "default",      "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-router-b",   "to": "proc-type-b",        "condition": "default",      "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-type-a",     "to": "mod-typeA-finish",   "condition": "default",      "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "mod-typeA-finish","to": "drain-type-a",       "condition": "default",      "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-type-b",     "to": "drain-type-b",       "condition": "default",      "fromPortIndex": -1, "toPortIndex": -1}
+    ]
+  },
+  "initialConditions": {
+    "src-type-a": {
+      "workIds": ["work-A-001", "work-A-002", "work-A-003"]
+    },
+    "src-type-b": {
+      "workIds": ["work-B-001", "work-B-002", "work-B-003"]
+    },
+    "proc-router": {
+      "currentWork": {
+        "id": "work-A-PRE",
+        "qualityStatus": "ok"
+      },
+      "elapsedTime": 1.0
+    }
+  },
+  "expectedResults": {
+    "worksCreated": 6,
+    "worksDestroyed": 6,
+    "workIdsVerification": "work-A-001..003 should appear in drain-type-a; work-B-001..003 in drain-type-b",
+    "initialConditionNote": "proc-router starts with work-A-PRE already 1.0s elapsed into processing (remaining 1.0s). workIds for both sources are predefined.",
+    "notes": "Two independent processing paths: typeA → proc-router → proc-type-a → mod → drain-a; typeB → proc-router-b → proc-type-b → drain-b"
+  }
+}

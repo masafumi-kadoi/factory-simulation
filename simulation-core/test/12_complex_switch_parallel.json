@@ -1,0 +1,177 @@
+{
+  "name": "複合テスト12 - 並行生産ライン (Switch divert/merge + カスタムインターロック)",
+  "description": "Source → Switch divert(round-robin) → 2並行Processingライン → Switch merge → Moduler → Drain。Switchの双方向制御とカスタムインターロックルールを網羅。",
+  "scenario": {
+    "name": "Test12_SwitchParallelLines",
+    "stations": [
+      {
+        "id": "src-parts",
+        "type": "source",
+        "config": {
+          "workType": "raw-part",
+          "workCount": 8,
+          "departureTime": 3.0
+        }
+      },
+      {
+        "id": "proc-intake",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 1.0,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "sw-divert",
+        "type": "switch",
+        "config": {
+          "direction": "divert",
+          "portCount": 2,
+          "selectMode": "round-robin",
+          "arrivalTime": 0.3,
+          "departureTime": 0.3,
+          "noWorkTimeout": -1,
+          "stayTime": -1
+        }
+      },
+      {
+        "id": "proc-line-a-1",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 2.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-line-a-2",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 1.5,
+          "departureTime": 0.5,
+          "interlockRules": {
+            "signals": [
+              {"name": "inputWorkPresent",    "initial": false},
+              {"name": "processingWorkPresent","initial": false},
+              {"name": "outputWorkPresent",   "initial": false},
+              {"name": "running",             "initial": false},
+              {"name": "complete",            "initial": false},
+              {"name": "inputReady",          "initial": true},
+              {"name": "outputReady",         "initial": false},
+              {"name": "processReady",        "initial": false}
+            ],
+            "rules": [
+              {"id": "R1", "target": "inputReady",   "value": true,  "conditions": [{"signal": "inputWorkPresent", "value": false}]},
+              {"id": "R2", "target": "inputReady",   "value": false, "conditions": [{"signal": "inputWorkPresent", "value": true}]},
+              {"id": "R3", "target": "processReady", "value": true,  "conditions": [{"signal": "inputWorkPresent", "value": true}, {"signal": "running", "value": false}, {"signal": "complete", "value": false}]},
+              {"id": "R4", "target": "processReady", "value": false, "conditions": [{"signal": "running", "value": true}]},
+              {"id": "R5", "target": "outputReady",  "value": true,  "conditions": [{"signal": "complete", "value": true}, {"signal": "outputWorkPresent", "value": true}]},
+              {"id": "R6", "target": "outputReady",  "value": false, "conditions": [{"signal": "outputWorkPresent", "value": false}]}
+            ]
+          }
+        }
+      },
+      {
+        "id": "proc-line-b-1",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 1.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-line-b-2",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 2.0,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "sw-merge",
+        "type": "switch",
+        "config": {
+          "direction": "merge",
+          "portCount": 2,
+          "selectMode": "round-robin",
+          "arrivalTime": 0.3,
+          "departureTime": 0.3,
+          "noWorkTimeout": -1,
+          "stayTime": -1
+        }
+      },
+      {
+        "id": "mod-final-process",
+        "type": "moduler",
+        "entryCount": 1,
+        "exitCount": 1,
+        "config": {},
+        "subScenario": {
+          "stations": [
+            {
+              "id": "entry-0",
+              "type": "entry",
+              "config": {}
+            },
+            {
+              "id": "proc-assemble",
+              "type": "processing",
+              "config": {
+                "arrivalTime": 0.5,
+                "processingTime": 2.0,
+                "departureTime": 0.5
+              }
+            },
+            {
+              "id": "proc-pack",
+              "type": "processing",
+              "config": {
+                "arrivalTime": 0.5,
+                "processingTime": 1.0,
+                "departureTime": 0.5
+              }
+            },
+            {
+              "id": "exit-0",
+              "type": "exit",
+              "config": {}
+            }
+          ],
+          "connections": [
+            {"from": "entry-0",      "to": "proc-assemble", "fromPortIndex": -1, "toPortIndex": -1},
+            {"from": "proc-assemble","to": "proc-pack",     "fromPortIndex": -1, "toPortIndex": -1},
+            {"from": "proc-pack",    "to": "exit-0",        "fromPortIndex": -1, "toPortIndex": -1}
+          ]
+        }
+      },
+      {
+        "id": "drain-output",
+        "type": "drain",
+        "config": {
+          "arrivalTime": 0.5
+        }
+      }
+    ],
+    "connections": [
+      {"from": "src-parts",     "to": "proc-intake",       "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-intake",   "to": "sw-divert",         "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "sw-divert",     "to": "proc-line-a-1",     "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "sw-divert",     "to": "proc-line-b-1",     "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-line-a-1", "to": "proc-line-a-2",     "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-line-a-2", "to": "sw-merge",          "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-line-b-1", "to": "proc-line-b-2",     "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-line-b-2", "to": "sw-merge",          "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "sw-merge",      "to": "mod-final-process", "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "mod-final-process", "to": "drain-output",  "fromPortIndex": -1, "toPortIndex": -1}
+    ]
+  },
+  "expectedResults": {
+    "worksCreated": 8,
+    "worksDestroyed": 8,
+    "notes": "sw-divert round-robin: 4 works to line-a, 4 works to line-b. proc-line-a-2 uses custom interlock rules (identical behavior to default). sw-merge merges the two parallel streams. mod-final-process has 2 internal processing steps."
+  }
+}

@@ -38,6 +38,7 @@
             <div class="toolbar-group">
                 <button class="toolbar-btn" id="btn-run" title="シミュレーション実行">▶ 実行</button>
                 <button class="toolbar-btn" id="btn-stop-sim" title="実行停止" disabled>■ 停止</button>
+                <button class="toolbar-btn" id="btn-open-visualizer" title="3D Visualizer で開く" disabled>🎲 3D Viewer</button>
             </div>
             <div class="toolbar-group">
                 <button class="toolbar-btn" id="btn-fit" title="全体表示">⊡ フィット</button>
@@ -96,7 +97,7 @@
                         <div class="setting-row">
                             <label>内部表示</label>
                             <label class="toggle-switch">
-                                <input type="checkbox" id="show-internal">
+                                <input type="checkbox" id="show-internal" checked>
                                 <span class="toggle-track"></span>
                             </label>
                         </div>
@@ -142,6 +143,18 @@
                             <button class="btn-primary" id="btn-fetch-ic">初期条件取得</button>
                         </div>
                         <div id="ic-status" class="ic-status"></div>
+                    </div>
+                </div>
+
+                <div class="panel-section" id="section-executions">
+                    <div class="section-header" data-toggle="executions">
+                        <span>実行履歴</span>
+                        <span class="toggle-icon">▾</span>
+                    </div>
+                    <div class="section-body" id="executions-body">
+                        <div id="execution-list" class="execution-list">
+                            <div class="empty-hint">工場を選択してください</div>
+                        </div>
                     </div>
                 </div>
             </aside>

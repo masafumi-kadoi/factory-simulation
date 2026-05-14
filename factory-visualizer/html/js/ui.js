@@ -139,6 +139,44 @@ export function setTimeDisplay(ms) {
     });
 }
 
+export function renderExecutionList(executions) {
+    const container = document.getElementById('execution-list');
+    if (!container) return;
+
+    if (!executions || executions.length === 0) {
+        container.innerHTML = '<div class="empty-hint">実行履歴がありません</div>';
+        return;
+    }
+
+    container.innerHTML = executions.map(exec => {
+        const startDt = exec.startTime ? new Date(exec.startTime).toLocaleString('ja-JP', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit',
+        }) : '—';
+        const createdDt = exec.createdAt ? new Date(exec.createdAt).toLocaleString('ja-JP', {
+            month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit',
+        }) : '—';
+        return `
+        <div class="exec-item" data-exec-id="${esc(exec.id)}" data-ds-id="${esc(exec.dataSourceId || '')}">
+            <div class="exec-start">${esc(startDt)}</div>
+            <div class="exec-meta">実行: ${esc(createdDt)}</div>
+        </div>`;
+    }).join('');
+}
+
+export function setExecutionListClickHandler(cb) {
+    const container = document.getElementById('execution-list');
+    if (!container) return;
+    container.addEventListener('click', e => {
+        const item = e.target.closest('.exec-item');
+        if (!item) return;
+        document.querySelectorAll('.exec-item.selected').forEach(el => el.classList.remove('selected'));
+        item.classList.add('selected');
+        cb && cb(item.dataset.execId, item.dataset.dsId);
+    });
+}
+
 function stationIcon(type) {
     const icons = {
         source: '⬤', processing: '⬟', drain: '⬛',

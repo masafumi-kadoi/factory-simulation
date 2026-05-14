@@ -1,0 +1,177 @@
+{
+  "name": "複合テスト11 - 自動車組立ライン (Merge/Split/Moduler)",
+  "description": "Source×2 → Processing複数段 → Merge → Moduler(内部3ステーション) → Split → Processing×2 → Drain×2。全主要ステーション種別を網羅。",
+  "scenario": {
+    "name": "Test11_AutomotiveAssembly",
+    "stations": [
+      {
+        "id": "src-frame",
+        "type": "source",
+        "config": {
+          "workType": "frame",
+          "workCount": 4,
+          "departureTime": 3.0
+        }
+      },
+      {
+        "id": "src-engine",
+        "type": "source",
+        "config": {
+          "workType": "engine",
+          "workCount": 4,
+          "departureTime": 4.0
+        }
+      },
+      {
+        "id": "proc-frame-1",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 2.0,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-frame-2",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 1.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-engine-1",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 3.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "merge-assemble",
+        "type": "merge",
+        "config": {
+          "mergeCount": 2,
+          "inPorts": [
+            {"capacity": 1},
+            {"capacity": 1}
+          ],
+          "outputWorkType": "assembled-car",
+          "processingTime": 2.0,
+          "arrivalTime": 0.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "mod-finish",
+        "type": "moduler",
+        "entryCount": 1,
+        "exitCount": 1,
+        "config": {},
+        "subScenario": {
+          "stations": [
+            {
+              "id": "entry-1",
+              "type": "entry",
+              "config": {}
+            },
+            {
+              "id": "proc-paint",
+              "type": "processing",
+              "config": {
+                "arrivalTime": 0.5,
+                "processingTime": 3.0,
+                "departureTime": 0.5
+              }
+            },
+            {
+              "id": "proc-inspect",
+              "type": "processing",
+              "config": {
+                "arrivalTime": 0.5,
+                "processingTime": 1.5,
+                "departureTime": 0.5
+              }
+            },
+            {
+              "id": "exit-1",
+              "type": "exit",
+              "config": {}
+            }
+          ],
+          "connections": [
+            {"from": "entry-1",    "to": "proc-paint",   "fromPortIndex": -1, "toPortIndex": -1},
+            {"from": "proc-paint", "to": "proc-inspect",  "fromPortIndex": -1, "toPortIndex": -1},
+            {"from": "proc-inspect","to": "exit-1",       "fromPortIndex": -1, "toPortIndex": -1}
+          ]
+        }
+      },
+      {
+        "id": "split-disassemble",
+        "type": "split",
+        "config": {
+          "splitCount": 2,
+          "outPorts": [
+            {"capacity": 1},
+            {"capacity": 1}
+          ],
+          "processingTime": 1.0,
+          "arrivalTime": 0.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-qc-frame",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 1.0,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "proc-qc-engine",
+        "type": "processing",
+        "config": {
+          "arrivalTime": 0.5,
+          "processingTime": 1.5,
+          "departureTime": 0.5
+        }
+      },
+      {
+        "id": "drain-frame-out",
+        "type": "drain",
+        "config": {
+          "arrivalTime": 0.5
+        }
+      },
+      {
+        "id": "drain-engine-out",
+        "type": "drain",
+        "config": {
+          "arrivalTime": 0.5
+        }
+      }
+    ],
+    "connections": [
+      {"from": "src-frame",         "to": "proc-frame-1",       "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-frame-1",      "to": "proc-frame-2",       "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-frame-2",      "to": "merge-assemble",     "fromPortIndex": -1, "toPortIndex": 0},
+      {"from": "src-engine",        "to": "proc-engine-1",      "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-engine-1",     "to": "merge-assemble",     "fromPortIndex": -1, "toPortIndex": 1},
+      {"from": "merge-assemble",    "to": "mod-finish",         "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "mod-finish",        "to": "split-disassemble",  "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "split-disassemble", "to": "proc-qc-frame",      "fromPortIndex": 0,  "toPortIndex": -1},
+      {"from": "split-disassemble", "to": "proc-qc-engine",     "fromPortIndex": 1,  "toPortIndex": -1},
+      {"from": "proc-qc-frame",     "to": "drain-frame-out",    "fromPortIndex": -1, "toPortIndex": -1},
+      {"from": "proc-qc-engine",    "to": "drain-engine-out",   "fromPortIndex": -1, "toPortIndex": -1}
+    ]
+  },
+  "expectedResults": {
+    "worksCreated": 8,
+    "worksDestroyed": 8,
+    "notes": "src-frame(4) + src-engine(4) = 8 works in. Merge combines frame+engine→assembled-car(4). Split reconstructs frame+engine=8 total works out. drain-frame-out=4, drain-engine-out=4."
+  }
+}

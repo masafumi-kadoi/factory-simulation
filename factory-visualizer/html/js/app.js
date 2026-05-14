@@ -2,7 +2,7 @@
 import { Scene3D } from './scene3d.js';
 import { Timeline } from './timeline.js';
 import { initAIPanel, FloatingInfoPanel } from './panels.js';
-import { initLeftPanel, applyDocTheme, renderObjectList, setObjectListClickHandler, setStatus, setICStatus, setTimeDisplay } from './ui.js';
+import { initLeftPanel, applyDocTheme, renderObjectList, setObjectListClickHandler, setStatus, setICStatus, setTimeDisplay, renderExecutionList, setExecutionListClickHandler } from './ui.js';
 import * as API from './api.js';
 
 // ---- State ----
@@ -110,6 +110,16 @@ function initUI() {
         if (st) openInfoPanel(st, type);
     });
 
+    setExecutionListClickHandler((execId, dsId) => {
+        if (!dsId) return;
+        state.liveDataSourceId = dsId;
+        subscribeWebSocket(dsId);
+        setStatus('実行履歴を再生中', 'status-running');
+        document.getElementById('btn-stop-sim').disabled = false;
+        const vizBtn = document.getElementById('btn-open-visualizer');
+        if (vizBtn) vizBtn.disabled = false;
+    });
+
     // Factory selector
     document.getElementById('factory-select').addEventListener('change', async e => {
         const fid = e.target.value;
@@ -122,6 +132,12 @@ function initUI() {
     document.getElementById('btn-stop-sim').addEventListener('click', () => stopLive());
     document.getElementById('btn-fit').addEventListener('click', () => scene3d && scene3d.fitView());
     document.getElementById('btn-top').addEventListener('click', () => scene3d && scene3d.setTopView());
+    document.getElementById('btn-open-visualizer').addEventListener('click', () => {
+        const dsId = state.liveDataSourceId;
+        if (dsId) {
+            window.open(`/visualizer/?ds=${encodeURIComponent(dsId)}`, '_blank');
+        }
+    });
 
     // Simulation panel
     document.getElementById('btn-fetch-ic').addEventListener('click', () => fetchInitialConditions());
@@ -148,9 +164,10 @@ async function loadFactories() {
 async function selectFactory(factoryId) {
     try {
         setStatus('読み込み中...', 'status-running');
-        const [stations, connections] = await Promise.all([
+        const [stations, connections, executions] = await Promise.all([
             API.fetchFactoryStations(factoryId),
             API.fetchFactoryConnections(factoryId),
+            API.fetchFactoryExecutions(factoryId).catch(() => []),
         ]);
 
         state.currentFactory = factoryId;
@@ -163,6 +180,7 @@ async function selectFactory(factoryId) {
         scene3d.loadFactory(state.stations, state.connections);
 
         renderObjectList(state.stations, state.activeWorks, state.activeFilters);
+        renderExecutionList(Array.isArray(executions) ? executions : []);
         setStatus(`工場: ${factoryName(factoryId)}`, 'status-ok');
 
         // Set default sim start to now
@@ -248,6 +266,17 @@ async function runSimulation() {
 
         // Load execution result and subscribe to live
         await loadExecutionResult(exec.executionId, exec.dataSourceId, startDatetime, simulationTime);
+
+        // Enable the "Open in 3D Viewer" button now that we have a dataSourceId
+        const vizBtn = document.getElementById('btn-open-visualizer');
+        if (vizBtn) vizBtn.disabled = false;
+
+        // Refresh execution history list
+        if (fid) {
+            API.fetchFactoryExecutions(fid).then(execs => {
+                renderExecutionList(Array.isArray(execs) ? execs : []);
+            }).catch(() => {});
+        }
     } catch (err) {
         setRunModalStatus('失敗: ' + err.message, true);
         setStatus('実行失敗', 'status-error');
@@ -279,6 +308,9 @@ async function loadExecutionResult(execId, dataSourceId, startDatetime, simulati
 
         state.liveDataSourceId = dataSourceId;
         subscribeWebSocket(dataSourceId);
+
+        const vizBtn = document.getElementById('btn-open-visualizer');
+        if (vizBtn && dataSourceId) vizBtn.disabled = false;
     } catch (err) {
         setStatus('結果読み込み失敗: ' + err.message, 'status-error');
     }

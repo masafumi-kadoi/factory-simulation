@@ -32,6 +32,24 @@ const STATION_COLORS = {
     exit:       0xe65100,
 };
 
+// Tetris-block geometry constants (shared with sim-visualizer)
+const TETRIS_CELL = 14;
+const TETRIS_BOX  = 12;
+const TETRIS_H    = 18;
+
+const STATION_SHAPES = {
+    source:     [[0,0],[1,0],[2,0],[3,0]],
+    drain:      [[0,0],[1,0],[0,1],[1,1]],
+    processing: [[0,0],[1,0],[2,0],[2,1]],
+    merge:      [[0,0],[1,0],[2,0],[1,1]],
+    split:      [[1,0],[0,1],[1,1],[2,1]],
+    switch:     [[0,1],[1,1],[1,0],[2,0]],
+    entry:      [[0,0]],
+    exit:       [[0,0]],
+    inspection: [[0,0],[1,0],[2,0],[0,1]],
+    discharge:  [[0,0],[1,0],[1,1]],
+};
+
 export class Scene3D {
     constructor(container) {
         this.container = container;
@@ -43,7 +61,7 @@ export class Scene3D {
         this._theme = 'dark';
         this._shellOpacity = 0.6;
         this._internalRadius = 15;
-        this._showInternal = false;
+        this._showInternal = true;
         this._showStationNames = true;
         this._showWorks = true;
         this._showInterlocks = false;
@@ -249,44 +267,91 @@ export class Scene3D {
     }
 
     _buildCylinderMesh(radius, height, opacity) {
-        const geo = new THREE.CylinderGeometry(radius, radius, height, 16);
+        // Tetris-style box replaces the old cylinder fallback
+        const W = radius * 1.4;
+        const group = new THREE.Group();
+
+        const geo = new THREE.BoxGeometry(W, height, W);
         const mat = new THREE.MeshStandardMaterial({
             color: 0x4a9eff,
             transparent: true,
             opacity,
-            roughness: 0.4,
+            roughness: 0.35,
             metalness: 0.3,
+            emissive: 0x4a9eff,
+            emissiveIntensity: 0.35,
         });
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.y = height / 2;
-        return mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+
+        const edgeGeo = new THREE.EdgesGeometry(geo, 30);
+        const edgeMat = new THREE.LineBasicMaterial({ color: 0xaaddff, transparent: true, opacity: 1.0 });
+        const edges = new THREE.LineSegments(edgeGeo, edgeMat);
+        edges.position.y = height / 2;
+        group.add(edges);
+
+        return group;
     }
 
     _addInternalStation(station) {
-        const cfg = station.config || {};
         const px = station.positionX || 0;
         const pz = station.positionY || 0;
 
-        const color = STATION_COLORS[station.stationType] || 0x666666;
-        const geo = new THREE.CylinderGeometry(this._internalRadius, this._internalRadius, 4, 16);
-        const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.userData.stationId = station.stationId;
-        mesh.position.set(px, 2, pz);
+        const stationType = station.stationType || 'processing';
+        const cells = STATION_SHAPES[stationType] || [[0, 0]];
+        const color = STATION_COLORS[stationType] || 0x666666;
+
+        const minC = Math.min(...cells.map(([c]) => c));
+        const maxC = Math.max(...cells.map(([c]) => c));
+        const minR = Math.min(...cells.map(([, r]) => r));
+        const maxR = Math.max(...cells.map(([, r]) => r));
+        const cx = (minC + maxC) / 2;
+        const cz = (minR + maxR) / 2;
+        const edgeColor = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55).getHex();
 
         const group = new THREE.Group();
         group.userData.stationId = station.stationId;
         group.userData.isInternal = true;
-        group.add(mesh);
+
+        for (const [c, r] of cells) {
+            const ox = (c - cx) * TETRIS_CELL;
+            const oz = (r - cz) * TETRIS_CELL;
+
+            const geo = new THREE.BoxGeometry(TETRIS_BOX, TETRIS_H, TETRIS_BOX);
+            const mat = new THREE.MeshStandardMaterial({
+                color,
+                emissive: color,
+                emissiveIntensity: 0.4,
+                roughness: 0.3,
+                metalness: 0.35,
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(ox, TETRIS_H / 2, oz);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.userData.stationId = station.stationId;
+            group.add(mesh);
+
+            const edgeGeo = new THREE.EdgesGeometry(geo, 30);
+            const edgeMat = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.9 });
+            const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+            edgeMesh.position.copy(mesh.position);
+            group.add(edgeMesh);
+        }
 
         if (this._showStationNames) {
-            const label = this._createLabel(station.name || station.stationId, 0, 12, 0);
+            const label = this._createLabel(station.name || station.stationId, 0, TETRIS_H + 8, 0);
             group.add(label);
         }
 
+        group.position.set(px, 0, pz);
         group.visible = this._showInternal;
         this.scene.add(group);
-        this._internalStations.set(station.stationId, { group, mesh, station });
+        // store as both group and mesh so existing destructuring patterns work
+        this._internalStations.set(station.stationId, { group, mesh: group, station });
     }
 
     _addConnectionLine(conn, stations) {
@@ -385,34 +450,71 @@ export class Scene3D {
 
     // ---- Works ----
 
-    setWorkPosition(workId, station) {
+    _workColor(workId, workType) {
+        const PRESET = {
+            'frame':         0xdd8833,
+            'engine':        0x2288ee,
+            'assembled-car': 0xeebb00,
+            'raw-part':      0x11ccaa,
+            'typeA':         0xff3355,
+            'typeB':         0x3355ff,
+            'typeC':         0xcc33ff,
+        };
+        if (workType && PRESET[workType]) return PRESET[workType];
+        const key = workType || workId || 'default';
+        let h = 0;
+        for (let i = 0; i < key.length; i++) h = (h * 127 + key.charCodeAt(i)) >>> 0;
+        return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.62).getHex();
+    }
+
+    setWorkPosition(workId, stationId, workType) {
         if (!this._showWorks) return;
-        const stEntry = this._machines.get(station) || this._internalStations.get(station);
+        const stEntry = this._machines.get(stationId) || this._internalStations.get(stationId);
         if (!stEntry) return;
 
         const px = stEntry.station.positionX || 0;
-        const py = (stEntry.station.positionZ || 0) + 100;
+        const py = (stEntry.station.positionZ || 0) + TETRIS_H + 20;
         const pz = stEntry.station.positionY || 0;
 
         let entry = this._works.get(workId);
         if (!entry) {
-            const geo = new THREE.SphereGeometry(12, 12, 12);
-            const mat = new THREE.MeshStandardMaterial({ color: 0xff3333, roughness: 0.5 });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.userData.workId = workId;
-            this.scene.add(mesh);
-            entry = { mesh, stationId: station };
+            const WBOX = 11;
+            const color = this._workColor(workId, workType);
+            const geo = new THREE.BoxGeometry(WBOX, WBOX, WBOX);
+            const mat = new THREE.MeshStandardMaterial({
+                color,
+                emissive: color,
+                emissiveIntensity: 0.5,
+                roughness: 0.2,
+                metalness: 0.6,
+            });
+            const fillMesh = new THREE.Mesh(geo, mat);
+
+            const edgeGeo = new THREE.EdgesGeometry(geo);
+            const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+            const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+
+            const group = new THREE.Group();
+            group.add(fillMesh);
+            group.add(edgeMesh);
+            group.userData.workId = workId;
+            this.scene.add(group);
+
+            entry = { mesh: group, stationId };
             this._works.set(workId, entry);
         }
         entry.mesh.position.set(px, py, pz);
-        entry.stationId = station;
+        entry.stationId = stationId;
     }
 
     removeWork(workId) {
         const entry = this._works.get(workId);
         if (entry) {
             this.scene.remove(entry.mesh);
-            entry.mesh.geometry.dispose();
+            entry.mesh.traverse(obj => {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+            });
             this._works.delete(workId);
         }
     }
@@ -463,13 +565,8 @@ export class Scene3D {
     }
 
     setInternalRadius(r) {
+        // Internal stations now use fixed Tetris blocks; radius slider is a no-op
         this._internalRadius = r;
-        this._internalStations.forEach(({ mesh }) => {
-            if (mesh.geometry) {
-                mesh.geometry.dispose();
-                mesh.geometry = new THREE.CylinderGeometry(r, r, 4, 16);
-            }
-        });
     }
 
     setShowWorks(v) {
@@ -563,6 +660,13 @@ export class Scene3D {
     _animate() {
         this._raf = requestAnimationFrame(() => this._animate());
         this.controls && this.controls.update();
+
+        const t = Date.now() * 0.001;
+        this._works.forEach(({ mesh }) => {
+            mesh.rotation.x = t * 0.5;
+            mesh.rotation.y = t * 0.8;
+        });
+
         this.renderer && this.renderer.render(this.scene, this.camera);
     }
 

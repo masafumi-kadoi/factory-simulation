@@ -14,8 +14,11 @@
     </script>
     <link rel="stylesheet" href="css/style.css">
     <style>
-        body { background: var(--bg-primary); overflow: auto; }
-        #local-app { display: flex; flex-direction: column; min-height: 100vh; }
+        * { box-sizing: border-box; }
+        body { background: var(--bg-primary); overflow: hidden; margin: 0; }
+        #local-app { display: flex; flex-direction: column; height: 100vh; }
+
+        /* ---- Toolbar ---- */
         #local-toolbar {
             height: 36px;
             background: var(--bg-panel-hdr);
@@ -24,154 +27,279 @@
             flex-shrink: 0;
         }
         #local-title { font-size: 13px; font-weight: 600; flex: 1; }
+
+        /* ---- Tabs ---- */
         .tab-bar {
             display: flex;
             background: var(--bg-panel);
             border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
         }
         .tab {
-            padding: 8px 16px;
-            font-size: 12px;
-            cursor: pointer;
-            color: var(--text-secondary);
-            border-bottom: 2px solid transparent;
+            padding: 8px 16px; font-size: 12px; cursor: pointer;
+            color: var(--text-secondary); border-bottom: 2px solid transparent;
             user-select: none;
         }
-        .tab.active {
-            color: var(--accent-blue);
-            border-bottom-color: var(--accent-blue);
-        }
-        .tab-content { display: none; flex: 1; padding: 16px; }
-        .tab-content.active { display: block; }
+        .tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+
+        .tab-content { display: none; flex: 1; min-height: 0; }
+        .tab-content.active { display: flex; flex-direction: column; }
+
+        /* ---- Info tab ---- */
+        #tab-info { padding: 16px; overflow-y: auto; }
         .field-group { margin-bottom: 14px; }
         .field-group label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
         .field-group input, .field-group textarea, .field-group select {
-            width: 100%;
-            background: var(--bg-input);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 6px 8px;
-            font-size: 12px;
-            font-family: inherit;
+            width: 100%; background: var(--bg-input); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+            padding: 6px 8px; font-size: 12px; font-family: inherit;
         }
         .field-group textarea { min-height: 80px; resize: vertical; }
-        #logic-canvas-wrapper {
-            width: 100%; height: 400px;
+
+        /* ---- Model3D tab ---- */
+        #tab-model3d { flex-direction: row; }
+        .model-left {
+            flex: 1; display: flex; flex-direction: column; min-width: 0;
+            border-right: 1px solid var(--border-color);
+        }
+        .model-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+        .model-toolbar {
+            padding: 6px 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+            background: var(--bg-panel); border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+        }
+        .model-toolbar .tool-btn {
+            font-size: 11px; padding: 3px 9px; background: var(--bg-surface);
+            color: var(--text-primary); border: 1px solid var(--border-color);
+            border-radius: 3px; cursor: pointer;
+        }
+        .model-toolbar .tool-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+        .model-toolbar .tool-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+        #model-status { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+
+        #model-grid-canvas {
+            flex: 1; width: 100%; min-height: 0;
+            display: block; cursor: crosshair;
+        }
+        #model-3d-canvas { flex: 1; width: 100%; min-height: 0; display: block; }
+
+        .model-3d-header {
+            padding: 6px 10px; font-size: 11px; color: var(--text-muted);
+            background: var(--bg-panel); border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+        }
+
+        /* ---- Logic tab ---- */
+        #tab-logic { flex-direction: row; }
+
+        .logic-palette {
+            width: 88px; flex-shrink: 0; display: flex; flex-direction: column; gap: 3px;
+            padding: 8px 6px; background: var(--bg-panel); border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+        }
+        .palette-section {
+            font-size: 10px; color: var(--text-muted); margin: 6px 0 2px; text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .logic-palette .tool-btn {
+            font-size: 11px; padding: 5px 4px; text-align: center;
+            background: var(--bg-surface); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer;
+        }
+        .logic-palette .tool-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+        .logic-palette .tool-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+        .logic-palette .station-btn {
+            font-size: 10px; padding: 4px 3px; text-align: center;
+            background: var(--bg-surface); color: var(--text-secondary);
+            border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer;
+        }
+        .logic-palette .station-btn:hover { border-color: var(--accent-blue); }
+
+        .logic-canvas-area {
+            flex: 1; position: relative; min-width: 0; overflow: hidden;
             background: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            position: relative;
-            overflow: hidden;
         }
-        #logic-canvas { width: 100%; height: 100%; }
-        .station-list { margin-top: 12px; }
-        .station-list-item {
-            display: flex; gap: 8px; align-items: center;
-            padding: 4px 0;
-            border-bottom: 1px solid var(--border-color);
-            font-size: 12px;
+        #logic-svg { width: 100%; height: 100%; display: block; }
+        #logic-info-bar {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            background: rgba(15,22,41,0.85); border-top: 1px solid var(--border-color);
+            padding: 4px 10px; font-size: 11px; color: var(--text-secondary);
         }
-        .station-list-item span { flex: 1; }
+
+        .logic-props {
+            width: 200px; flex-shrink: 0; display: flex; flex-direction: column;
+            background: var(--bg-panel); border-left: 1px solid var(--border-color);
+            padding: 10px; overflow-y: auto;
+        }
+        .props-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; }
+        .props-empty { font-size: 11px; color: var(--text-muted); }
+        .props-field { margin-bottom: 10px; }
+        .props-field label { display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 3px; }
+        .props-field input, .props-field select {
+            width: 100%; background: var(--bg-input); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: 3px;
+            padding: 4px 6px; font-size: 11px; font-family: inherit;
+        }
+        .props-delete-btn {
+            margin-top: 8px; font-size: 11px; padding: 4px 8px;
+            background: var(--status-error, #dc3545); color: #fff;
+            border: none; border-radius: 3px; cursor: pointer; width: 100%;
+        }
+
+        /* ---- Bottom bar ---- */
         .bottom-bar {
-            background: var(--bg-panel);
-            border-top: 1px solid var(--border-color);
-            padding: 10px 16px;
-            display: flex; justify-content: flex-end; gap: 8px;
-            flex-shrink: 0;
+            background: var(--bg-panel); border-top: 1px solid var(--border-color);
+            padding: 10px 16px; display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;
         }
         .btn-secondary {
-            background: var(--bg-surface);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 6px 14px;
-            font-size: 12px;
-            cursor: pointer;
+            background: var(--bg-surface); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+            padding: 6px 14px; font-size: 12px; cursor: pointer;
         }
-        .voxel-info {
-            background: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 10px;
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-top: 8px;
+
+        /* ---- Modals ---- */
+        .lw-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+            display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .lw-modal {
+            background: var(--bg-panel); border: 1px solid var(--border-color);
+            border-radius: 6px; min-width: 260px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .lw-modal-header {
+            padding: 12px 14px; border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .lw-modal-title { font-size: 13px; font-weight: 600; }
+        .lw-modal-close { background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; }
+        .lw-modal-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+        .lw-modal-body label { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+        .lw-modal-body input[type="number"] {
+            width: 80px; padding: 4px 6px; background: var(--bg-input);
+            color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 3px; font-size: 12px;
+        }
+        .lw-modal-footer {
+            padding: 10px 14px; border-top: 1px solid var(--border-color);
+            display: flex; justify-content: flex-end; gap: 8px;
         }
     </style>
 </head>
 <body>
-    <div id="local-app">
-        <div id="local-toolbar">
-            <span id="local-title">Machine Editor</span>
-            <span id="local-factory-info" style="color:var(--text-muted);font-size:11px;"></span>
-        </div>
-        <div class="tab-bar">
-            <div class="tab active" data-tab="info">モデル情報編集</div>
-            <div class="tab" data-tab="model3d">3Dモデル編集</div>
-            <div class="tab" data-tab="logic">ロジック編集</div>
-        </div>
+<div id="local-app">
+    <div id="local-toolbar">
+        <span id="local-title">Machine Editor</span>
+        <span id="local-factory-info" style="color:var(--text-muted);font-size:11px;"></span>
+    </div>
+    <div class="tab-bar">
+        <div class="tab active" data-tab="info">モデル情報</div>
+        <div class="tab" data-tab="model3d">3Dモデル編集</div>
+        <div class="tab" data-tab="logic">ロジック編集</div>
+    </div>
 
-        <!-- Tab: Info -->
-        <div class="tab-content active" id="tab-info">
-            <div class="field-group">
-                <label>設備名 (name)</label>
-                <input type="text" id="info-name" placeholder="設備名を入力">
-            </div>
-            <div class="field-group">
-                <label>メタデータ (JSON)</label>
-                <textarea id="info-metadata" placeholder='{"description": ""}'></textarea>
-            </div>
-            <div class="field-group">
-                <label>Station ID</label>
-                <input type="text" id="info-sid" readonly style="opacity:0.6">
-            </div>
+    <!-- Tab: Info -->
+    <div class="tab-content active" id="tab-info">
+        <div class="field-group">
+            <label>設備名 (name)</label>
+            <input type="text" id="info-name" placeholder="設備名を入力">
         </div>
-
-        <!-- Tab: 3D Model -->
-        <div class="tab-content" id="tab-model3d">
-            <div class="voxel-info">
-                <strong>3Dモデル設定</strong><br>
-                現在: <span id="model-current-type">なし（円柱フォールバック）</span>
-            </div>
-            <div class="field-group" style="margin-top:12px;">
-                <label>グリッドサイズ (voxel grid)</label>
-                <input type="number" id="model-gridsize" value="20" min="5" max="100">
-            </div>
-            <div class="field-group">
-                <label>セル高さ</label>
-                <input type="number" id="model-height" value="40" min="5" max="500">
-            </div>
-            <div class="field-group">
-                <label>セル座標 (例: [[0,0],[1,0],[2,0]])</label>
-                <textarea id="model-cells" placeholder="[[0,0],[1,0]]"></textarea>
-            </div>
-            <div class="field-group">
-                <label>回転Y (度)</label>
-                <input type="number" id="model-rotation" value="0" step="15">
-            </div>
+        <div class="field-group">
+            <label>メタデータ (JSON)</label>
+            <textarea id="info-metadata" placeholder='{"description": ""}'></textarea>
         </div>
-
-        <!-- Tab: Logic -->
-        <div class="tab-content" id="tab-logic">
-            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">
-                設備内のステーション一覧と接続を管理します。
-            </div>
-            <div id="logic-canvas-wrapper">
-                <canvas id="logic-canvas"></canvas>
-                <div id="logic-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;">
-                    ステーション・接続を読み込み中...
-                </div>
-            </div>
-            <div class="station-list" id="station-list"></div>
-        </div>
-
-        <div class="bottom-bar">
-            <button class="btn-secondary" id="btn-cancel">キャンセル</button>
-            <button class="btn-primary" id="btn-save" style="width:auto;padding:6px 20px;">保存して閉じる</button>
+        <div class="field-group">
+            <label>Station ID</label>
+            <input type="text" id="info-sid" readonly style="opacity:0.6">
         </div>
     </div>
 
-    <script type="module" src="js/local-window.js"></script>
+    <!-- Tab: 3D Model -->
+    <div class="tab-content" id="tab-model3d">
+        <div class="model-left">
+            <div class="model-toolbar">
+                <button class="tool-btn" id="btn-origin-mode">原点設定</button>
+                <button class="tool-btn" id="btn-clear-cells">クリア</button>
+                <button class="tool-btn" id="btn-grid-size">格子設定</button>
+                <button class="tool-btn" id="btn-height-set">高さ設定</button>
+                <span id="model-status"></span>
+            </div>
+            <canvas id="model-grid-canvas"></canvas>
+        </div>
+        <div class="model-right">
+            <div class="model-3d-header">3D プレビュー</div>
+            <canvas id="model-3d-canvas"></canvas>
+        </div>
+    </div>
+
+    <!-- Tab: Logic -->
+    <div class="tab-content" id="tab-logic">
+        <div class="logic-palette">
+            <div class="palette-section">ツール</div>
+            <button class="tool-btn active" data-tool="select">選択</button>
+            <button class="tool-btn" data-tool="connect">接続</button>
+            <button class="tool-btn" data-tool="delete">削除</button>
+            <div class="palette-section">追加</div>
+            <button class="station-btn" data-type="source">Source</button>
+            <button class="station-btn" data-type="processing">処理</button>
+            <button class="station-btn" data-type="drain">Drain</button>
+            <button class="station-btn" data-type="merge">Merge</button>
+            <button class="station-btn" data-type="split">Split</button>
+            <button class="station-btn" data-type="entry">Entry</button>
+            <button class="station-btn" data-type="exit">Exit</button>
+        </div>
+        <div class="logic-canvas-area">
+            <svg id="logic-svg" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <marker id="arrowhead" markerWidth="8" markerHeight="6"
+                            refX="7" refY="3" orient="auto">
+                        <polygon points="0 0, 8 3, 0 6" fill="#4a9eff"/>
+                    </marker>
+                </defs>
+                <g id="logic-grid-layer"></g>
+                <g id="logic-conn-layer"></g>
+                <g id="logic-station-layer"></g>
+                <rect id="logic-select-rect" fill="rgba(74,158,255,0.12)" stroke="#4a9eff"
+                      stroke-width="1" stroke-dasharray="4,3" display="none"/>
+            </svg>
+            <div id="logic-info-bar">選択ツールでステーションをドラッグ、接続ツールで接続作成</div>
+        </div>
+        <div class="logic-props" id="logic-props">
+            <div class="props-title">プロパティ</div>
+            <div class="props-empty" id="props-empty">ステーションを選択</div>
+            <div id="props-fields" style="display:none;">
+                <div class="props-field">
+                    <label>名前</label>
+                    <input type="text" id="props-name">
+                </div>
+                <div class="props-field">
+                    <label>タイプ</label>
+                    <select id="props-type">
+                        <option value="source">source</option>
+                        <option value="processing">processing</option>
+                        <option value="drain">drain</option>
+                        <option value="merge">merge</option>
+                        <option value="split">split</option>
+                        <option value="entry">entry</option>
+                        <option value="exit">exit</option>
+                    </select>
+                </div>
+                <div class="props-field">
+                    <label>処理時間 (秒)</label>
+                    <input type="number" id="props-processing-time" min="0" step="1">
+                </div>
+                <div class="props-field">
+                    <label>Location ID</label>
+                    <input type="number" id="props-location-id" min="0" step="1">
+                </div>
+                <button class="props-delete-btn" id="props-delete">このステーションを削除</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="bottom-bar">
+        <button class="btn-secondary" id="btn-cancel">キャンセル</button>
+        <button class="btn-primary" id="btn-save" style="width:auto;padding:6px 20px;">保存して閉じる</button>
+    </div>
+</div>
+
+<script type="module" src="js/local-window.js"></script>
 </body>
 </html>

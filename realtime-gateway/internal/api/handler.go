@@ -154,6 +154,8 @@ func (h *Handler) handleFactory(w http.ResponseWriter, r *http.Request, rest str
 	case strings.HasPrefix(sub, "machines/"):
 		machineSub := strings.TrimPrefix(sub, "machines/")
 		h.handleFactoryMachineSub(w, r, id, machineSub)
+	case sub == "executions" || sub == "executions/":
+		h.handleFactoryExecutions(w, r, id)
 	case strings.HasPrefix(sub, "simdb/"):
 		simdbSub := strings.TrimPrefix(sub, "simdb/")
 		h.handleFactorySimDB(w, r, id, simdbSub)
@@ -371,6 +373,24 @@ func (h *Handler) handleFactoryMachineSub(w http.ResponseWriter, r *http.Request
 		return
 	}
 	respondJSON(w, 200, map[string]string{"status": "saved"})
+}
+
+// handleFactoryExecutions handles GET /factories/{fid}/executions
+func (h *Handler) handleFactoryExecutions(w http.ResponseWriter, r *http.Request, factoryID string) {
+	if r.Method != http.MethodGet {
+		respondError(w, 405, "method not allowed")
+		return
+	}
+	if _, err := h.repo.GetFactory(factoryID); err != nil {
+		respondError(w, 404, err.Error())
+		return
+	}
+	execs, err := h.repo.ListExecutionsByFactory(factoryID)
+	if err != nil {
+		respondError(w, 500, err.Error())
+		return
+	}
+	respondJSON(w, 200, execs)
 }
 
 // handleFactorySimDB handles /factories/{fid}/simdb/{sub}

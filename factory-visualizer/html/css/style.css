@@ -251,6 +251,23 @@ body {
 }
 .empty-hint { color: var(--text-muted); font-size: 11px; padding: 4px 2px; }
 
+/* Execution history list */
+.execution-list { max-height: 200px; overflow-y: auto; }
+.execution-list::-webkit-scrollbar { width: 3px; }
+.execution-list::-webkit-scrollbar-thumb { background: var(--border-color); }
+.exec-item {
+    padding: 5px 6px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 11px;
+    transition: background 0.1s;
+    border-left: 2px solid transparent;
+}
+.exec-item:hover { background: var(--bg-surface); }
+.exec-item.selected { background: var(--bg-surface); border-left-color: var(--accent-blue); }
+.exec-start { color: var(--text-primary); font-weight: 500; }
+.exec-meta { color: var(--text-muted); font-size: 10px; margin-top: 1px; }
+
 /* Display settings */
 .setting-row {
     display: flex;
