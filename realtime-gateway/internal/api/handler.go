@@ -455,18 +455,18 @@ func (h *Handler) handleFactorySimDB(w http.ResponseWriter, r *http.Request, fac
 			return
 		}
 		var body struct {
-			StartTime string `json:"startTime"`
+			StartDatetime string `json:"startDatetime"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.StartTime == "" {
-			respondError(w, 400, "startTime is required")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.StartDatetime == "" {
+			respondError(w, 400, "startDatetime is required")
 			return
 		}
-		startTime, err := time.Parse(time.RFC3339, body.StartTime)
+		startTime, err := time.Parse(time.RFC3339, body.StartDatetime)
 		if err != nil {
-			if t, err2 := time.Parse("2006-01-02T15:04:05", body.StartTime); err2 == nil {
+			if t, err2 := time.Parse("2006-01-02T15:04:05", body.StartDatetime); err2 == nil {
 				startTime = t
 			} else {
-				respondError(w, 400, "startTime must be RFC3339 or 2006-01-02T15:04:05")
+				respondError(w, 400, "startDatetime must be RFC3339 or 2006-01-02T15:04:05")
 				return
 			}
 		}
@@ -909,6 +909,7 @@ func (h *Handler) handleExecutions(w http.ResponseWriter, r *http.Request) {
 			ScenarioID:        scenarioIDPtr,
 			FactoryID:         factoryIDPtr,
 			StartTime:         now,
+			SimulationTime:    body.SimulationTime,
 			EndConditionType:  body.EndConditionType,
 			EndConditionValue: body.EndConditionValue,
 			InitialConditions: ic,

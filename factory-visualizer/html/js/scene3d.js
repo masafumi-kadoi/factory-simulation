@@ -519,6 +519,17 @@ export class Scene3D {
         }
     }
 
+    clearWorks() {
+        this._works.forEach((entry) => {
+            this.scene.remove(entry.mesh);
+            entry.mesh.traverse(obj => {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+            });
+        });
+        this._works.clear();
+    }
+
     // ---- Interlock indicators ----
 
     setInterlockSignal(machineId, signalName, value) {

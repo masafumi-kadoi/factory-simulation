@@ -638,6 +638,7 @@ type ExecutionConfig struct {
 	ScenarioID        *string         `json:"scenarioId,omitempty"`
 	FactoryID         *string         `json:"factoryId,omitempty"`
 	StartTime         time.Time       `json:"startTime"`
+	SimulationTime    float64         `json:"simulationTime"`
 	EndConditionType  string          `json:"endConditionType"`
 	EndConditionValue string          `json:"endConditionValue"`
 	InitialConditions json.RawMessage `json:"initialConditions"`
@@ -650,7 +651,8 @@ type ExecutionConfig struct {
 
 func (r *Repository) ListExecutions() ([]ExecutionConfig, error) {
 	rows, err := r.db.Conn().Query(
-		`SELECT id, scenario_id, factory_id, start_time, end_condition_type, end_condition_value,
+		`SELECT id, scenario_id, factory_id, start_time, COALESCE(simulation_time, 86400),
+		        end_condition_type, end_condition_value,
 		        initial_conditions, status, data_source_id, error_message, created_at, updated_at
 		 FROM execution_configs ORDER BY created_at DESC LIMIT 100`)
 	if err != nil {
@@ -660,7 +662,8 @@ func (r *Repository) ListExecutions() ([]ExecutionConfig, error) {
 	result := make([]ExecutionConfig, 0)
 	for rows.Next() {
 		var e ExecutionConfig
-		if err := rows.Scan(&e.ID, &e.ScenarioID, &e.FactoryID, &e.StartTime, &e.EndConditionType, &e.EndConditionValue,
+		if err := rows.Scan(&e.ID, &e.ScenarioID, &e.FactoryID, &e.StartTime, &e.SimulationTime,
+			&e.EndConditionType, &e.EndConditionValue,
 			&e.InitialConditions, &e.Status, &e.DataSourceID, &e.ErrorMessage, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -671,7 +674,8 @@ func (r *Repository) ListExecutions() ([]ExecutionConfig, error) {
 
 func (r *Repository) ListExecutionsByFactory(factoryID string) ([]ExecutionConfig, error) {
 	rows, err := r.db.Conn().Query(
-		`SELECT id, scenario_id, factory_id, start_time, end_condition_type, end_condition_value,
+		`SELECT id, scenario_id, factory_id, start_time, COALESCE(simulation_time, 86400),
+		        end_condition_type, end_condition_value,
 		        initial_conditions, status, data_source_id, error_message, created_at, updated_at
 		 FROM execution_configs
 		 WHERE factory_id=$1 AND status='completed'
@@ -684,7 +688,8 @@ func (r *Repository) ListExecutionsByFactory(factoryID string) ([]ExecutionConfi
 	result := make([]ExecutionConfig, 0)
 	for rows.Next() {
 		var e ExecutionConfig
-		if err := rows.Scan(&e.ID, &e.ScenarioID, &e.FactoryID, &e.StartTime, &e.EndConditionType, &e.EndConditionValue,
+		if err := rows.Scan(&e.ID, &e.ScenarioID, &e.FactoryID, &e.StartTime, &e.SimulationTime,
+			&e.EndConditionType, &e.EndConditionValue,
 			&e.InitialConditions, &e.Status, &e.DataSourceID, &e.ErrorMessage, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -696,10 +701,12 @@ func (r *Repository) ListExecutionsByFactory(factoryID string) ([]ExecutionConfi
 func (r *Repository) GetExecution(id string) (*ExecutionConfig, error) {
 	var e ExecutionConfig
 	err := r.db.Conn().QueryRow(
-		`SELECT id, scenario_id, factory_id, start_time, end_condition_type, end_condition_value,
+		`SELECT id, scenario_id, factory_id, start_time, COALESCE(simulation_time, 86400),
+		        end_condition_type, end_condition_value,
 		        initial_conditions, status, data_source_id, error_message, created_at, updated_at
 		 FROM execution_configs WHERE id=$1`, id,
-	).Scan(&e.ID, &e.ScenarioID, &e.FactoryID, &e.StartTime, &e.EndConditionType, &e.EndConditionValue,
+	).Scan(&e.ID, &e.ScenarioID, &e.FactoryID, &e.StartTime, &e.SimulationTime,
+		&e.EndConditionType, &e.EndConditionValue,
 		&e.InitialConditions, &e.Status, &e.DataSourceID, &e.ErrorMessage, &e.CreatedAt, &e.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("execution not found: %s", id)
@@ -710,9 +717,9 @@ func (r *Repository) GetExecution(id string) (*ExecutionConfig, error) {
 func (r *Repository) CreateExecution(e *ExecutionConfig) error {
 	_, err := r.db.Conn().Exec(
 		`INSERT INTO execution_configs
-		 (id, scenario_id, factory_id, start_time, end_condition_type, end_condition_value, initial_conditions, status, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		e.ID, e.ScenarioID, e.FactoryID, e.StartTime, e.EndConditionType, e.EndConditionValue,
+		 (id, scenario_id, factory_id, start_time, simulation_time, end_condition_type, end_condition_value, initial_conditions, status, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		e.ID, e.ScenarioID, e.FactoryID, e.StartTime, e.SimulationTime, e.EndConditionType, e.EndConditionValue,
 		e.InitialConditions, e.Status, e.CreatedAt, e.UpdatedAt,
 	)
 	return err

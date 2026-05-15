@@ -91,7 +91,11 @@ export async function fetchDataSources(factoryId) {
     const all = await req('GET', '/data-sources');
     if (!factoryId) return all;
     const arr = Array.isArray(all) ? all : (all.dataSources || []);
-    return arr.filter(ds => ds.factoryId === factoryId || ds.factory_id === factoryId);
+    return arr.filter(ds => ds.factoryId === factoryId);
+}
+
+export async function fetchDataSourceLayout(dataSourceId) {
+    return req('GET', `/data-sources/${encodeURIComponent(dataSourceId)}/layout`);
 }
 
 export async function fetchDataSourceEvents(dataSourceId, fromTime, toTime) {

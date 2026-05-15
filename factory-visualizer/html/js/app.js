@@ -110,7 +110,7 @@ function initUI() {
         if (st) openInfoPanel(st, type);
     });
 
-    setExecutionListClickHandler((execId, dsId) => {
+    setExecutionListClickHandler(async (execId, dsId) => {
         if (!dsId) return;
         state.liveDataSourceId = dsId;
         subscribeWebSocket(dsId);
@@ -118,6 +118,18 @@ function initUI() {
         document.getElementById('btn-stop-sim').disabled = false;
         const vizBtn = document.getElementById('btn-open-visualizer');
         if (vizBtn) vizBtn.disabled = false;
+
+        // タイムラインを選択した実行の情報で更新
+        try {
+            const exec = await API.fetchExecution(execId);
+            timeline.setExecution({
+                ...exec,
+                startDatetime: exec.startTime,
+                simulationTime: exec.simulationTime || 86400,
+            });
+        } catch (e) {
+            console.warn('[execHistory] failed to fetch execution for timeline', e);
+        }
     });
 
     // Factory selector
@@ -326,8 +338,27 @@ function setRunModalStatus(msg, isError = false) {
 
 // ---- WebSocket live subscription ----
 
-function subscribeWebSocket(dataSourceId) {
+async function subscribeWebSocket(dataSourceId) {
     disconnectWebSocket();
+
+    // DS切替時に前のワークをクリア
+    state.activeWorks.clear();
+    if (scene3d) scene3d.clearWorks();
+
+    // locationId → stationId マップをlayout APIから構築
+    try {
+        const layout = await API.fetchDataSourceLayout(dataSourceId);
+        const locs = layout.locations || [];
+        state.locationMap = new Map();
+        state.stationByLocation = new Map();
+        locs.forEach(loc => {
+            // location.name が stationId に対応する
+            state.locationMap.set(Number(loc.id), loc.name);
+            state.stationByLocation.set(loc.name, Number(loc.id));
+        });
+    } catch (e) {
+        console.warn('[layout] failed to load layout, falling back to config-based map', e);
+    }
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${proto}//${location.host}/ws/live`;
