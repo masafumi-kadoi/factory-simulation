@@ -28,6 +28,7 @@ const state = {
 let scene3d = null;
 let timeline = null;
 let infoPanel = null;
+const _movedEquipment = new Map(); // equipName → { centroid, machines[] }
 
 // ---- Boot ----
 
@@ -62,8 +63,26 @@ function initScene() {
     scene3d.setOnMachineDoubleClick(sid => {
         openLocalWindow(sid);
     });
+    scene3d.setOnEquipmentDoubleClick(equipName => {
+        // Open local window for the primary machine of this equipment group
+        const members = state.stations.filter(s => {
+            if (s.stationType !== 'machine') return false;
+            const m = s.stationId.match(/^(.+?)[._-]?(\d{3})$/);
+            return m ? m[1] === equipName : s.stationId === equipName;
+        });
+        if (members.length === 0) return;
+        const primary = members.slice().sort((a, b) => a.stationId.localeCompare(b.stationId))[0];
+        openLocalWindow(primary.stationId);
+    });
     scene3d.setOnWorkClick(workId => {
         openInfoPanel({ stationId: workId, name: workId, stationType: 'work' }, 'work');
+    });
+    scene3d.setOnEquipmentMove((equipName, data) => {
+        _movedEquipment.set(equipName, data);
+        const posEl = document.getElementById(`gf-pos-${equipName}`);
+        if (posEl) posEl.textContent = `X: ${Math.round(data.centroid.x)}, Y: ${Math.round(data.centroid.z)}`;
+        const saveBtn = document.getElementById('gf-save-placement');
+        if (saveBtn) { saveBtn.textContent = '全て保存 *'; saveBtn.disabled = false; }
     });
 }
 
@@ -111,7 +130,16 @@ function initUI() {
     });
 
     setObjectListClickHandler((type, id) => {
-        const st = state.stations.find(s => s.stationId === id);
+        let st = state.stations.find(s => s.stationId === id);
+        if (!st && type === 'machine') {
+            // id is an equipment name — find the first matching machine
+            st = state.stations
+                .filter(s => s.stationType === 'machine')
+                .find(s => {
+                    const m = s.stationId.match(/^(.+?)[._-]?(\d{3})$/);
+                    return m ? m[1] === id : s.stationId === id;
+                });
+        }
         if (st) openInfoPanel(st, type);
     });
 
@@ -148,7 +176,19 @@ function initUI() {
     document.getElementById('btn-run').addEventListener('click', () => openRunDialog());
     document.getElementById('btn-stop-sim').addEventListener('click', () => stopLive());
     document.getElementById('btn-fit').addEventListener('click', () => scene3d && scene3d.fitView());
-    document.getElementById('btn-top').addEventListener('click', () => scene3d && scene3d.setTopView());
+    const btnTop = document.getElementById('btn-top');
+    let _topViewActive = false;
+    btnTop.addEventListener('click', () => {
+        if (!scene3d) return;
+        if (_topViewActive) {
+            scene3d.setPerspView();
+            btnTop.classList.remove('active');
+        } else {
+            scene3d.setTopView();
+            btnTop.classList.add('active');
+        }
+        _topViewActive = !_topViewActive;
+    });
     document.getElementById('btn-open-visualizer').addEventListener('click', () => {
         const dsId = state.liveDataSourceId;
         if (dsId) {
@@ -838,6 +878,37 @@ function openG3DFloating(groupId, title) {
         `<div class="gf-field-row"><label>${label}</label>${content}</div>`;
 
     switch (groupId) {
+        case 'placement': {
+            scene3d && scene3d.setPlacementMode(true);
+            document.getElementById('g3d-float-footer').style.display = 'none';
+
+            const equipMap = new Map();
+            state.stations.filter(s => s.stationType === 'machine').forEach(s => {
+                const m = s.stationId.match(/^(.+?)[._-]?(\d{3})$/);
+                const equip = m ? m[1] : s.stationId;
+                if (!equipMap.has(equip)) equipMap.set(equip, []);
+                equipMap.get(equip).push(s);
+            });
+
+            const rows = [];
+            equipMap.forEach((members, equipName) => {
+                const cx = members.reduce((acc, m) => acc + (m.positionX || 0), 0) / members.length;
+                const cz = members.reduce((acc, m) => acc + (m.positionY || 0), 0) / members.length;
+                rows.push(`<div class="gf-equip-row">
+                    <span class="gf-equip-name">${esc(equipName)}</span>
+                    <span class="gf-equip-pos" id="gf-pos-${esc(equipName)}">X: ${Math.round(cx)}, Y: ${Math.round(cz)}</span>
+                </div>`);
+            });
+
+            body.innerHTML = `
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">設備をドラッグして移動。移動後に保存してください。</div>
+                <div style="max-height:200px;overflow-y:auto;margin-bottom:10px">${rows.join('') || '<div style="color:var(--text-muted);font-size:11px">設備がありません</div>'}</div>
+                <button class="btn-primary" id="gf-save-placement" style="width:100%;padding:6px">全て保存</button>
+            `;
+            _movedEquipment.clear();
+            body.querySelector('#gf-save-placement').addEventListener('click', saveEquipPlacement);
+            break;
+        }
         case 'global':
             body.innerHTML = `
                 ${row('シーンテーマ', `<select id="gf-theme">
@@ -922,7 +993,9 @@ function openG3DFloating(groupId, title) {
 
 function closeG3DFloating() {
     document.getElementById('g3d-floating').classList.add('hidden');
+    document.getElementById('g3d-float-footer').style.display = '';
     document.querySelectorAll('.g3d-sidebar-item').forEach(i => i.classList.remove('active'));
+    scene3d && scene3d.setPlacementMode(false);
 }
 
 function saveG3DSettings() {
@@ -936,6 +1009,32 @@ function saveG3DSettings() {
         showInterlocks: document.getElementById('show-interlocks').checked,
     };
     try { localStorage.setItem('fv_3d_settings', JSON.stringify(settings)); } catch {}
+}
+
+async function saveEquipPlacement() {
+    const btn = document.getElementById('gf-save-placement');
+    if (!btn || _movedEquipment.size === 0) return;
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+
+    try {
+        const promises = [];
+        _movedEquipment.forEach(({ machines }) => {
+            machines.forEach(({ stationId, positionX, positionY }) => {
+                promises.push(API.updateStation(state.currentFactory, stationId, { positionX, positionY }));
+            });
+        });
+        await Promise.all(promises);
+        _movedEquipment.clear();
+        btn.textContent = '全て保存';
+        btn.disabled = false;
+        // Reload to sync internal stations
+        if (state.currentFactory) await selectFactory(state.currentFactory);
+    } catch (err) {
+        alert('保存失敗: ' + err.message);
+        btn.textContent = '全て保存 *';
+        btn.disabled = false;
+    }
 }
 
 // ============================================================

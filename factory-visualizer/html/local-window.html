@@ -236,6 +236,8 @@
             <button class="tool-btn active" data-tool="select">選択</button>
             <button class="tool-btn" data-tool="connect">接続</button>
             <button class="tool-btn" data-tool="delete">削除</button>
+            <div class="palette-section">位置</div>
+            <div id="palette-pos" style="font-size:10px;color:var(--text-muted);padding:2px 4px;line-height:1.8">X: —<br>Y: —</div>
             <div class="palette-section">追加</div>
             <button class="station-btn" data-type="source">Source</button>
             <button class="station-btn" data-type="processing">処理</button>
@@ -280,6 +282,14 @@
                         <option value="entry">entry</option>
                         <option value="exit">exit</option>
                     </select>
+                </div>
+                <div class="props-field">
+                    <label>位置 X</label>
+                    <input type="number" id="props-pos-x" step="1">
+                </div>
+                <div class="props-field">
+                    <label>位置 Y</label>
+                    <input type="number" id="props-pos-y" step="1">
                 </div>
                 <div class="props-field">
                     <label>処理時間 (秒)</label>

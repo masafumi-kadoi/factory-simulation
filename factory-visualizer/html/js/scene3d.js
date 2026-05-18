@@ -53,9 +53,10 @@ const STATION_SHAPES = {
 export class Scene3D {
     constructor(container) {
         this.container = container;
-        this._machines = new Map();      // stationId → { mesh, group, labelMesh }
-        this._internalStations = new Map(); // stationId → { mesh, labelMesh }
-        this._works = new Map();          // workId → { mesh, stationId }
+        this._machines = new Map();         // stationId → { mesh, group, station }
+        this._internalStations = new Map(); // stationId → { group, mesh, station }
+        this._equipmentGroups = new Map();  // equipName → { group, machines, centroid }
+        this._works = new Map();            // workId → { mesh, stationId }
         this._connections = [];
         this._interlockIndicators = new Map();
         this._theme = 'dark';
@@ -68,6 +69,15 @@ export class Scene3D {
         this._onMachineDoubleClick = null;
         this._onMachineClick = null;
         this._onWorkClick = null;
+        this._onEquipmentDoubleClick = null;
+        this._onEquipmentClick = null;
+        this._orthoCamera = null;
+        this._useOrtho = false;
+        this._placementMode = false;
+        this._selectedEquip = null;
+        this._placementDragState = null;
+        this._onEquipmentMove = null;
+        this._dragOccurred = false;
         this._clickTimer = null;
         this._clickTarget = null;
         this._raycaster = new THREE.Raycaster();
@@ -119,6 +129,10 @@ export class Scene3D {
         this._resizeObs.observe(this.container);
 
         this.renderer.domElement.addEventListener('click', e => this._handleClick(e));
+        this.renderer.domElement.addEventListener('mousedown', e => this._handleMouseDown(e));
+        this.renderer.domElement.addEventListener('mousemove', e => this._handleMouseMove(e));
+        this.renderer.domElement.addEventListener('mouseup', e => this._handleMouseUpPlacement(e));
+        this.renderer.domElement.addEventListener('mouseleave', () => { this._placementDragState = null; this.controls.enabled = true; });
     }
 
     // ---- Theme ----
@@ -187,16 +201,29 @@ export class Scene3D {
         const machines = stations.filter(s => s.stationType === 'machine');
         const internals = stations.filter(s => s.stationType !== 'machine');
 
-        machines.forEach(s => this._addMachine(s));
-        internals.forEach(s => this._addInternalStation(s));
+        // Group machines by equipment name (strip .NNN suffix) and render shells
+        const groups = this._groupByEquipment(machines);
+        groups.forEach((mList, equipName) => this._addEquipmentGroup(equipName, mList));
+
+        // Internal stations: render at parent machine's global position + local offset
+        internals.forEach(s => {
+            const parent = machines.find(m => m.stationId === s.parentId) || null;
+            this._addInternalStation(s, parent);
+        });
 
         connections.forEach(c => this._addConnectionLine(c, stations));
 
-        this._fitCamera(machines);
+        const equipPositions = [...this._equipmentGroups.values()].map(eg => ({
+            positionX: eg.centroid.x,
+            positionY: eg.centroid.z,
+        }));
+        this._fitCamera(equipPositions.length > 0 ? equipPositions : machines);
         this._updateVisibility();
     }
 
     _clearAll() {
+        this._equipmentGroups.forEach(eg => this.scene.remove(eg.group));
+        this._equipmentGroups.clear();
         this._machines.forEach(m => this.scene.remove(m.group));
         this._machines.clear();
         this._internalStations.forEach(s => this.scene.remove(s.group));
@@ -207,6 +234,84 @@ export class Scene3D {
         this._connections = [];
         this._interlockIndicators.forEach(g => this.scene.remove(g));
         this._interlockIndicators.clear();
+    }
+
+    // ---- Equipment grouping ----
+
+    _getEquipmentName(stationId) {
+        // Match trailing 3-digit suffix with optional dot/underscore/hyphen separator
+        // Handles: "hoge.001" → "hoge", "fuga001" → "fuga", "conv_002" → "conv"
+        const m = stationId.match(/^(.+?)[._-]?(\d{3})$/);
+        return m ? m[1] : stationId;
+    }
+
+    _groupByEquipment(machines) {
+        const groups = new Map();
+        machines.forEach(m => {
+            const name = this._getEquipmentName(m.stationId);
+            if (!groups.has(name)) groups.set(name, []);
+            groups.get(name).push(m);
+        });
+        return groups;
+    }
+
+    _addEquipmentGroup(equipName, machines) {
+        // Bounding box of all machines (using their global positionX/Y)
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        machines.forEach(m => {
+            const px = m.positionX || 0;
+            const pz = m.positionY || 0;
+            minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+            minZ = Math.min(minZ, pz); maxZ = Math.max(maxZ, pz);
+        });
+
+        const PAD = 60;
+        const cx = (minX + maxX) / 2;
+        const cz = (minZ + maxZ) / 2;
+        const W = Math.max(maxX - minX + PAD * 2, 140);
+        const D = Math.max(maxZ - minZ + PAD * 2, 140);
+        const H = 110;
+
+        const shellGroup = new THREE.Group();
+        shellGroup.userData.equipmentName = equipName;
+        shellGroup.userData.isEquipment = true;
+
+        // Semi-transparent shell
+        const shellGeo = new THREE.BoxGeometry(W, H, D);
+        const shellMat = new THREE.MeshStandardMaterial({
+            color: 0x4a9eff,
+            transparent: true,
+            opacity: 0.12,
+            roughness: 0.5,
+            metalness: 0.1,
+            side: THREE.DoubleSide,
+        });
+        const shellMesh = new THREE.Mesh(shellGeo, shellMat);
+        shellMesh.position.set(cx, H / 2, cz);
+        shellMesh.userData.equipmentName = equipName;
+        shellGroup.add(shellMesh);
+
+        // Shell wireframe edges
+        const edgeGeo = new THREE.EdgesGeometry(shellGeo);
+        const edgeMat = new THREE.LineBasicMaterial({ color: 0x6ab4ff, transparent: true, opacity: 0.45 });
+        const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+        edgeMesh.position.copy(shellMesh.position);
+        shellGroup.add(edgeMesh);
+
+        // Equipment name label above shell
+        const label = this._createLabel(equipName, cx, H + 18, cz);
+        shellGroup.add(label);
+
+        this.scene.add(shellGroup);
+        this._equipmentGroups.set(equipName, {
+            group: shellGroup,
+            shellMesh,
+            machines,
+            centroid: { x: cx, z: cz },
+        });
+
+        // Add individual machines inside the shell
+        machines.forEach(m => this._addMachine(m));
     }
 
     _addMachine(station) {
@@ -296,9 +401,11 @@ export class Scene3D {
         return group;
     }
 
-    _addInternalStation(station) {
-        const px = station.positionX || 0;
-        const pz = station.positionY || 0;
+    _addInternalStation(station, parentMachine) {
+        const parentX = parentMachine ? (parentMachine.positionX || 0) : 0;
+        const parentZ = parentMachine ? (parentMachine.positionY || 0) : 0;
+        const px = (station.positionX || 0) + parentX;
+        const pz = (station.positionY || 0) + parentZ;
 
         const stationType = station.stationType || 'processing';
         const cells = STATION_SHAPES[stationType] || [[0, 0]];
@@ -350,8 +457,9 @@ export class Scene3D {
         group.position.set(px, 0, pz);
         group.visible = this._showInternal;
         this.scene.add(group);
-        // store as both group and mesh so existing destructuring patterns work
-        this._internalStations.set(station.stationId, { group, mesh: group, station });
+        // store with effective global position so setWorkPosition uses correct coords
+        const effectiveStation = { ...station, positionX: px, positionY: pz };
+        this._internalStations.set(station.stationId, { group, mesh: group, station: effectiveStation });
     }
 
     _addConnectionLine(conn, stations) {
@@ -440,11 +548,170 @@ export class Scene3D {
         this._fitCamera(machines);
     }
 
+    // ---- Placement mode (equipment drag) ----
+
+    setPlacementMode(enabled) {
+        this._placementMode = enabled;
+        if (!enabled) {
+            this._placementDragState = null;
+            if (this._selectedEquip) {
+                this._unhighlightEquip(this._selectedEquip);
+                this._selectedEquip = null;
+            }
+            this.controls.enabled = true;
+        }
+        this.renderer.domElement.style.cursor = enabled ? 'grab' : '';
+    }
+
+    setOnEquipmentMove(cb) { this._onEquipmentMove = cb; }
+
+    _handleMouseDown(e) {
+        if (!this._placementMode || e.button !== 0) return;
+
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this._mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this._mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        const activeCam = this._useOrtho ? this._orthoCamera : this.camera;
+        this._raycaster.setFromCamera(this._mouse, activeCam);
+
+        const shellMeshes = [];
+        this._equipmentGroups.forEach(eg => { if (eg.shellMesh) shellMeshes.push(eg.shellMesh); });
+        const hits = this._raycaster.intersectObjects(shellMeshes, false);
+        if (hits.length === 0) return;
+
+        const equipName = hits[0].object.userData.equipmentName;
+        if (!equipName) return;
+
+        if (this._selectedEquip && this._selectedEquip !== equipName) this._unhighlightEquip(this._selectedEquip);
+        this._selectedEquip = equipName;
+        this._highlightEquip(equipName);
+
+        const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const floorPoint = new THREE.Vector3();
+        this._raycaster.ray.intersectPlane(floorPlane, floorPoint);
+
+        this._placementDragState = { equipName, lastFloorX: floorPoint.x, lastFloorZ: floorPoint.z };
+        this._dragOccurred = false;
+        this.controls.enabled = false;
+        e.stopPropagation();
+    }
+
+    _handleMouseMove(e) {
+        if (!this._placementMode || !this._placementDragState) return;
+
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this._mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this._mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        const activeCam = this._useOrtho ? this._orthoCamera : this.camera;
+        this._raycaster.setFromCamera(this._mouse, activeCam);
+
+        const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const floorPoint = new THREE.Vector3();
+        if (!this._raycaster.ray.intersectPlane(floorPlane, floorPoint)) return;
+
+        const dx = floorPoint.x - this._placementDragState.lastFloorX;
+        const dz = floorPoint.z - this._placementDragState.lastFloorZ;
+        if (Math.abs(dx) > 0.5 || Math.abs(dz) > 0.5) {
+            this._placementDragState.lastFloorX = floorPoint.x;
+            this._placementDragState.lastFloorZ = floorPoint.z;
+            this._moveEquipDelta(this._placementDragState.equipName, dx, dz);
+            this._dragOccurred = true;
+        }
+    }
+
+    _handleMouseUpPlacement(e) {
+        if (!this._placementMode || !this._placementDragState) return;
+        const equipName = this._placementDragState.equipName;
+        this._placementDragState = null;
+        this.controls.enabled = true;
+        this.renderer.domElement.style.cursor = 'grab';
+
+        if (!this._dragOccurred) return;
+        const eg = this._equipmentGroups.get(equipName);
+        if (eg && this._onEquipmentMove) {
+            this._onEquipmentMove(equipName, {
+                centroid: { x: eg.centroid.x, z: eg.centroid.z },
+                machines: eg.machines.map(m => ({
+                    stationId: m.stationId,
+                    positionX: m.positionX || 0,
+                    positionY: m.positionY || 0,
+                })),
+            });
+        }
+    }
+
+    _moveEquipDelta(equipName, dx, dz) {
+        const eg = this._equipmentGroups.get(equipName);
+        if (!eg) return;
+
+        eg.group.position.x += dx;
+        eg.group.position.z += dz;
+
+        eg.machines.forEach(m => {
+            m.positionX = (m.positionX || 0) + dx;
+            m.positionY = (m.positionY || 0) + dz;
+            const entry = this._machines.get(m.stationId);
+            if (entry) {
+                entry.group.position.x += dx;
+                entry.group.position.z += dz;
+                entry.station.positionX = m.positionX;
+                entry.station.positionY = m.positionY;
+            }
+            this._internalStations.forEach(stEntry => {
+                if (stEntry.station.parentId === m.stationId) {
+                    stEntry.group.position.x += dx;
+                    stEntry.group.position.z += dz;
+                    stEntry.station.positionX = (stEntry.station.positionX || 0) + dx;
+                    stEntry.station.positionY = (stEntry.station.positionY || 0) + dz;
+                }
+            });
+        });
+
+        eg.centroid.x += dx;
+        eg.centroid.z += dz;
+    }
+
+    _highlightEquip(equipName) {
+        const eg = this._equipmentGroups.get(equipName);
+        if (!eg || !eg.shellMesh) return;
+        eg.shellMesh.material.color.setHex(0xffaa00);
+        eg.shellMesh.material.opacity = 0.35;
+    }
+
+    _unhighlightEquip(equipName) {
+        const eg = this._equipmentGroups.get(equipName);
+        if (!eg || !eg.shellMesh) return;
+        eg.shellMesh.material.color.setHex(0x4a9eff);
+        eg.shellMesh.material.opacity = 0.12;
+    }
+
     setTopView() {
         const target = this.controls.target.clone();
+        const w = this.container.clientWidth;
+        const h = this.container.clientHeight;
+        const aspect = w / (h || 1);
         const dist = this.camera.position.distanceTo(target);
-        this.camera.position.set(target.x, dist, target.z);
-        this.camera.lookAt(target);
+        const halfH = dist * 0.5;
+
+        this._orthoCamera = new THREE.OrthographicCamera(
+            -halfH * aspect, halfH * aspect, halfH, -halfH, 1, 5000
+        );
+        this._orthoCamera.position.set(target.x, dist, target.z);
+        this._orthoCamera.lookAt(target);
+        this._orthoCamera.updateProjectionMatrix();
+
+        this._useOrtho = true;
+        this.controls.object = this._orthoCamera;
+        this.controls.enableRotate = false;
+        this.controls.target.copy(target);
+        this.controls.update();
+    }
+
+    setPerspView() {
+        this._useOrtho = false;
+        this._orthoCamera = null;
+        this.controls.object = this.camera;
+        this.controls.enableRotate = true;
         this.controls.update();
     }
 
@@ -615,29 +882,36 @@ export class Scene3D {
     setOnMachineClick(cb) { this._onMachineClick = cb; }
     setOnMachineDoubleClick(cb) { this._onMachineDoubleClick = cb; }
     setOnWorkClick(cb) { this._onWorkClick = cb; }
+    setOnEquipmentClick(cb) { this._onEquipmentClick = cb; }
+    setOnEquipmentDoubleClick(cb) { this._onEquipmentDoubleClick = cb; }
 
     _handleClick(event) {
+        if (this._dragOccurred) { this._dragOccurred = false; return; }
         const rect = this.renderer.domElement.getBoundingClientRect();
         this._mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         this._mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        this._raycaster.setFromCamera(this._mouse, this.camera);
+        const activeCam = this._useOrtho ? this._orthoCamera : this.camera;
+        this._raycaster.setFromCamera(this._mouse, activeCam);
 
         const allMeshes = [];
-        const findMeshes = (map) => {
-            map.forEach(({ group }) => {
-                group.traverse(obj => { if (obj.isMesh || obj.isSprite) allMeshes.push(obj); });
-            });
-        };
-        findMeshes(this._machines);
+        this._machines.forEach(({ group }) => {
+            group.traverse(obj => { if (obj.isMesh || obj.isSprite) allMeshes.push(obj); });
+        });
+        this._equipmentGroups.forEach(({ group }) => {
+            group.traverse(obj => { if (obj.isMesh || obj.isSprite) allMeshes.push(obj); });
+        });
 
         const hits = this._raycaster.intersectObjects(allMeshes, false);
         if (hits.length > 0) {
             let obj = hits[0].object;
-            while (obj && !obj.userData.stationId) obj = obj.parent;
-            const sid = obj && obj.userData.stationId;
-            if (sid) {
-                const isMachine = this._machines.has(sid);
-                if (isMachine && this._onMachineDoubleClick) {
+
+            // Prefer stationId (machine mesh) over equipmentName (shell)
+            let stObj = obj;
+            while (stObj && !stObj.userData.stationId) stObj = stObj.parent;
+            const sid = stObj && stObj.userData.stationId;
+
+            if (sid && this._machines.has(sid)) {
+                if (this._onMachineDoubleClick) {
                     if (this._clickTimer && this._clickTarget === sid) {
                         clearTimeout(this._clickTimer);
                         this._clickTimer = null;
@@ -652,6 +926,26 @@ export class Scene3D {
                     return;
                 }
                 if (this._onMachineClick) this._onMachineClick(sid);
+                return;
+            }
+
+            // Equipment shell click
+            let eqObj = obj;
+            while (eqObj && !eqObj.userData.equipmentName) eqObj = eqObj.parent;
+            const equipName = eqObj && eqObj.userData.equipmentName;
+
+            if (equipName && (this._onEquipmentDoubleClick || this._onEquipmentClick)) {
+                if (this._clickTimer && this._clickTarget === equipName) {
+                    clearTimeout(this._clickTimer);
+                    this._clickTimer = null;
+                    if (this._onEquipmentDoubleClick) this._onEquipmentDoubleClick(equipName);
+                    return;
+                }
+                this._clickTarget = equipName;
+                this._clickTimer = setTimeout(() => {
+                    this._clickTimer = null;
+                    if (this._onEquipmentClick) this._onEquipmentClick(equipName);
+                }, 250);
                 return;
             }
         }
@@ -678,7 +972,8 @@ export class Scene3D {
             mesh.rotation.y = t * 0.8;
         });
 
-        this.renderer && this.renderer.render(this.scene, this.camera);
+        const cam = this._useOrtho ? this._orthoCamera : this.camera;
+        this.renderer && this.renderer.render(this.scene, cam);
     }
 
     _onResize() {
@@ -687,6 +982,13 @@ export class Scene3D {
         if (!w || !h) return;
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
+        if (this._orthoCamera) {
+            const aspect = w / h;
+            const halfH = this._orthoCamera.top;
+            this._orthoCamera.left = -halfH * aspect;
+            this._orthoCamera.right = halfH * aspect;
+            this._orthoCamera.updateProjectionMatrix();
+        }
         this.renderer.setSize(w, h);
     }
 

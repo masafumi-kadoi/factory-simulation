@@ -67,6 +67,11 @@ export function applyDocTheme(theme) {
     root.className = theme === 'auto' ? 'theme-auto' : (theme === 'light' ? 'theme-light' : '');
 }
 
+function getEquipmentName(stationId) {
+    const m = stationId.match(/^(.+?)[._-]?(\d{3})$/);
+    return m ? m[1] : stationId;
+}
+
 export function renderObjectList(stations, works, activeFilters) {
     const container = document.getElementById('object-list');
     if (!container) return;
@@ -74,8 +79,18 @@ export function renderObjectList(stations, works, activeFilters) {
     const items = [];
 
     if (activeFilters.includes('machine')) {
+        // Group machines by equipment name and show one entry per group
+        const equipMap = new Map();
         stations.filter(s => s.stationType === 'machine').forEach(s => {
-            items.push({ type: 'machine', id: s.stationId, name: s.name || s.stationId, icon: '🏭' });
+            const equip = getEquipmentName(s.stationId);
+            if (!equipMap.has(equip)) equipMap.set(equip, []);
+            equipMap.get(equip).push(s);
+        });
+        equipMap.forEach((members, equipName) => {
+            const label = members.length > 1
+                ? `${equipName} (×${members.length})`
+                : (members[0].name || members[0].stationId);
+            items.push({ type: 'machine', id: equipName, name: label, icon: '🏭' });
         });
     }
     if (activeFilters.includes('station')) {
