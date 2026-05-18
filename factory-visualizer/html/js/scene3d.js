@@ -312,6 +312,16 @@ export class Scene3D {
 
         // Add individual machines inside the shell
         machines.forEach(m => this._addMachine(m));
+
+        // Hide shell when any machine has a custom 3D model
+        const hasCustomModel = machines.some(m => {
+            const cells = m.config?.model3DGrid?.cells;
+            return Array.isArray(cells) && cells.length > 0;
+        });
+        if (hasCustomModel) {
+            shellMesh.visible = false;
+            edgeMesh.visible = false;
+        }
     }
 
     _addMachine(station) {

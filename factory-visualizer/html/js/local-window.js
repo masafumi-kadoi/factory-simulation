@@ -1,5 +1,7 @@
 // Local window — Machine editor
 import * as API from './api.js';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const params = new URLSearchParams(location.search);
 const FACTORY_ID = params.get('factoryId') || '';
@@ -9,6 +11,24 @@ const MACHINE_NAME = params.get('machineName') || MACHINE_ID;
 let machineStation = null;
 let childStations = [];
 let childConnections = [];
+
+// ---- 3D Model tab state ----
+const _grid = {
+    gridSize: 20,   // scene units per cell
+    height: 40,     // scene units tall
+    cols: 5,
+    rows: 5,
+    cells: new Set(), // "col,row" strings
+    origin: null,     // [col, row] or null
+    originMode: false,
+    isDragging: false,
+    dragMode: null,   // 'add' | 'remove'
+};
+let _3dRenderer = null;
+let _3dScene = null;
+let _3dCamera = null;
+let _3dControls = null;
+let _3dModelGroup = null;
 
 // ---- Logic tab state ----
 
@@ -46,6 +66,10 @@ function initTabs() {
             tab.classList.add('active');
             document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
             if (tab.dataset.tab === 'logic') refreshLogicSVGSize();
+            if (tab.dataset.tab === 'model3d') {
+                renderGridCanvas();
+                init3DPreview();
+            }
         });
     });
 }
@@ -70,6 +94,7 @@ async function loadMachineData() {
         );
 
         populateInfoTab();
+        populateModelTab();
         populateLogicTab();
     } catch (err) {
         console.error('Failed to load machine data:', err);
@@ -83,6 +108,303 @@ function populateInfoTab() {
     document.getElementById('info-name').value = machineStation.name || '';
     const meta = machineStation.config?.metadata;
     document.getElementById('info-metadata').value = meta ? JSON.stringify(meta, null, 2) : '';
+}
+
+// ---- Model tab ----
+
+function populateModelTab() {
+    initModelTab();
+    const cfg = machineStation?.config || {};
+    const g = cfg.model3DGrid;
+    if (g) {
+        if (g.gridSize) _grid.gridSize = g.gridSize;
+        if (g.height)   _grid.height   = g.height;
+        if (g.cols)     _grid.cols     = g.cols;
+        if (g.rows)     _grid.rows     = g.rows;
+        if (g.origin)   _grid.origin   = g.origin;
+        if (Array.isArray(g.cells)) {
+            _grid.cells.clear();
+            g.cells.forEach(([c, r]) => _grid.cells.add(`${c},${r}`));
+        }
+    }
+    renderGridCanvas();
+}
+
+function initModelTab() {
+    const canvas = document.getElementById('model-grid-canvas');
+    if (!canvas || canvas._modelInited) return;
+    canvas._modelInited = true;
+
+    // Toolbar buttons
+    document.getElementById('btn-origin-mode').addEventListener('click', () => {
+        _grid.originMode = !_grid.originMode;
+        document.getElementById('btn-origin-mode').classList.toggle('active', _grid.originMode);
+        renderGridCanvas();
+    });
+    document.getElementById('btn-clear-cells').addEventListener('click', () => {
+        _grid.cells.clear();
+        _grid.origin = null;
+        _grid.originMode = false;
+        document.getElementById('btn-origin-mode').classList.remove('active');
+        renderGridCanvas();
+        update3DPreview();
+    });
+    document.getElementById('btn-grid-size').addEventListener('click', () => {
+        document.getElementById('gs-cols').value = _grid.cols;
+        document.getElementById('gs-rows').value = _grid.rows;
+        document.getElementById('gs-size').value = _grid.gridSize;
+        document.getElementById('grid-size-modal').style.display = 'flex';
+    });
+    document.getElementById('btn-height-set').addEventListener('click', () => {
+        document.getElementById('h-val').value = _grid.height;
+        document.getElementById('height-modal').style.display = 'flex';
+    });
+
+    // Modal: grid size OK
+    document.getElementById('gs-ok').addEventListener('click', () => {
+        const cols = Math.max(1, Math.min(30, parseInt(document.getElementById('gs-cols').value) || 5));
+        const rows = Math.max(1, Math.min(30, parseInt(document.getElementById('gs-rows').value) || 5));
+        const size = Math.max(5, Math.min(100, parseInt(document.getElementById('gs-size').value) || 20));
+        // Remove cells that are out of new bounds
+        for (const key of [..._grid.cells]) {
+            const [c, r] = key.split(',').map(Number);
+            if (c >= cols || r >= rows) _grid.cells.delete(key);
+        }
+        _grid.cols = cols; _grid.rows = rows; _grid.gridSize = size;
+        document.getElementById('grid-size-modal').style.display = 'none';
+        renderGridCanvas();
+        update3DPreview();
+    });
+
+    // Modal: height OK
+    document.getElementById('h-ok').addEventListener('click', () => {
+        _grid.height = Math.max(5, Math.min(400, parseInt(document.getElementById('h-val').value) || 40));
+        document.getElementById('height-modal').style.display = 'none';
+        renderGridCanvas();
+        update3DPreview();
+    });
+
+    // Modal close buttons
+    document.querySelectorAll('[data-close]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById(btn.dataset.close).style.display = 'none';
+        });
+    });
+
+    // Grid canvas mouse events
+    const ro = new ResizeObserver(() => { renderGridCanvas(); });
+    ro.observe(canvas);
+
+    canvas.addEventListener('mousedown', e => {
+        const cell = _getCellFromEvent(canvas, e);
+        if (!cell) return;
+        if (_grid.originMode) {
+            _grid.origin = [cell.col, cell.row];
+            _grid.originMode = false;
+            document.getElementById('btn-origin-mode').classList.remove('active');
+            renderGridCanvas();
+            update3DPreview();
+            return;
+        }
+        _grid.isDragging = true;
+        const key = `${cell.col},${cell.row}`;
+        if (_grid.cells.has(key)) { _grid.dragMode = 'remove'; _grid.cells.delete(key); }
+        else { _grid.dragMode = 'add'; _grid.cells.add(key); }
+        renderGridCanvas();
+        update3DPreview();
+    });
+    canvas.addEventListener('mousemove', e => {
+        if (!_grid.isDragging) return;
+        const cell = _getCellFromEvent(canvas, e);
+        if (!cell) return;
+        const key = `${cell.col},${cell.row}`;
+        if (_grid.dragMode === 'add') _grid.cells.add(key);
+        else _grid.cells.delete(key);
+        renderGridCanvas();
+        update3DPreview();
+    });
+    canvas.addEventListener('mouseup', () => { _grid.isDragging = false; });
+    canvas.addEventListener('mouseleave', () => { _grid.isDragging = false; });
+    document.addEventListener('mouseup', () => { _grid.isDragging = false; });
+}
+
+function _getCellFromEvent(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
+    const cellPx = Math.min(W / _grid.cols, H / _grid.rows);
+    if (cellPx <= 0) return null;
+    const offX = (W - cellPx * _grid.cols) / 2;
+    const offY = (H - cellPx * _grid.rows) / 2;
+    const col = Math.floor((x - offX) / cellPx);
+    const row = Math.floor((y - offY) / cellPx);
+    if (col < 0 || col >= _grid.cols || row < 0 || row >= _grid.rows) return null;
+    return { col, row };
+}
+
+function renderGridCanvas() {
+    const canvas = document.getElementById('model-grid-canvas');
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
+    if (!W || !H) return;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const cellPx = Math.min(W / _grid.cols, H / _grid.rows);
+    const gridW = cellPx * _grid.cols;
+    const gridH = cellPx * _grid.rows;
+    const offX = (W - gridW) / 2;
+    const offY = (H - gridH) / 2;
+
+    // Background
+    ctx.fillStyle = '#0f1629';
+    ctx.fillRect(0, 0, W, H);
+
+    // Selected cells
+    for (const key of _grid.cells) {
+        const [c, r] = key.split(',').map(Number);
+        ctx.fillStyle = 'rgba(74,158,255,0.35)';
+        ctx.fillRect(offX + c * cellPx, offY + r * cellPx, cellPx, cellPx);
+        ctx.strokeStyle = '#4a9eff';
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#4a9eff';
+        ctx.shadowBlur = 8;
+        ctx.strokeRect(offX + c * cellPx + 1, offY + r * cellPx + 1, cellPx - 2, cellPx - 2);
+        ctx.shadowBlur = 0;
+    }
+
+    // Grid lines
+    ctx.strokeStyle = '#2a3f6a';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    for (let c = 0; c <= _grid.cols; c++) {
+        const x = offX + c * cellPx;
+        ctx.moveTo(x, offY); ctx.lineTo(x, offY + gridH);
+    }
+    for (let r = 0; r <= _grid.rows; r++) {
+        const y = offY + r * cellPx;
+        ctx.moveTo(offX, y); ctx.lineTo(offX + gridW, y);
+    }
+    ctx.stroke();
+
+    // Grid border
+    ctx.strokeStyle = '#4a6090';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(offX, offY, gridW, gridH);
+
+    // Origin marker
+    if (_grid.origin) {
+        const [oc, or_] = _grid.origin;
+        const ox = offX + (oc + 0.5) * cellPx;
+        const oy = offY + (or_ + 0.5) * cellPx;
+        ctx.strokeStyle = '#ff4444';
+        ctx.lineWidth = 2;
+        const arm = cellPx * 0.35;
+        ctx.beginPath();
+        ctx.moveTo(ox - arm, oy); ctx.lineTo(ox + arm, oy);
+        ctx.moveTo(ox, oy - arm); ctx.lineTo(ox, oy + arm);
+        ctx.stroke();
+    }
+
+    // Status
+    const statusEl = document.getElementById('model-status');
+    if (statusEl) statusEl.textContent = `${_grid.cells.size}セル | ${_grid.cols}×${_grid.rows} | 高さ:${_grid.height} | サイズ:${_grid.gridSize}`;
+}
+
+function init3DPreview() {
+    const canvas = document.getElementById('model-3d-canvas');
+    if (!canvas || _3dRenderer) return;
+    const w = canvas.clientWidth || 300;
+    const h = canvas.clientHeight || 300;
+
+    _3dScene = new THREE.Scene();
+    _3dScene.background = new THREE.Color(0x0f1629);
+    _3dScene.fog = new THREE.Fog(0x0f1629, 800, 2000);
+
+    _3dCamera = new THREE.PerspectiveCamera(45, w / h, 1, 3000);
+    _3dCamera.position.set(0, 120, 200);
+    _3dCamera.lookAt(0, 0, 0);
+
+    _3dRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    _3dRenderer.setSize(w, h);
+    _3dRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    _3dRenderer.shadowMap.enabled = true;
+
+    _3dScene.add(new THREE.AmbientLight(0xffffff, 0.45));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(100, 200, 100);
+    dir.castShadow = true;
+    _3dScene.add(dir);
+
+    const grid = new THREE.GridHelper(600, 20, 0x1a2744, 0x1a2744);
+    _3dScene.add(grid);
+
+    _3dControls = new OrbitControls(_3dCamera, canvas);
+    _3dControls.enableDamping = true;
+    _3dControls.dampingFactor = 0.05;
+
+    _3dModelGroup = new THREE.Group();
+    _3dScene.add(_3dModelGroup);
+
+    new ResizeObserver(() => {
+        const w2 = canvas.clientWidth; const h2 = canvas.clientHeight;
+        if (!w2 || !h2) return;
+        _3dCamera.aspect = w2 / h2;
+        _3dCamera.updateProjectionMatrix();
+        _3dRenderer.setSize(w2, h2);
+    }).observe(canvas.parentElement || canvas);
+
+    (function animate() {
+        requestAnimationFrame(animate);
+        _3dControls.update();
+        _3dRenderer.render(_3dScene, _3dCamera);
+    })();
+
+    update3DPreview();
+}
+
+function update3DPreview() {
+    if (!_3dModelGroup) return;
+    // Clear
+    while (_3dModelGroup.children.length > 0) {
+        const child = _3dModelGroup.children[0];
+        child.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+        _3dModelGroup.remove(child);
+    }
+    if (_grid.cells.size === 0) return;
+
+    const cells = [..._grid.cells].map(k => k.split(',').map(Number));
+    const gs = _grid.gridSize;
+    const h = _grid.height;
+
+    const allC = cells.map(([c]) => c); const allR = cells.map(([, r]) => r);
+    const refC = _grid.origin ? _grid.origin[0] : (Math.min(...allC) + Math.max(...allC)) / 2;
+    const refR = _grid.origin ? _grid.origin[1] : (Math.min(...allR) + Math.max(...allR)) / 2;
+
+    cells.forEach(([c, r]) => {
+        const geo = new THREE.BoxGeometry(gs * 0.95, h, gs * 0.95);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x4a9eff, transparent: true, opacity: 0.75,
+            roughness: 0.35, metalness: 0.3,
+            emissive: 0x1a3d6f, emissiveIntensity: 0.35,
+        });
+        const cube = new THREE.Mesh(geo, mat);
+        cube.position.set((c - refC) * gs, h / 2, (r - refR) * gs);
+        cube.castShadow = true;
+        _3dModelGroup.add(cube);
+
+        const edgeGeo = new THREE.EdgesGeometry(geo, 30);
+        const edgeMat = new THREE.LineBasicMaterial({ color: 0xaaddff, transparent: true, opacity: 0.9 });
+        const edges = new THREE.LineSegments(edgeGeo, edgeMat);
+        edges.position.copy(cube.position);
+        _3dModelGroup.add(edges);
+    });
 }
 
 // ---- Logic tab ----
@@ -496,6 +818,21 @@ async function saveAndClose() {
         }
         if (Object.keys(metaUpdate).length > 0) {
             await API.updateStation(FACTORY_ID, MACHINE_ID, metaUpdate);
+        }
+
+        // Tab 2: Save 3D model grid
+        if (_grid.cells.size > 0) {
+            const model3DGrid = {
+                gridSize: _grid.gridSize,
+                height: _grid.height,
+                cols: _grid.cols,
+                rows: _grid.rows,
+                cells: [..._grid.cells].map(k => k.split(',').map(Number)),
+                origin: _grid.origin,
+            };
+            await API.updateStation(FACTORY_ID, MACHINE_ID, {
+                config: { ...(machineStation?.config || {}), model3DGrid },
+            });
         }
 
         // Tab 3: Save logic (stations with positionX/Y + connections)
