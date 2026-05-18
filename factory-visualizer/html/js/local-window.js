@@ -35,6 +35,8 @@ let _3dControls = null;
 let _3dModelGroup = null;
 let _importedGlb = null; // { arrayBuffer: ArrayBuffer, name: string } | null
 let _deleteModel = false; // 保存時にmodel3DGrid/model3DGlbを両方削除するフラグ
+let _logicProjectionRenderer = null; // Three.js WebGLRenderer for logic tab top-down view
+let _logicWorldBounds = null; // { left, right, top, bottom } in Three.js world coords (X and Z axes)
 
 // ---- Logic tab state ----
 
@@ -510,6 +512,104 @@ function _loadGlbPreview(arrayBuffer) {
     });
 }
 
+function _initLogicProjection() {
+    // GLBデータを取得（インポート済みまたはDB保存済み）
+    let arrayBuffer = null;
+    if (_importedGlb?.arrayBuffer) {
+        arrayBuffer = _importedGlb.arrayBuffer;
+    } else {
+        const glbData = machineStation?.config?.model3DGlb?.data;
+        if (glbData) arrayBuffer = _base64ToArrayBuffer(glbData);
+    }
+    if (!arrayBuffer) return;
+
+    const canvas = document.getElementById('logic-projection-canvas');
+    if (!canvas) return;
+
+    // 前のレンダラーを破棄
+    if (_logicProjectionRenderer) {
+        _logicProjectionRenderer.dispose();
+        _logicProjectionRenderer = null;
+    }
+    _logicWorldBounds = null;
+
+    // キャンバスサイズ（親要素から取得）
+    const area = canvas.parentElement;
+    const W = area.clientWidth || 600;
+    const H = area.clientHeight || 400;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    renderer.setSize(W, H, false);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x0f1629, 1);
+    _logicProjectionRenderer = renderer;
+
+    const scene = new THREE.Scene();
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+
+    const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
+    const url = URL.createObjectURL(blob);
+    const loader = new GLTFLoader();
+    loader.load(url, gltf => {
+        URL.revokeObjectURL(url);
+        const model = gltf.scene;
+        scene.add(model);
+
+        // バウンディングボックスを計算（Three.js単位）
+        const bbox = new THREE.Box3().setFromObject(model);
+        const sizeX = bbox.max.x - bbox.min.x;
+        const sizeZ = bbox.max.z - bbox.min.z;
+        const cx = (bbox.min.x + bbox.max.x) / 2;
+        const cz = (bbox.min.z + bbox.max.z) / 2;
+
+        // アスペクト比を合わせてカメラ範囲を決定（5%パディング付き）
+        const aspect = W / (H || 1);
+        const halfModelW = sizeX / 2 * 1.05;
+        const halfModelH = sizeZ / 2 * 1.05;
+        const halfWcam = Math.max(halfModelW, halfModelH * aspect);
+        const halfHcam = halfWcam / aspect;
+
+        // ワールド座標のビュー範囲を記録（座標変換に使用）
+        _logicWorldBounds = {
+            left:   cx - halfWcam,
+            right:  cx + halfWcam,
+            top:    cz - halfHcam,   // 画面上端 = 小さいZ
+            bottom: cz + halfHcam,   // 画面下端 = 大きいZ
+        };
+
+        // OrthographicCamera: 真上(-Y方向)から見下ろす
+        const cam = new THREE.OrthographicCamera(
+            -halfWcam, halfWcam,   // left, right（カメラローカル = ワールドX）
+             halfHcam, -halfHcam,  // top, bottom（カメラローカルY+ = ワールドZ-）
+            0.1, 10000
+        );
+        cam.position.set(cx, 1000, cz);
+        cam.lookAt(cx, 0, cz);
+        cam.up.set(0, 0, -1); // Z-方向が画面上端
+
+        renderer.render(scene, cam);
+
+        // SVG viewBoxをGLTFのワールド座標に合わせる
+        _updateLogicViewBox();
+        renderStations();
+        renderConnections();
+    }, undefined, err => {
+        URL.revokeObjectURL(url);
+        console.error('Logic projection load error:', err);
+    });
+}
+
+function _updateLogicViewBox() {
+    const svg = document.getElementById('logic-svg');
+    if (!svg) return;
+    if (_logicWorldBounds) {
+        const { left, top, right, bottom } = _logicWorldBounds;
+        svg.setAttribute('viewBox', `${left} ${top} ${right - left} ${bottom - top}`);
+    } else {
+        refreshLogicSVGSize();
+    }
+}
+
 function _arrayBufferToBase64(buffer) {
     let binary = '';
     const bytes = new Uint8Array(buffer);
@@ -602,17 +702,25 @@ function populateLogicTab() {
     initToolPalette();
     initPropsPanel();
     initSVGEvents();
+    _initLogicProjection();
     refreshLogicSVGSize();
     renderLogicSVG();
+    renderUnplacedList();
     updateInfoBar();
 }
 
 function refreshLogicSVGSize() {
-    // Compute viewBox to fit all stations with padding
+    if (_logicWorldBounds) {
+        // GLTF投影モード: viewBoxはGLTFのワールド座標に固定
+        _updateLogicViewBox();
+        return;
+    }
+    // GLTFなしモード: ステーション座標から動的にviewBoxを計算
     const PAD = 60;
     let minX = -80, maxX = 80, minY = -80, maxY = 80;
     childStations.forEach(s => {
-        const x = s.positionX || 0;
+        if (s.positionX == null) return;
+        const x = s.positionX;
         const y = s.positionY || 0;
         if (x - PAD < minX) minX = x - PAD;
         if (x + PAD > maxX) maxX = x + PAD;
@@ -777,13 +885,6 @@ function initSVGEvents() {
     svg.addEventListener('mouseleave', () => { _dragState = null; });
 
     svg.addEventListener('click', e => {
-        if (_pendingAddType) {
-            const p = svgPoint(svg, e);
-            addStation(_pendingAddType, Math.round(p.x), Math.round(p.y));
-            _pendingAddType = null;
-            updateInfoBar();
-            return;
-        }
         // Click on empty space in select mode → deselect
         if (e.target === svg || e.target.tagName === 'rect') {
             if (_activeTool === 'select') {
@@ -868,12 +969,19 @@ function initToolPalette() {
         });
     });
 
-    document.querySelectorAll('.logic-palette .station-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            _pendingAddType = btn.dataset.type;
-            updateInfoBar(`キャンバスをクリックして ${btn.dataset.type} を配置`);
-        });
+    // 新規ステーション追加ボタン
+    document.getElementById('btn-add-station')?.addEventListener('click', () => {
+        const type = document.getElementById('add-station-type')?.value || 'processing';
+        addStation(type); // positionX/Y = null（未配置）
+        renderUnplacedList();
     });
+
+    // ドロップゾーン設定
+    const area = document.querySelector('.logic-canvas-area');
+    if (area) {
+        area.addEventListener('dragover', e => e.preventDefault());
+        area.addEventListener('drop', e => _dropToLogicCanvas(e));
+    }
 }
 
 // ---- Props panel ----
@@ -950,7 +1058,7 @@ function updateInfoBar(msg) {
 
 // ---- Data operations ----
 
-function addStation(type, x = 0, y = 0) {
+function addStation(type, x = null, y = null) {
     const id = `${MACHINE_ID}_${type}_${Date.now()}`;
     childStations.push({
         stationId: id,
@@ -961,11 +1069,13 @@ function addStation(type, x = 0, y = 0) {
         positionY: y,
         config: {},
     });
-    _selectedStation = id;
-    refreshLogicSVGSize();
-    renderLogicSVG();
-    updatePropsPanel();
-    updatePalettePos();
+    _selectedStation = x !== null ? id : null;
+    if (x !== null) {
+        refreshLogicSVGSize();
+        renderLogicSVG();
+        updatePropsPanel();
+        updatePalettePos();
+    }
     updateInfoBar();
 }
 
@@ -983,9 +1093,76 @@ function deleteStation(stationId) {
     if (_selectedStation === stationId) _selectedStation = null;
     refreshLogicSVGSize();
     renderLogicSVG();
+    renderUnplacedList();
     updatePropsPanel();
     updatePalettePos();
     updateInfoBar();
+}
+
+function _dropToLogicCanvas(e) {
+    e.preventDefault();
+    const stationId = e.dataTransfer.getData('text/station-id');
+    const s = childStations.find(st => st.stationId === stationId);
+    if (!s) return;
+
+    let lx, lz;
+    if (_logicWorldBounds) {
+        // GLTF投影モード: キャンバス座標 → GLTFローカル座標
+        const area = document.querySelector('.logic-canvas-area');
+        const rect = area.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+        const W = rect.width || 1;
+        const H = rect.height || 1;
+        const { left, right, top, bottom } = _logicWorldBounds;
+        lx = left + (px / W) * (right - left);
+        lz = top  + (py / H) * (bottom - top);
+    } else {
+        // GLTFなしモード: SVG座標に変換
+        const svg = document.getElementById('logic-svg');
+        const pt = svg.createSVGPoint();
+        pt.x = e.clientX; pt.y = e.clientY;
+        const sp = pt.matrixTransform(svg.getScreenCTM().inverse());
+        lx = Math.round(sp.x);
+        lz = Math.round(sp.y);
+    }
+
+    s.positionX = lx;
+    s.positionY = lz;
+    _selectedStation = stationId;
+    refreshLogicSVGSize();
+    renderUnplacedList();
+    renderLogicSVG();
+    updatePropsPanel();
+    updatePalettePos();
+    updateInfoBar();
+}
+
+function renderUnplacedList() {
+    const list = document.getElementById('unplaced-station-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const unplaced = childStations.filter(s => s.positionX == null);
+    if (unplaced.length === 0) {
+        const msg = document.createElement('div');
+        msg.className = 'unplaced-empty';
+        msg.textContent = '全て配置済み';
+        list.appendChild(msg);
+        return;
+    }
+    unplaced.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'unplaced-item';
+        item.draggable = true;
+        item.dataset.stationId = s.stationId;
+        item.title = `${s.name} (${s.stationType})`;
+        item.textContent = s.name || s.stationType;
+        item.addEventListener('dragstart', e => {
+            e.dataTransfer.setData('text/station-id', s.stationId);
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        list.appendChild(item);
+    });
 }
 
 // ---- Save ----

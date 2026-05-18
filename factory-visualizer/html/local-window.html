@@ -92,7 +92,7 @@
         #tab-logic { flex-direction: row; }
 
         .logic-palette {
-            width: 88px; flex-shrink: 0; display: flex; flex-direction: column; gap: 3px;
+            width: 120px; flex-shrink: 0; display: flex; flex-direction: column; gap: 3px;
             padding: 8px 6px; background: var(--bg-panel); border-right: 1px solid var(--border-color);
             overflow-y: auto;
         }
@@ -107,18 +107,42 @@
         }
         .logic-palette .tool-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
         .logic-palette .tool-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
-        .logic-palette .station-btn {
-            font-size: 10px; padding: 4px 3px; text-align: center;
+
+        /* 未配置ステーションリスト */
+        #unplaced-station-list { display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; overflow-y: auto; }
+        .unplaced-item {
+            font-size: 10px; padding: 4px 5px; line-height: 1.3;
             background: var(--bg-surface); color: var(--text-secondary);
-            border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer;
+            border: 1px solid var(--border-color); border-radius: 3px; cursor: grab;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none;
         }
-        .logic-palette .station-btn:hover { border-color: var(--accent-blue); }
+        .unplaced-item:hover { border-color: var(--accent-blue); color: var(--text-primary); }
+        .unplaced-item:active { cursor: grabbing; opacity: 0.6; }
+        .unplaced-empty { font-size: 10px; color: var(--text-muted); padding: 4px 2px; }
+        .unplaced-add-row { display: flex; gap: 3px; margin-top: 2px; }
+        .unplaced-add-row select {
+            flex: 1; font-size: 10px; padding: 3px 2px;
+            background: var(--bg-input); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: 3px; min-width: 0;
+        }
+        #btn-add-station {
+            font-size: 11px; padding: 3px 5px; flex-shrink: 0;
+            background: var(--bg-surface); color: var(--accent-blue);
+            border: 1px solid var(--accent-blue); border-radius: 3px; cursor: pointer;
+        }
+        #btn-add-station:hover { background: var(--accent-blue); color: #fff; }
 
         .logic-canvas-area {
             flex: 1; position: relative; min-width: 0; overflow: hidden;
             background: var(--bg-surface);
         }
-        #logic-svg { width: 100%; height: 100%; display: block; }
+        #logic-projection-canvas {
+            position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0;
+        }
+        #logic-svg {
+            position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+            z-index: 1; background: transparent;
+        }
         #logic-info-bar {
             position: absolute; bottom: 0; left: 0; right: 0;
             background: rgba(15,22,41,0.85); border-top: 1px solid var(--border-color);
@@ -241,16 +265,24 @@
             <button class="tool-btn" data-tool="delete">削除</button>
             <div class="palette-section">位置</div>
             <div id="palette-pos" style="font-size:10px;color:var(--text-muted);padding:2px 4px;line-height:1.8">X: —<br>Y: —</div>
+            <div class="palette-section">未配置</div>
+            <div id="unplaced-station-list"></div>
             <div class="palette-section">追加</div>
-            <button class="station-btn" data-type="source">Source</button>
-            <button class="station-btn" data-type="processing">処理</button>
-            <button class="station-btn" data-type="drain">Drain</button>
-            <button class="station-btn" data-type="merge">Merge</button>
-            <button class="station-btn" data-type="split">Split</button>
-            <button class="station-btn" data-type="entry">Entry</button>
-            <button class="station-btn" data-type="exit">Exit</button>
+            <div class="unplaced-add-row">
+                <select id="add-station-type">
+                    <option value="source">Source</option>
+                    <option value="processing">処理</option>
+                    <option value="drain">Drain</option>
+                    <option value="merge">Merge</option>
+                    <option value="split">Split</option>
+                    <option value="entry">Entry</option>
+                    <option value="exit">Exit</option>
+                </select>
+                <button id="btn-add-station">+</button>
+            </div>
         </div>
         <div class="logic-canvas-area">
+            <canvas id="logic-projection-canvas"></canvas>
             <svg id="logic-svg" xmlns="http://www.w3.org/2000/svg">
                 <defs>
                     <marker id="arrowhead" markerWidth="8" markerHeight="6"
