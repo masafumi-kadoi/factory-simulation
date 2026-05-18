@@ -361,25 +361,33 @@ export class Scene3D {
     }
 
     _buildVoxelMesh(grid3d, opacity) {
-        const gridSize = grid3d.gridSize || 20;
-        const cellHeight = grid3d.height || gridSize * 2;
+        const METER_SCALE = 10;
+        const gridSizeRaw = grid3d.gridSize || 0.5;
+        // gridSize < 5 → meters format; >= 5 → legacy Three.js units
+        const isMeters = gridSizeRaw < 5;
+        const gridSize = isMeters ? gridSizeRaw * METER_SCALE : gridSizeRaw;
+        const cellHeightRaw = grid3d.height || (isMeters ? 1.5 : gridSizeRaw * 2);
+        const cellHeight = isMeters ? cellHeightRaw * METER_SCALE : cellHeightRaw;
         const cells = grid3d.cells || [];
 
         if (cells.length === 0) return this._buildCylinderMesh(60, 80, opacity);
 
+        // Origin-based centering: origin cell maps to x=0, z=0
+        const origin = grid3d.origin;
+        const allC = cells.map(([c]) => c);
+        const allR = cells.map(([, r]) => r);
+        const refC = origin ? origin[0] : (Math.min(...allC) + Math.max(...allC)) / 2;
+        const refR = origin ? origin[1] : (Math.min(...allR) + Math.max(...allR)) / 2;
+
         const group = new THREE.Group();
         const geo = new THREE.BoxGeometry(gridSize * 0.95, cellHeight, gridSize * 0.95);
         const mat = new THREE.MeshStandardMaterial({
-            color: 0x4a9eff,
-            transparent: true,
-            opacity,
-            roughness: 0.4,
-            metalness: 0.3,
+            color: 0x4a9eff, transparent: true, opacity, roughness: 0.4, metalness: 0.3,
         });
 
         cells.forEach(([cx, cz]) => {
             const cube = new THREE.Mesh(geo, mat.clone());
-            cube.position.set(cx * gridSize, cellHeight / 2, cz * gridSize);
+            cube.position.set((cx - refC) * gridSize, cellHeight / 2, (cz - refR) * gridSize);
             group.add(cube);
         });
 

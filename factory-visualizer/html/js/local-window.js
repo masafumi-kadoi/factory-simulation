@@ -15,17 +15,19 @@ let childStations = [];
 let childConnections = [];
 
 // ---- 3D Model tab state ----
+const METER_SCALE = 10; // 1m = 10 Three.js units
 const _grid = {
-    gridSize: 20,   // scene units per cell
-    height: 40,     // scene units tall
-    cols: 5,
-    rows: 5,
+    gridSize: 0.5,   // meters per cell
+    height: 1.5,     // meters tall
+    cols: 20,
+    rows: 20,
     cells: new Set(), // "col,row" strings
-    origin: null,     // [col, row] or null
+    origin: null,     // [col, row] or null — maps to (0,0,0) in exported model
     originMode: false,
     isDragging: false,
     dragMode: null,   // 'add' | 'remove'
 };
+let _gridZoom = 1.0; // 2Dグリッドキャンバスの表示倍率
 let _3dRenderer = null;
 let _3dScene = null;
 let _3dCamera = null;
@@ -121,6 +123,7 @@ function populateModelTab() {
     initModelTab();
     _deleteModel = false;
     _importedGlb = null;
+    _gridZoom = 1.0;
     const cfg = machineStation?.config || {};
 
     // グリッドデータが優先（再編集可能）
@@ -221,10 +224,9 @@ function initModelTab() {
 
     // Modal: grid size OK
     document.getElementById('gs-ok').addEventListener('click', () => {
-        const cols = Math.max(1, Math.min(30, parseInt(document.getElementById('gs-cols').value) || 5));
-        const rows = Math.max(1, Math.min(30, parseInt(document.getElementById('gs-rows').value) || 5));
-        const size = Math.max(5, Math.min(100, parseInt(document.getElementById('gs-size').value) || 20));
-        // Remove cells that are out of new bounds
+        const cols = Math.max(1, Math.min(50, parseInt(document.getElementById('gs-cols').value) || 20));
+        const rows = Math.max(1, Math.min(50, parseInt(document.getElementById('gs-rows').value) || 20));
+        const size = Math.max(0.1, Math.min(10, parseFloat(document.getElementById('gs-size').value) || 0.5));
         for (const key of [..._grid.cells]) {
             const [c, r] = key.split(',').map(Number);
             if (c >= cols || r >= rows) _grid.cells.delete(key);
@@ -237,7 +239,7 @@ function initModelTab() {
 
     // Modal: height OK
     document.getElementById('h-ok').addEventListener('click', () => {
-        _grid.height = Math.max(5, Math.min(400, parseInt(document.getElementById('h-val').value) || 40));
+        _grid.height = Math.max(0.1, Math.min(20, parseFloat(document.getElementById('h-val').value) || 1.5));
         document.getElementById('height-modal').style.display = 'none';
         renderGridCanvas();
         update3DPreview();
@@ -285,6 +287,14 @@ function initModelTab() {
     canvas.addEventListener('mouseup', () => { _grid.isDragging = false; });
     canvas.addEventListener('mouseleave', () => { _grid.isDragging = false; });
     document.addEventListener('mouseup', () => { _grid.isDragging = false; });
+
+    // ホイールズーム
+    canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        _gridZoom = Math.max(0.2, Math.min(8, _gridZoom * factor));
+        renderGridCanvas();
+    }, { passive: false });
 }
 
 function _getCellFromEvent(canvas, e) {
@@ -293,7 +303,7 @@ function _getCellFromEvent(canvas, e) {
     const y = e.clientY - rect.top;
     const W = canvas.offsetWidth;
     const H = canvas.offsetHeight;
-    const cellPx = Math.min(W / _grid.cols, H / _grid.rows);
+    const cellPx = Math.min(W / _grid.cols, H / _grid.rows) * _gridZoom;
     if (cellPx <= 0) return null;
     const offX = (W - cellPx * _grid.cols) / 2;
     const offY = (H - cellPx * _grid.rows) / 2;
@@ -315,7 +325,7 @@ function renderGridCanvas() {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const cellPx = Math.min(W / _grid.cols, H / _grid.rows);
+    const cellPx = Math.min(W / _grid.cols, H / _grid.rows) * _gridZoom;
     const gridW = cellPx * _grid.cols;
     const gridH = cellPx * _grid.rows;
     const offX = (W - gridW) / 2;
@@ -373,7 +383,7 @@ function renderGridCanvas() {
 
     // Status
     const statusEl = document.getElementById('model-status');
-    if (statusEl) statusEl.textContent = `${_grid.cells.size}セル | ${_grid.cols}×${_grid.rows} | 高さ:${_grid.height} | サイズ:${_grid.gridSize}`;
+    if (statusEl) statusEl.textContent = `${_grid.cells.size}セル | ${_grid.cols}×${_grid.rows} | ${_grid.gridSize}m/cell | 高さ:${_grid.height}m`;
 }
 
 function init3DPreview() {
@@ -443,8 +453,8 @@ function update3DPreview() {
     if (_grid.cells.size === 0) return;
 
     const cells = [..._grid.cells].map(k => k.split(',').map(Number));
-    const gs = _grid.gridSize;
-    const h = _grid.height;
+    const gs = _grid.gridSize * METER_SCALE;
+    const h = _grid.height * METER_SCALE;
 
     const allC = cells.map(([c]) => c); const allR = cells.map(([, r]) => r);
     const refC = _grid.origin ? _grid.origin[0] : (Math.min(...allC) + Math.max(...allC)) / 2;
@@ -521,7 +531,9 @@ function _base64ToArrayBuffer(base64) {
 // Adjacent filled cells are combined into the largest possible rectangular block,
 // so 4 cells in a 2x2 square become one BoxGeometry instead of four.
 function _buildMergedGroup() {
-    const { gridSize: gs, height: h, cols, rows, cells, origin } = _grid;
+    const { gridSize: gridSizeM, height: heightM, cols, rows, cells, origin } = _grid;
+    const gs = gridSizeM * METER_SCALE;
+    const h = heightM * METER_SCALE;
     if (cells.size === 0) return null;
 
     const filled = Array.from({ length: rows }, () => new Array(cols).fill(false));
