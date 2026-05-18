@@ -32,6 +32,7 @@ let _3dCamera = null;
 let _3dControls = null;
 let _3dModelGroup = null;
 let _importedGlb = null; // { arrayBuffer: ArrayBuffer, name: string } | null
+let _deleteModel = false; // 保存時にmodel3DGrid/model3DGlbを両方削除するフラグ
 
 // ---- Logic tab state ----
 
@@ -118,9 +119,25 @@ function populateInfoTab() {
 
 function populateModelTab() {
     initModelTab();
+    _deleteModel = false;
+    _importedGlb = null;
     const cfg = machineStation?.config || {};
 
-    // GLBインポートデータを復元
+    // グリッドデータが優先（再編集可能）
+    const g = cfg.model3DGrid;
+    if (g && Array.isArray(g.cells) && g.cells.length > 0) {
+        if (g.gridSize) _grid.gridSize = g.gridSize;
+        if (g.height)   _grid.height   = g.height;
+        if (g.cols)     _grid.cols     = g.cols;
+        if (g.rows)     _grid.rows     = g.rows;
+        if (g.origin)   _grid.origin   = g.origin;
+        _grid.cells.clear();
+        g.cells.forEach(([c, r]) => _grid.cells.add(`${c},${r}`));
+        renderGridCanvas();
+        return;
+    }
+
+    // グリッドがない場合はGLBを表示（インポートしたモデル）
     if (cfg.model3DGlb?.data) {
         _importedGlb = {
             arrayBuffer: _base64ToArrayBuffer(cfg.model3DGlb.data),
@@ -129,22 +146,9 @@ function populateModelTab() {
         _grid.cells.clear();
         _grid.origin = null;
         renderGridCanvas();
-        return; // グリッドは使用しない
+        return;
     }
 
-    // グリッドデータを復元
-    const g = cfg.model3DGrid;
-    if (g) {
-        if (g.gridSize) _grid.gridSize = g.gridSize;
-        if (g.height)   _grid.height   = g.height;
-        if (g.cols)     _grid.cols     = g.cols;
-        if (g.rows)     _grid.rows     = g.rows;
-        if (g.origin)   _grid.origin   = g.origin;
-        if (Array.isArray(g.cells)) {
-            _grid.cells.clear();
-            g.cells.forEach(([c, r]) => _grid.cells.add(`${c},${r}`));
-        }
-    }
     renderGridCanvas();
 }
 
@@ -166,6 +170,20 @@ function initModelTab() {
         _grid.originMode = false;
         document.getElementById('btn-origin-mode').classList.remove('active');
         document.getElementById('model-status').textContent = '';
+        renderGridCanvas();
+        update3DPreview();
+    });
+
+    // モデル削除ボタン
+    document.getElementById('btn-delete-model').addEventListener('click', () => {
+        if (!confirm('保存済みの3Dモデルを削除しますか？\n保存するまで変更は確定しません。')) return;
+        _deleteModel = true;
+        _importedGlb = null;
+        _grid.cells.clear();
+        _grid.origin = null;
+        _grid.originMode = false;
+        document.getElementById('btn-origin-mode').classList.remove('active');
+        document.getElementById('model-status').textContent = '削除予定（保存で確定）';
         renderGridCanvas();
         update3DPreview();
     });
@@ -981,7 +999,12 @@ async function saveAndClose() {
 
         // Tab 2: Save 3D model
         const baseConfig = machineStation?.config || {};
-        if (_importedGlb) {
+        if (_deleteModel) {
+            // モデル削除: 編集用データとGLBの両方をリセット
+            await API.updateStation(FACTORY_ID, MACHINE_ID, {
+                config: { ...baseConfig, model3DGrid: null, model3DGlb: null },
+            });
+        } else if (_importedGlb) {
             // GLBインポート: model3DGlbのみ保存、model3DGridをクリア
             const data = _arrayBufferToBase64(_importedGlb.arrayBuffer);
             await API.updateStation(FACTORY_ID, MACHINE_ID, {
