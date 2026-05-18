@@ -1,6 +1,7 @@
 // 3D Scene manager for factory-visualizer
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const THEMES = {
     dark: {
@@ -82,6 +83,7 @@ export class Scene3D {
         this._clickTarget = null;
         this._raycaster = new THREE.Raycaster();
         this._mouse = new THREE.Vector2();
+        this._glbLoader = new GLTFLoader();
 
         this._initScene();
         this._animate();
@@ -316,7 +318,8 @@ export class Scene3D {
         // Hide shell when any machine has a custom 3D model
         const hasCustomModel = machines.some(m => {
             const cells = m.config?.model3DGrid?.cells;
-            return Array.isArray(cells) && cells.length > 0;
+            if (Array.isArray(cells) && cells.length > 0) return true;
+            return !!m.config?.model3DGlb?.data;
         });
         if (hasCustomModel) {
             shellMesh.visible = false;
@@ -335,7 +338,10 @@ export class Scene3D {
         group.userData.isMachine = true;
 
         let mesh;
-        if (cfg.model3DGrid) {
+        if (cfg.model3DGlb?.data) {
+            mesh = new THREE.Group(); // placeholder; filled asynchronously
+            this._loadGlbForMachine(cfg.model3DGlb.data, mesh);
+        } else if (cfg.model3DGrid) {
             mesh = this._buildVoxelMesh(cfg.model3DGrid, this._shellOpacity);
         } else {
             mesh = this._buildCylinderMesh(60, 80, this._shellOpacity);
@@ -379,6 +385,29 @@ export class Scene3D {
 
         geo.dispose();
         return group;
+    }
+
+    _loadGlbForMachine(base64data, targetGroup) {
+        const binary = atob(base64data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'model/gltf-binary' });
+        const url = URL.createObjectURL(blob);
+        this._glbLoader.load(url, gltf => {
+            URL.revokeObjectURL(url);
+            const model = gltf.scene;
+            const box = new THREE.Box3().setFromObject(model);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim > 0) model.scale.setScalar(100 / maxDim);
+            box.setFromObject(model);
+            model.position.y = -box.min.y;
+            targetGroup.add(model);
+        }, undefined, err => {
+            URL.revokeObjectURL(url);
+            console.error('GLB load error (machine):', err);
+        });
     }
 
     _buildCylinderMesh(radius, height, opacity) {

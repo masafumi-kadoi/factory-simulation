@@ -830,6 +830,10 @@ async function importFactoryJSON(e) {
 function initGlobal3DEditTab() {
     document.querySelectorAll('.g3d-sidebar-item').forEach(item => {
         item.addEventListener('click', () => {
+            if (item.classList.contains('active')) {
+                closeG3DFloating();
+                return;
+            }
             document.querySelectorAll('.g3d-sidebar-item').forEach(i => i.classList.remove('active'));
             item.classList.add('active');
             openG3DFloating(item.dataset.group, item.textContent);

@@ -2,6 +2,8 @@
 import * as API from './api.js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const params = new URLSearchParams(location.search);
 const FACTORY_ID = params.get('factoryId') || '';
@@ -29,6 +31,7 @@ let _3dScene = null;
 let _3dCamera = null;
 let _3dControls = null;
 let _3dModelGroup = null;
+let _importedGlb = null; // { arrayBuffer: ArrayBuffer, name: string } | null
 
 // ---- Logic tab state ----
 
@@ -69,6 +72,7 @@ function initTabs() {
             if (tab.dataset.tab === 'model3d') {
                 renderGridCanvas();
                 init3DPreview();
+                if (_importedGlb && _3dRenderer) _loadGlbPreview(_importedGlb.arrayBuffer);
             }
         });
     });
@@ -115,6 +119,20 @@ function populateInfoTab() {
 function populateModelTab() {
     initModelTab();
     const cfg = machineStation?.config || {};
+
+    // GLBインポートデータを復元
+    if (cfg.model3DGlb?.data) {
+        _importedGlb = {
+            arrayBuffer: _base64ToArrayBuffer(cfg.model3DGlb.data),
+            name: cfg.model3DGlb.name || 'model.glb',
+        };
+        _grid.cells.clear();
+        _grid.origin = null;
+        renderGridCanvas();
+        return; // グリッドは使用しない
+    }
+
+    // グリッドデータを復元
     const g = cfg.model3DGrid;
     if (g) {
         if (g.gridSize) _grid.gridSize = g.gridSize;
@@ -142,12 +160,35 @@ function initModelTab() {
         renderGridCanvas();
     });
     document.getElementById('btn-clear-cells').addEventListener('click', () => {
+        _importedGlb = null;
         _grid.cells.clear();
         _grid.origin = null;
         _grid.originMode = false;
         document.getElementById('btn-origin-mode').classList.remove('active');
+        document.getElementById('model-status').textContent = '';
         renderGridCanvas();
         update3DPreview();
+    });
+
+    // GLBインポートボタン
+    const glbInput = document.getElementById('model-glb-input');
+    document.getElementById('btn-import-glb').addEventListener('click', () => glbInput.click());
+    glbInput.addEventListener('change', e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            _importedGlb = { arrayBuffer: ev.target.result, name: file.name };
+            _grid.cells.clear();
+            _grid.origin = null;
+            _grid.originMode = false;
+            document.getElementById('btn-origin-mode').classList.remove('active');
+            document.getElementById('model-status').textContent = `GLB: ${file.name}`;
+            renderGridCanvas();
+            if (_3dRenderer) _loadGlbPreview(_importedGlb.arrayBuffer);
+        };
+        reader.readAsArrayBuffer(file);
+        glbInput.value = '';
     });
     document.getElementById('btn-grid-size').addEventListener('click', () => {
         document.getElementById('gs-cols').value = _grid.cols;
@@ -366,7 +407,11 @@ function init3DPreview() {
         _3dRenderer.render(_3dScene, _3dCamera);
     })();
 
-    update3DPreview();
+    if (_importedGlb) {
+        _loadGlbPreview(_importedGlb.arrayBuffer);
+    } else {
+        update3DPreview();
+    }
 }
 
 function update3DPreview() {
@@ -404,6 +449,61 @@ function update3DPreview() {
         const edges = new THREE.LineSegments(edgeGeo, edgeMat);
         edges.position.copy(cube.position);
         _3dModelGroup.add(edges);
+    });
+}
+
+function _loadGlbPreview(arrayBuffer) {
+    if (!_3dModelGroup) return;
+    // Clear existing model
+    while (_3dModelGroup.children.length > 0) {
+        const child = _3dModelGroup.children[0];
+        child.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+        _3dModelGroup.remove(child);
+    }
+    const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
+    const url = URL.createObjectURL(blob);
+    const loader = new GLTFLoader();
+    loader.load(url, gltf => {
+        URL.revokeObjectURL(url);
+        const model = gltf.scene;
+        // Auto-scale: fit to 100 units max dimension
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        if (maxDim > 0) model.scale.setScalar(100 / maxDim);
+        // Place bottom at y=0
+        box.setFromObject(model);
+        model.position.y = -box.min.y;
+        _3dModelGroup.add(model);
+    }, undefined, err => {
+        URL.revokeObjectURL(url);
+        console.error('GLB load error:', err);
+    });
+}
+
+function _arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const chunk = 8192;
+    for (let i = 0; i < bytes.byteLength; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+
+function _base64ToArrayBuffer(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+}
+
+function _exportModelGroupAsGlb() {
+    return new Promise((resolve, reject) => {
+        if (!_3dModelGroup || _3dModelGroup.children.length === 0) { resolve(null); return; }
+        const exporter = new GLTFExporter();
+        exporter.parse(_3dModelGroup, buffer => resolve(buffer), err => reject(err), { binary: true });
     });
 }
 
@@ -820,8 +920,16 @@ async function saveAndClose() {
             await API.updateStation(FACTORY_ID, MACHINE_ID, metaUpdate);
         }
 
-        // Tab 2: Save 3D model grid
-        if (_grid.cells.size > 0) {
+        // Tab 2: Save 3D model
+        const baseConfig = machineStation?.config || {};
+        if (_importedGlb) {
+            // GLBインポート: model3DGlbのみ保存、model3DGridをクリア
+            const data = _arrayBufferToBase64(_importedGlb.arrayBuffer);
+            await API.updateStation(FACTORY_ID, MACHINE_ID, {
+                config: { ...baseConfig, model3DGlb: { data, name: _importedGlb.name }, model3DGrid: null },
+            });
+        } else if (_grid.cells.size > 0) {
+            // グリッド編集: model3DGrid（再編集用）+ model3DGlb（表示用GLBエクスポート）の両方保存
             const model3DGrid = {
                 gridSize: _grid.gridSize,
                 height: _grid.height,
@@ -830,8 +938,12 @@ async function saveAndClose() {
                 cells: [..._grid.cells].map(k => k.split(',').map(Number)),
                 origin: _grid.origin,
             };
+            const glbBuffer = await _exportModelGroupAsGlb();
+            const model3DGlb = glbBuffer
+                ? { data: _arrayBufferToBase64(glbBuffer), name: 'model.glb' }
+                : null;
             await API.updateStation(FACTORY_ID, MACHINE_ID, {
-                config: { ...(machineStation?.config || {}), model3DGrid },
+                config: { ...baseConfig, model3DGrid, model3DGlb },
             });
         }
 
