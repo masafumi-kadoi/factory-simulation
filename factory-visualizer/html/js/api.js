@@ -33,10 +33,18 @@ export async function createFactory(name, description = '') {
     return req('POST', '/factories', { name, description });
 }
 
+export async function updateFactory(id, fields) {
+    return req('PUT', `/factories/${encodeURIComponent(id)}`, fields);
+}
+
 // ---- Stations ----
 
 export async function fetchFactoryStations(factoryId) {
     return req('GET', `/factories/${encodeURIComponent(factoryId)}/stations`);
+}
+
+export async function createStation(factoryId, data) {
+    return req('POST', `/factories/${encodeURIComponent(factoryId)}/stations`, data);
 }
 
 export async function updateStation(factoryId, stationId, fields) {

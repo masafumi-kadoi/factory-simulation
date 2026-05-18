@@ -179,7 +179,7 @@ async function addStation() {
         return;
     }
     try {
-        await FactoryAPI.addStation(FACTORY_ID, { station_id: stationId, name, station_type: stationType, pos_x: x, pos_y: y, pos_z: z });
+        await FactoryAPI.addStation(FACTORY_ID, { stationId, name, stationType, posX: x, posY: y, posZ: z });
         hideModal('modal-add-station');
         await loadStations();
     } catch (err) {

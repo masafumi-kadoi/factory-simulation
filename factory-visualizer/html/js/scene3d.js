@@ -690,6 +690,17 @@ export class Scene3D {
         this.renderer.setSize(w, h);
     }
 
+    attachTo(newContainer) {
+        if (this.container === newContainer) return;
+        const canvas = this.renderer.domElement;
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+        newContainer.appendChild(canvas);
+        this.container = newContainer;
+        this._resizeObs.disconnect();
+        this._resizeObs.observe(newContainer);
+        this._onResize();
+    }
+
     dispose() {
         if (this._raf) cancelAnimationFrame(this._raf);
         this._resizeObs && this._resizeObs.disconnect();

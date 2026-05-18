@@ -764,12 +764,19 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 	return domain.NewScenario(factoryID, factoryName, stations, connections), nil
 }
 
-// ListScenarios retrieves all scenarios from the database
-func (r *Repository) ListScenarios() ([]*domain.Scenario, error) {
-	// Get all scenario IDs
-	rows, err := r.db.GetConnection().Query(`
-		SELECT id, name FROM scenarios ORDER BY name ASC
-	`)
+// ListScenarios retrieves all scenarios from the database, optionally filtered by factoryID.
+func (r *Repository) ListScenarios(factoryID ...string) ([]*domain.Scenario, error) {
+	var rows *sql.Rows
+	var err error
+	if len(factoryID) > 0 && factoryID[0] != "" {
+		rows, err = r.db.GetConnection().Query(`
+			SELECT id, name FROM scenarios WHERE factory_id = $1 ORDER BY name ASC
+		`, factoryID[0])
+	} else {
+		rows, err = r.db.GetConnection().Query(`
+			SELECT id, name FROM scenarios ORDER BY name ASC
+		`)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query scenarios: %w", err)
 	}

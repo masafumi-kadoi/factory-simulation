@@ -416,8 +416,9 @@ func (h *Handler) HandleListScenarios(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all scenarios from database
-	scenarios, err := h.repo.ListScenarios()
+	// Get all scenarios from database, filtered by factory_id if provided
+	factoryID := r.URL.Query().Get("factory_id")
+	scenarios, err := h.repo.ListScenarios(factoryID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scenarios: %v", err))
 		return

@@ -44,148 +44,241 @@
                 <button class="toolbar-btn" id="btn-fit" title="全体表示">⊡ フィット</button>
                 <button class="toolbar-btn" id="btn-top" title="上面視">↧ 上面</button>
             </div>
-            <div class="toolbar-group toolbar-status">
+            <div class="toolbar-tabs">
+                <button class="toolbar-tab active" data-gvtab="gv-view-display">ビュー表示</button>
+                <button class="toolbar-tab" data-gvtab="gv-factory-info">工場情報</button>
+                <button class="toolbar-tab" data-gvtab="gv-3d-edit">3Dモデル編集</button>
+                <button class="toolbar-tab" data-gvtab="gv-logic-edit">ロジック編集</button>
+            </div>
+            <div class="toolbar-group">
                 <span id="status-text" class="status-idle">待機中</span>
             </div>
         </div>
 
-        <!-- Main content -->
-        <div id="content">
-            <!-- Left panel -->
-            <aside id="left-panel">
-                <div class="panel-section" id="section-objects">
-                    <div class="section-header" data-toggle="objects">
-                        <span>オブジェクト</span>
-                        <span class="toggle-icon">▾</span>
-                    </div>
-                    <div class="section-body" id="objects-body">
-                        <div class="filter-row">
-                            <button class="filter-btn active" data-filter="machine">設備</button>
-                            <button class="filter-btn active" data-filter="station">ステーション</button>
-                            <button class="filter-btn active" data-filter="work">ワーク</button>
-                        </div>
-                        <div id="object-list" class="object-list">
-                            <div class="empty-hint">工場を選択してください</div>
-                        </div>
-                    </div>
-                </div>
+        <!-- ========== Global tab bodies ========== -->
 
-                <div class="panel-section" id="section-display">
-                    <div class="section-header" data-toggle="display">
-                        <span>表示設定</span>
-                        <span class="toggle-icon">▾</span>
-                    </div>
-                    <div class="section-body" id="display-body">
-                        <div class="setting-row">
-                            <label>シーンテーマ</label>
-                            <select id="scene-theme">
-                                <option value="auto">テーマに合わせる</option>
-                                <option value="dark" selected>ダークネイビー</option>
-                                <option value="light">ライト</option>
-                            </select>
+        <!-- Tab: ビュー表示 (default) -->
+        <div class="global-tab-body active" id="gv-view-display">
+            <!-- Main content -->
+            <div id="content">
+                <!-- Left panel -->
+                <aside id="left-panel">
+                    <div class="panel-section" id="section-objects">
+                        <div class="section-header" data-toggle="objects">
+                            <span>オブジェクト</span>
+                            <span class="toggle-icon">▾</span>
                         </div>
-                        <div class="setting-row">
-                            <label>設備シェル透明度</label>
-                            <input type="range" id="shell-opacity" min="0.1" max="1.0" step="0.05" value="0.6">
-                            <span class="slider-val" id="shell-opacity-val">0.6</span>
-                        </div>
-                        <div class="setting-row">
-                            <label>内部ステーション径</label>
-                            <input type="range" id="internal-radius" min="5" max="30" step="1" value="15">
-                            <span class="slider-val" id="internal-radius-val">15</span>
-                        </div>
-                        <div class="setting-row">
-                            <label>内部表示</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="show-internal" checked>
-                                <span class="toggle-track"></span>
-                            </label>
-                        </div>
-                        <div class="setting-row">
-                            <label>ステーション名</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="show-station-names" checked>
-                                <span class="toggle-track"></span>
-                            </label>
-                        </div>
-                        <div class="setting-row">
-                            <label>ワーク表示</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="show-works" checked>
-                                <span class="toggle-track"></span>
-                            </label>
-                        </div>
-                        <div class="setting-row">
-                            <label>インターロック表示</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="show-interlocks">
-                                <span class="toggle-track"></span>
-                            </label>
+                        <div class="section-body" id="objects-body">
+                            <div class="filter-row">
+                                <button class="filter-btn active" data-filter="machine">設備</button>
+                                <button class="filter-btn active" data-filter="station">ステーション</button>
+                                <button class="filter-btn active" data-filter="work">ワーク</button>
+                            </div>
+                            <div id="object-list" class="object-list">
+                                <div class="empty-hint">工場を選択してください</div>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="panel-section" id="section-sim">
-                    <div class="section-header" data-toggle="sim">
-                        <span>シミュレーション</span>
-                        <span class="toggle-icon">▾</span>
+                    <div class="panel-section" id="section-display">
+                        <div class="section-header" data-toggle="display">
+                            <span>表示設定</span>
+                            <span class="toggle-icon">▾</span>
+                        </div>
+                        <div class="section-body" id="display-body">
+                            <div class="setting-row">
+                                <label>シーンテーマ</label>
+                                <select id="scene-theme">
+                                    <option value="auto">テーマに合わせる</option>
+                                    <option value="dark" selected>ダークネイビー</option>
+                                    <option value="light">ライト</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <label>設備シェル透明度</label>
+                                <input type="range" id="shell-opacity" min="0.1" max="1.0" step="0.05" value="0.6">
+                                <span class="slider-val" id="shell-opacity-val">0.6</span>
+                            </div>
+                            <div class="setting-row">
+                                <label>内部ステーション径</label>
+                                <input type="range" id="internal-radius" min="5" max="30" step="1" value="15">
+                                <span class="slider-val" id="internal-radius-val">15</span>
+                            </div>
+                            <div class="setting-row">
+                                <label>内部表示</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="show-internal" checked>
+                                    <span class="toggle-track"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <label>ステーション名</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="show-station-names" checked>
+                                    <span class="toggle-track"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <label>ワーク表示</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="show-works" checked>
+                                    <span class="toggle-track"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <label>インターロック表示</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="show-interlocks">
+                                    <span class="toggle-track"></span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
-                    <div class="section-body" id="sim-body">
-                        <div class="setting-row">
-                            <label>開始日時</label>
-                            <input type="datetime-local" id="sim-start" class="input-dark">
-                        </div>
-                        <div class="setting-row">
-                            <label>シミュレーション時間(h)</label>
-                            <input type="number" id="sim-hours" value="24" min="1" max="720" class="input-dark input-short">
-                        </div>
-                        <div class="setting-row">
-                            <button class="btn-primary" id="btn-fetch-ic">初期条件取得</button>
-                        </div>
-                        <div id="ic-status" class="ic-status"></div>
-                    </div>
-                </div>
 
-                <div class="panel-section" id="section-executions">
-                    <div class="section-header" data-toggle="executions">
-                        <span>実行履歴</span>
-                        <span class="toggle-icon">▾</span>
-                    </div>
-                    <div class="section-body" id="executions-body">
-                        <div id="execution-list" class="execution-list">
-                            <div class="empty-hint">工場を選択してください</div>
+                    <div class="panel-section" id="section-sim">
+                        <div class="section-header" data-toggle="sim">
+                            <span>シミュレーション</span>
+                            <span class="toggle-icon">▾</span>
+                        </div>
+                        <div class="section-body" id="sim-body">
+                            <div class="setting-row">
+                                <label>開始日時</label>
+                                <input type="datetime-local" id="sim-start" class="input-dark">
+                            </div>
+                            <div class="setting-row">
+                                <label>シミュレーション時間(h)</label>
+                                <input type="number" id="sim-hours" value="24" min="1" max="720" class="input-dark input-short">
+                            </div>
+                            <div class="setting-row">
+                                <button class="btn-primary" id="btn-fetch-ic">初期条件取得</button>
+                            </div>
+                            <div id="ic-status" class="ic-status"></div>
                         </div>
                     </div>
-                </div>
-            </aside>
 
-            <!-- 3D scene -->
-            <main id="scene-container">
-                <div id="scene-canvas-wrapper"></div>
-                <div id="connection-overlay"></div>
-            </main>
-        </div>
+                    <div class="panel-section" id="section-executions">
+                        <div class="section-header" data-toggle="executions">
+                            <span>実行履歴</span>
+                            <span class="toggle-icon">▾</span>
+                        </div>
+                        <div class="section-body" id="executions-body">
+                            <div id="execution-list" class="execution-list">
+                                <div class="empty-hint">工場を選択してください</div>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
 
-        <!-- Timeline bar -->
-        <footer id="timeline-bar">
-            <div id="timeline-track">
-                <canvas id="timeline-canvas"></canvas>
+                <!-- 3D scene -->
+                <main id="scene-container">
+                    <div id="scene-canvas-wrapper"></div>
+                    <div id="connection-overlay"></div>
+                </main>
             </div>
-            <div id="timeline-controls">
-                <button class="tl-btn" id="tl-rewind" title="先頭へ">⏮</button>
-                <button class="tl-btn" id="tl-play" title="再生">▶</button>
-                <button class="tl-btn" id="tl-ffwd" title="末尾へ">⏭</button>
-                <select id="tl-speed" title="再生速度">
-                    <option value="0.5">0.5x</option>
-                    <option value="1" selected>1x</option>
-                    <option value="2">2x</option>
-                    <option value="5">5x</option>
-                    <option value="10">10x</option>
-                </select>
-                <span id="tl-time" class="tl-time">--:--:--</span>
+
+            <!-- Timeline bar -->
+            <footer id="timeline-bar">
+                <div id="timeline-track">
+                    <canvas id="timeline-canvas"></canvas>
+                </div>
+                <div id="timeline-controls">
+                    <button class="tl-btn" id="tl-rewind" title="先頭へ">⏮</button>
+                    <button class="tl-btn" id="tl-play" title="再生">▶</button>
+                    <button class="tl-btn" id="tl-ffwd" title="末尾へ">⏭</button>
+                    <select id="tl-speed" title="再生速度">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                        <option value="5">5x</option>
+                        <option value="10">10x</option>
+                    </select>
+                    <span id="tl-time" class="tl-time">--:--:--</span>
+                </div>
+            </footer>
+        </div><!-- /gv-view-display -->
+
+        <!-- Tab: 工場情報 -->
+        <div class="global-tab-body" id="gv-factory-info">
+            <div class="gfi-sidebar">
+                <div class="gfi-group-item active" data-group="basic">基本情報</div>
+                <div class="gfi-group-item" data-group="stations">ステーション一覧</div>
+                <div class="gfi-group-item" data-group="connections">接続一覧</div>
+                <div class="gfi-group-item" data-group="metadata">メタデータ</div>
             </div>
-        </footer>
-    </div>
+            <div class="gfi-detail">
+                <div class="gfi-detail-toolbar">
+                    <span class="gfi-group-title" id="gfi-group-title">基本情報</span>
+                    <div class="gfi-detail-actions">
+                        <button class="toolbar-btn" id="btn-gfi-export">📤 エクスポート</button>
+                        <button class="toolbar-btn" id="btn-gfi-import">📥 インポート</button>
+                        <input type="file" id="gfi-import-file" accept=".json" style="display:none">
+                    </div>
+                </div>
+                <div class="gfi-fields" id="gfi-fields">
+                    <div class="empty-hint">工場を選択してください</div>
+                </div>
+            </div>
+        </div><!-- /gv-factory-info -->
+
+        <!-- Tab: 3Dモデル編集 -->
+        <div class="global-tab-body" id="gv-3d-edit">
+            <div class="g3d-sidebar">
+                <div class="g3d-sidebar-title">表示設定</div>
+                <div class="g3d-sidebar-item" data-group="global">グローバル設定</div>
+                <div class="g3d-sidebar-item" data-group="shell">設備シェル</div>
+                <div class="g3d-sidebar-item" data-group="stations">ステーション</div>
+                <div class="g3d-sidebar-item" data-group="works">ワーク</div>
+                <div class="g3d-sidebar-item" data-group="interlocks">インターロック</div>
+            </div>
+            <div class="g3d-scene-area">
+                <div id="g3d-scene"></div>
+                <!-- Floating settings window -->
+                <div class="g3d-floating hidden" id="g3d-floating">
+                    <div class="g3d-float-header">
+                        <span class="g3d-float-title" id="g3d-float-title">設定</span>
+                        <button class="g3d-float-close" id="g3d-float-close">✕</button>
+                    </div>
+                    <div class="g3d-float-body" id="g3d-float-body"></div>
+                    <div class="g3d-float-footer">
+                        <button class="btn-primary" id="g3d-float-confirm" style="width:auto;padding:5px 20px;">確定</button>
+                    </div>
+                </div>
+            </div>
+        </div><!-- /gv-3d-edit -->
+
+        <!-- Tab: ロジック編集 -->
+        <div class="global-tab-body" id="gv-logic-edit">
+            <div class="gle-sidebar">
+                <div class="gle-sidebar-header">
+                    <button class="btn-primary" id="btn-gle-add-machine" style="width:100%;padding:6px 12px;font-size:12px;">+ 新規設備</button>
+                </div>
+                <div class="gle-sidebar-section">設備一覧</div>
+                <div id="gle-machine-list" class="gle-machine-list">
+                    <div class="empty-hint">工場を選択してください</div>
+                </div>
+            </div>
+            <div class="gle-main">
+                <div class="gle-tool-bar">
+                    <button class="gle-tool-btn active" data-gle-tool="select">選択</button>
+                    <button class="gle-tool-btn" data-gle-tool="connect">接続</button>
+                    <button class="gle-tool-btn" data-gle-tool="delete">削除</button>
+                    <span class="gle-hint" id="gle-hint">設備をドラッグして移動 / ダブルクリックで設備編集</span>
+                </div>
+                <div class="gle-canvas-wrap" id="gle-canvas-wrap">
+                    <svg id="global-logic-svg" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <marker id="gle-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                                <polygon points="0 0, 8 3, 0 6" fill="#4a9eff"/>
+                            </marker>
+                        </defs>
+                        <g id="gle-conn-layer"></g>
+                        <g id="gle-node-layer"></g>
+                    </svg>
+                </div>
+            </div>
+        </div><!-- /gv-logic-edit -->
+
+    </div><!-- /#app -->
 
     <!-- Floating panels container -->
     <div id="floating-panels"></div>
@@ -223,6 +316,32 @@
                 <div class="modal-running">
                     <div class="spinner"></div>
                     <p id="run-modal-status">実行中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New machine dialog -->
+    <div id="new-machine-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog" style="width:340px;">
+            <div class="modal-header">
+                <h3>新規設備を追加</h3>
+                <button class="modal-close" id="new-machine-modal-close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">設備名</label>
+                    <input type="text" id="new-machine-name" class="input-dark" style="width:100%;" placeholder="例: Machine A">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">Station ID <span style="color:var(--text-muted)">(形式: xxx.yyy)</span></label>
+                    <input type="text" id="new-machine-sid" class="input-dark" style="width:100%;" placeholder="例: machine_a.machine">
+                    <div style="font-size:10px;color:var(--text-muted);margin-top:3px;">設備名から自動生成されます。必要に応じて変更してください。</div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;">
+                    <button class="toolbar-btn" id="new-machine-cancel">キャンセル</button>
+                    <button class="btn-primary" id="new-machine-ok" style="width:auto;padding:5px 16px;">追加</button>
                 </div>
             </div>
         </div>

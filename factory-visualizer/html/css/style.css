@@ -586,3 +586,430 @@ input[type="range"] {
 .hidden { display: none !important; }
 .text-muted { color: var(--text-muted); }
 .text-accent { color: var(--accent-blue); }
+
+/* ============================================================
+   Global View Tabs
+   ============================================================ */
+
+/* ---- Toolbar tabs (right side of toolbar) ---- */
+.toolbar-tabs {
+    display: flex;
+    align-items: stretch;
+    margin-left: auto;
+    border-left: 1px solid var(--border-color);
+    padding-left: 4px;
+}
+.toolbar-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    padding: 0 14px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    height: 100%;
+    user-select: none;
+    transition: color 0.15s, border-color 0.15s;
+}
+.toolbar-tab:hover { color: var(--text-primary); }
+.toolbar-tab.active {
+    color: var(--accent-blue);
+    border-bottom-color: var(--accent-blue);
+}
+
+/* ---- Global tab body panels ---- */
+.global-tab-body {
+    display: none;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+}
+.global-tab-body.active { display: flex; }
+
+/* ---- #gv-view-display inherits existing #content layout ---- */
+#gv-view-display #content { display: flex; flex: 1; overflow: hidden; }
+
+/* ============================================================
+   工場情報タブ (gfi)
+   ============================================================ */
+#gv-factory-info { flex-direction: row; }
+
+.gfi-sidebar {
+    width: 180px;
+    flex-shrink: 0;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+.gfi-group-item {
+    padding: 9px 16px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    border-left: 2px solid transparent;
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+}
+.gfi-group-item:hover { background: var(--bg-surface); color: var(--text-primary); }
+.gfi-group-item.active {
+    color: var(--accent-blue);
+    border-left-color: var(--accent-blue);
+    background: var(--bg-surface);
+}
+
+.gfi-detail {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+.gfi-detail-toolbar {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    background: var(--bg-panel-hdr);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+.gfi-group-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+}
+.gfi-detail-actions { display: flex; gap: 6px; }
+
+.gfi-fields {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+.gfi-fields::-webkit-scrollbar { width: 5px; }
+.gfi-fields::-webkit-scrollbar-thumb { background: var(--border-color); }
+
+.gfi-form { max-width: 560px; }
+.gfi-field-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.gfi-field-row > label {
+    width: 120px;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding-top: 6px;
+}
+.gfi-field-row .input-dark { flex: 1; }
+.gfi-input-readonly { opacity: 0.6; cursor: default; }
+.gfi-textarea {
+    flex: 1;
+    min-height: 80px;
+    resize: vertical;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.gfi-textarea-tall { min-height: 260px; }
+.gfi-save-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Station/Connection tables */
+.gfi-table-wrap { overflow-x: auto; }
+.gfi-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.gfi-table th {
+    background: var(--bg-panel-hdr);
+    color: var(--text-secondary);
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+.gfi-table td {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    vertical-align: middle;
+}
+.gfi-table tr:hover td { background: var(--bg-surface); }
+.gfi-table-input {
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 3px 6px;
+    font-size: 12px;
+    width: 100%;
+}
+.gfi-table-input:focus { outline: 1px solid var(--accent-blue); }
+.gfi-action-btn {
+    background: var(--bg-surface);
+    color: var(--status-error);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.gfi-action-btn:hover { background: var(--status-error); color: #fff; border-color: var(--status-error); }
+
+/* ============================================================
+   3Dモデル編集タブ (g3d)
+   ============================================================ */
+#gv-3d-edit { flex-direction: row; }
+
+.g3d-sidebar {
+    width: 180px;
+    flex-shrink: 0;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 0 0 8px;
+}
+.g3d-sidebar-title {
+    padding: 10px 16px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+.g3d-sidebar-item {
+    padding: 9px 16px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    border-left: 2px solid transparent;
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+}
+.g3d-sidebar-item:hover { background: var(--bg-surface); color: var(--text-primary); }
+.g3d-sidebar-item.active {
+    color: var(--accent-blue);
+    border-left-color: var(--accent-blue);
+    background: var(--bg-surface);
+}
+
+.g3d-scene-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+#g3d-scene {
+    width: 100%;
+    height: 100%;
+    background: var(--bg-primary);
+}
+#g3d-scene canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Floating settings window */
+.g3d-floating {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 280px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+}
+.g3d-float-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-panel-hdr);
+    border-bottom: 1px solid var(--border-color);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    cursor: move;
+    user-select: none;
+}
+.g3d-float-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.g3d-float-close {
+    background: none; border: none; color: var(--text-muted);
+    cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px;
+}
+.g3d-float-close:hover { color: var(--text-primary); }
+.g3d-float-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.g3d-float-footer {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Settings rows inside floating window */
+.gf-field-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+.gf-field-row label:first-child {
+    color: var(--text-secondary);
+    flex: 1;
+    font-size: 12px;
+}
+.gf-field-row select {
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 3px 6px;
+    font-size: 12px;
+    max-width: 110px;
+}
+.gf-field-row input[type="range"] { flex: 1; accent-color: var(--accent-blue); height: 4px; }
+.gf-slider-val { color: var(--text-muted); font-size: 11px; min-width: 28px; text-align: right; }
+
+/* ============================================================
+   ロジック編集タブ (gle)
+   ============================================================ */
+#gv-logic-edit { flex-direction: row; }
+
+.gle-sidebar {
+    width: 180px;
+    flex-shrink: 0;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.gle-sidebar-header {
+    padding: 10px 10px 0;
+    flex-shrink: 0;
+}
+.gle-sidebar-section {
+    padding: 8px 12px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+.gle-machine-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+.gle-machine-list::-webkit-scrollbar { width: 3px; }
+.gle-machine-list::-webkit-scrollbar-thumb { background: var(--border-color); }
+.gle-machine-item {
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: background 0.1s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.gle-machine-item:hover { background: var(--bg-surface); color: var(--text-primary); }
+
+.gle-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+.gle-tool-bar {
+    height: 36px;
+    background: var(--bg-panel-hdr);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 10px;
+    flex-shrink: 0;
+}
+.gle-tool-btn {
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 3px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+.gle-tool-btn:hover { color: var(--text-primary); border-color: var(--border-light); }
+.gle-tool-btn.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+}
+.gle-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 8px;
+    flex: 1;
+}
+.gle-canvas-wrap {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg-primary);
+}
+#global-logic-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* SVG node styles (set via JS attributes, but base styles here) */
+.gle-node-rect {
+    fill: var(--bg-panel);
+    stroke: var(--border-light);
+    stroke-width: 1.5;
+    rx: 6;
+    cursor: pointer;
+    transition: stroke 0.1s;
+}
+.gle-node-rect:hover { stroke: var(--accent-blue); }
+.gle-node-rect.selected { stroke: var(--accent-blue); stroke-width: 2; }
+.gle-conn-path {
+    stroke: var(--accent-blue);
+    stroke-width: 2;
+    fill: none;
+    cursor: pointer;
+    opacity: 0.75;
+}
+.gle-conn-path:hover { opacity: 1; stroke-width: 3; }
+.gle-conn-hit {
+    stroke: transparent;
+    stroke-width: 12;
+    fill: none;
+    cursor: pointer;
+}

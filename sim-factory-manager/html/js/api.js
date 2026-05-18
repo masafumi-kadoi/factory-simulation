@@ -99,6 +99,7 @@ const FactoryAPI = {
         const url = factoryId ? `${API}/scenarios?factory_id=${encodeURIComponent(factoryId)}` : `${API}/scenarios`;
         const r = await fetch(url);
         if (!r.ok) throw new Error(await r.text());
-        return r.json();
+        const data = await r.json();
+        return Array.isArray(data) ? data : (data.scenarios || []);
     },
 };

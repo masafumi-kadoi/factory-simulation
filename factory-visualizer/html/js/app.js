@@ -10,6 +10,7 @@ import * as API from './api.js';
 const state = {
     factories: [],
     currentFactory: null,
+    currentFactoryData: null,
     stations: [],
     connections: [],
     locationMap: new Map(),     // locationId → stationId
@@ -35,6 +36,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     initTimeline();
     initUI();
     initAIPanel();
+    initGlobalTabs();
+    initFactoryInfoTab();
+    initGlobal3DEditTab();
+    initGlobalLogicEditTab();
 
     try {
         await loadFactories();
@@ -176,13 +181,15 @@ async function loadFactories() {
 async function selectFactory(factoryId) {
     try {
         setStatus('読み込み中...', 'status-running');
-        const [stations, connections, executions] = await Promise.all([
+        const [factoryData, stations, connections, executions] = await Promise.all([
+            API.fetchFactory(factoryId).catch(() => null),
             API.fetchFactoryStations(factoryId),
             API.fetchFactoryConnections(factoryId),
             API.fetchFactoryExecutions(factoryId).catch(() => []),
         ]);
 
         state.currentFactory = factoryId;
+        state.currentFactoryData = factoryData || state.factories.find(f => f.id === factoryId) || { id: factoryId };
         state.stations = Array.isArray(stations) ? stations : [];
         state.connections = Array.isArray(connections) ? connections : [];
         state.activeWorks = new Map();
@@ -194,6 +201,14 @@ async function selectFactory(factoryId) {
         renderObjectList(state.stations, state.activeWorks, state.activeFilters);
         renderExecutionList(Array.isArray(executions) ? executions : []);
         setStatus(`工場: ${factoryName(factoryId)}`, 'status-ok');
+
+        // Update other tabs if active
+        const activeTab = document.querySelector('.toolbar-tab.active');
+        if (activeTab) {
+            const t = activeTab.dataset.gvtab;
+            if (t === 'gv-factory-info') renderFactoryInfoGroup(_currentGFIGroup);
+            if (t === 'gv-logic-edit') renderGlobalLogicGraph();
+        }
 
         // Set default sim start to now
         const now = new Date();
@@ -501,4 +516,785 @@ function esc(s) {
 function toLocalIsoString(d) {
     const pad = n => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ============================================================
+// Global View Tabs
+// ============================================================
+
+function initGlobalTabs() {
+    document.querySelectorAll('.toolbar-tab').forEach(tab => {
+        tab.addEventListener('click', () => switchGlobalTab(tab.dataset.gvtab));
+    });
+}
+
+function switchGlobalTab(tabId) {
+    document.querySelectorAll('.toolbar-tab').forEach(t =>
+        t.classList.toggle('active', t.dataset.gvtab === tabId));
+    document.querySelectorAll('.global-tab-body').forEach(b =>
+        b.classList.toggle('active', b.id === tabId));
+
+    if (tabId === 'gv-3d-edit') {
+        if (scene3d) {
+            const g3dScene = document.getElementById('g3d-scene');
+            scene3d.attachTo(g3dScene);
+        }
+    } else if (tabId === 'gv-view-display') {
+        if (scene3d) {
+            scene3d.attachTo(document.getElementById('scene-canvas-wrapper'));
+        }
+    }
+
+    if (tabId === 'gv-factory-info') renderFactoryInfoGroup(_currentGFIGroup);
+    if (tabId === 'gv-logic-edit') renderGlobalLogicGraph();
+}
+
+// ============================================================
+// 工場情報タブ
+// ============================================================
+
+let _currentGFIGroup = 'basic';
+
+function initFactoryInfoTab() {
+    document.querySelectorAll('.gfi-group-item').forEach(item => {
+        item.addEventListener('click', () => {
+            document.querySelectorAll('.gfi-group-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            _currentGFIGroup = item.dataset.group;
+            document.getElementById('gfi-group-title').textContent = item.textContent;
+            renderFactoryInfoGroup(_currentGFIGroup);
+        });
+    });
+
+    document.getElementById('btn-gfi-export').addEventListener('click', exportFactoryJSON);
+    document.getElementById('btn-gfi-import').addEventListener('click', () =>
+        document.getElementById('gfi-import-file').click());
+    document.getElementById('gfi-import-file').addEventListener('change', importFactoryJSON);
+}
+
+function renderFactoryInfoGroup(groupId) {
+    const container = document.getElementById('gfi-fields');
+    if (!state.currentFactory) {
+        container.innerHTML = '<div class="empty-hint">工場を選択してください</div>';
+        return;
+    }
+    switch (groupId) {
+        case 'basic':       renderGFIBasic(container); break;
+        case 'stations':    renderGFIStations(container); break;
+        case 'connections': renderGFIConnections(container); break;
+        case 'metadata':    renderGFIMetadata(container); break;
+    }
+}
+
+function renderGFIBasic(container) {
+    const f = state.currentFactoryData || {};
+    container.innerHTML = `
+        <div class="gfi-form">
+            <div class="gfi-field-row">
+                <label>工場ID</label>
+                <input type="text" value="${esc(f.id || state.currentFactory)}" readonly class="input-dark gfi-input-readonly">
+            </div>
+            <div class="gfi-field-row">
+                <label>工場名</label>
+                <input type="text" id="gfi-factory-name" value="${esc(f.name || '')}" class="input-dark">
+            </div>
+            <div class="gfi-field-row">
+                <label>説明</label>
+                <textarea id="gfi-factory-desc" class="input-dark gfi-textarea">${esc(f.description || '')}</textarea>
+            </div>
+            <div class="gfi-field-row">
+                <label>作成日</label>
+                <input type="text" value="${esc(f.createdAt || '—')}" readonly class="input-dark gfi-input-readonly">
+            </div>
+            <div class="gfi-save-row">
+                <span id="gfi-basic-status" class="ic-status"></span>
+                <button class="btn-primary" id="gfi-save-basic" style="width:auto;padding:5px 16px;">保存</button>
+            </div>
+        </div>`;
+    document.getElementById('gfi-save-basic').addEventListener('click', async () => {
+        const name = document.getElementById('gfi-factory-name').value.trim();
+        const desc = document.getElementById('gfi-factory-desc').value;
+        const statusEl = document.getElementById('gfi-basic-status');
+        try {
+            await API.updateFactory(state.currentFactory, { name, description: desc });
+            state.currentFactoryData = { ...state.currentFactoryData, name, description: desc };
+            const opt = document.querySelector(`#factory-select option[value="${esc(state.currentFactory)}"]`);
+            if (opt) opt.textContent = name;
+            const f2 = state.factories.find(x => x.id === state.currentFactory);
+            if (f2) f2.name = name;
+            statusEl.textContent = '保存しました';
+            statusEl.style.color = 'var(--status-normal)';
+        } catch (err) {
+            statusEl.textContent = '保存失敗: ' + err.message;
+            statusEl.style.color = 'var(--status-error)';
+        }
+    });
+}
+
+function renderGFIStations(container) {
+    const rows = state.stations.map(s => `
+        <tr>
+            <td style="font-family:monospace;font-size:11px;">${esc(s.stationId)}</td>
+            <td><input type="text" value="${esc(s.name || '')}" class="gfi-table-input"
+                data-sid="${esc(s.stationId)}" data-field="name"></td>
+            <td>${esc(s.stationType || '')}</td>
+            <td style="text-align:center;">
+                <button class="gfi-action-btn" data-action="del-st" data-sid="${esc(s.stationId)}">削除</button>
+            </td>
+        </tr>`).join('');
+    container.innerHTML = `
+        <div class="gfi-table-wrap">
+            <table class="gfi-table">
+                <thead><tr><th>ID</th><th>名前</th><th>タイプ</th><th>操作</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="4" style="color:var(--text-muted);padding:10px;">ステーションがありません</td></tr>'}</tbody>
+            </table>
+        </div>`;
+    container.querySelectorAll('.gfi-table-input').forEach(input => {
+        input.addEventListener('change', async e => {
+            const sid = e.target.dataset.sid;
+            const field = e.target.dataset.field;
+            try {
+                await API.updateStation(state.currentFactory, sid, { [field]: e.target.value });
+                const st = state.stations.find(s => s.stationId === sid);
+                if (st) st[field] = e.target.value;
+            } catch (err) {
+                setStatus('更新失敗: ' + err.message, 'status-error');
+                e.target.value = state.stations.find(s => s.stationId === sid)?.[field] || '';
+            }
+        });
+    });
+    container.querySelectorAll('[data-action="del-st"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const sid = btn.dataset.sid;
+            if (!confirm(`ステーション "${sid}" を削除しますか？`)) return;
+            try {
+                await API.deleteStation(state.currentFactory, sid);
+                state.stations = state.stations.filter(s => s.stationId !== sid);
+                scene3d && scene3d.loadFactory(state.stations, state.connections);
+                renderGFIStations(container);
+            } catch (err) {
+                setStatus('削除失敗: ' + err.message, 'status-error');
+            }
+        });
+    });
+}
+
+function renderGFIConnections(container) {
+    const rows = state.connections.map(c => {
+        const cid = c.id || c.connectionId || '';
+        return `<tr>
+            <td style="font-family:monospace;font-size:11px;">${esc(String(cid))}</td>
+            <td>${esc(c.fromStation)}</td>
+            <td style="color:var(--text-muted)">→</td>
+            <td>${esc(c.toStation)}</td>
+            <td>${esc(c.condition || 'default')}</td>
+            <td style="text-align:center;">
+                <button class="gfi-action-btn" data-action="del-conn" data-cid="${esc(String(cid))}">削除</button>
+            </td>
+        </tr>`;
+    }).join('');
+    container.innerHTML = `
+        <div class="gfi-table-wrap">
+            <table class="gfi-table">
+                <thead><tr><th>ID</th><th>From</th><th></th><th>To</th><th>条件</th><th>操作</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="6" style="color:var(--text-muted);padding:10px;">接続がありません</td></tr>'}</tbody>
+            </table>
+        </div>`;
+    container.querySelectorAll('[data-action="del-conn"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('この接続を削除しますか？')) return;
+            const cid = btn.dataset.cid;
+            try {
+                await API.deleteConnection(state.currentFactory, cid);
+                state.connections = state.connections.filter(c => String(c.id || c.connectionId) !== cid);
+                scene3d && scene3d.loadFactory(state.stations, state.connections);
+                renderGFIConnections(container);
+                renderGlobalLogicGraph();
+            } catch (err) {
+                setStatus('削除失敗: ' + err.message, 'status-error');
+            }
+        });
+    });
+}
+
+function renderGFIMetadata(container) {
+    const f = state.currentFactoryData || {};
+    container.innerHTML = `
+        <div class="gfi-form">
+            <div style="margin-bottom:10px;font-size:11px;color:var(--text-muted);padding:8px 10px;background:var(--bg-surface);border-radius:var(--radius-sm);border:1px solid var(--border-color);">
+                工場オブジェクトの全データを表示しています（読み取り専用）。<br>
+                基本情報（名前・説明）の編集は「基本情報」タブで行えます。
+            </div>
+            <div class="gfi-field-row">
+                <label>工場データ (JSON)</label>
+                <textarea class="input-dark gfi-textarea gfi-textarea-tall gfi-input-readonly"
+                    readonly style="cursor:default;font-family:monospace;">${esc(JSON.stringify(f, null, 2))}</textarea>
+            </div>
+        </div>`;
+}
+
+function exportFactoryJSON() {
+    if (!state.currentFactory) return;
+    const data = {
+        factory: state.currentFactoryData || { id: state.currentFactory },
+        stations: state.stations,
+        connections: state.connections,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `factory_${state.currentFactory}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function importFactoryJSON(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const fid = state.currentFactory;
+        if (!fid) { alert('先に工場を選択してください'); return; }
+
+        const msg = [
+            `工場: ${data.factory?.name || '?'}`,
+            `ステーション: ${(data.stations || []).length}件`,
+            `接続: ${(data.connections || []).length}件`,
+            '',
+            'このデータをインポートしますか？',
+            '（既存データへの追加ではなく上書きになります）',
+        ].join('\n');
+        if (!confirm(msg)) return;
+
+        // Update factory basic info
+        if (data.factory?.name) {
+            await API.updateFactory(fid, { name: data.factory.name, description: data.factory.description || '' });
+        }
+
+        // Refresh from server after import attempt
+        setStatus('インポート中...', 'status-running');
+        await selectFactory(fid);
+        setStatus('インポート完了', 'status-ok');
+    } catch (err) {
+        setStatus('インポート失敗: ' + err.message, 'status-error');
+    }
+}
+
+// ============================================================
+// 3Dモデル編集タブ
+// ============================================================
+
+function initGlobal3DEditTab() {
+    document.querySelectorAll('.g3d-sidebar-item').forEach(item => {
+        item.addEventListener('click', () => {
+            document.querySelectorAll('.g3d-sidebar-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            openG3DFloating(item.dataset.group, item.textContent);
+        });
+    });
+
+    document.getElementById('g3d-float-close').addEventListener('click', closeG3DFloating);
+    document.getElementById('g3d-float-confirm').addEventListener('click', () => {
+        saveG3DSettings();
+        closeG3DFloating();
+    });
+
+    // Make floating window draggable
+    const floatEl = document.getElementById('g3d-floating');
+    const header = floatEl.querySelector('.g3d-float-header');
+    let dragging = false, ox = 0, oy = 0;
+    header.addEventListener('mousedown', e => {
+        dragging = true;
+        ox = e.clientX - floatEl.offsetLeft;
+        oy = e.clientY - floatEl.offsetTop;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        floatEl.style.left = (e.clientX - ox) + 'px';
+        floatEl.style.top  = (e.clientY - oy) + 'px';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; });
+}
+
+function openG3DFloating(groupId, title) {
+    const floatEl = document.getElementById('g3d-floating');
+    document.getElementById('g3d-float-title').textContent = title || groupId;
+    const body = document.getElementById('g3d-float-body');
+
+    // Read current values from left-panel controls
+    const theme = document.getElementById('scene-theme').value;
+    const shellOp = document.getElementById('shell-opacity').value;
+    const intRadius = document.getElementById('internal-radius').value;
+    const showInt = document.getElementById('show-internal').checked;
+    const showNames = document.getElementById('show-station-names').checked;
+    const showWorks = document.getElementById('show-works').checked;
+    const showIL = document.getElementById('show-interlocks').checked;
+
+    const row = (label, content) =>
+        `<div class="gf-field-row"><label>${label}</label>${content}</div>`;
+
+    switch (groupId) {
+        case 'global':
+            body.innerHTML = `
+                ${row('シーンテーマ', `<select id="gf-theme">
+                    <option value="auto" ${theme==='auto'?'selected':''}>テーマに合わせる</option>
+                    <option value="dark" ${theme==='dark'?'selected':''}>ダークネイビー</option>
+                    <option value="light" ${theme==='light'?'selected':''}>ライト</option>
+                </select>`)}
+                ${row('内部表示', `<label class="toggle-switch">
+                    <input type="checkbox" id="gf-show-internal" ${showInt?'checked':''}>
+                    <span class="toggle-track"></span></label>`)}`;
+            body.querySelector('#gf-theme').addEventListener('change', e => {
+                const v = e.target.value;
+                applyDocTheme(v);
+                scene3d && scene3d.applyTheme(v);
+                document.getElementById('scene-theme').value = v;
+            });
+            body.querySelector('#gf-show-internal').addEventListener('change', e => {
+                scene3d && scene3d.setShowInternal(e.target.checked);
+                document.getElementById('show-internal').checked = e.target.checked;
+            });
+            break;
+
+        case 'shell':
+            body.innerHTML = `
+                ${row('シェル透明度', `<input type="range" id="gf-shell-op" min="0.1" max="1.0" step="0.05" value="${shellOp}">
+                    <span class="gf-slider-val" id="gf-shell-op-val">${shellOp}</span>`)}`;
+            body.querySelector('#gf-shell-op').addEventListener('input', e => {
+                body.querySelector('#gf-shell-op-val').textContent = e.target.value;
+                scene3d && scene3d.setShellOpacity(parseFloat(e.target.value));
+                document.getElementById('shell-opacity').value = e.target.value;
+                document.getElementById('shell-opacity-val').textContent = e.target.value;
+            });
+            break;
+
+        case 'stations':
+            body.innerHTML = `
+                ${row('内部ステーション径', `<input type="range" id="gf-int-radius" min="5" max="30" step="1" value="${intRadius}">
+                    <span class="gf-slider-val" id="gf-int-radius-val">${intRadius}</span>`)}
+                ${row('ステーション名', `<label class="toggle-switch">
+                    <input type="checkbox" id="gf-show-names" ${showNames?'checked':''}>
+                    <span class="toggle-track"></span></label>`)}`;
+            body.querySelector('#gf-int-radius').addEventListener('input', e => {
+                body.querySelector('#gf-int-radius-val').textContent = e.target.value;
+                scene3d && scene3d.setInternalRadius(parseFloat(e.target.value));
+                document.getElementById('internal-radius').value = e.target.value;
+                document.getElementById('internal-radius-val').textContent = e.target.value;
+            });
+            body.querySelector('#gf-show-names').addEventListener('change', e => {
+                scene3d && scene3d.setShowStationNames(e.target.checked);
+                document.getElementById('show-station-names').checked = e.target.checked;
+            });
+            break;
+
+        case 'works':
+            body.innerHTML = `
+                ${row('ワーク表示', `<label class="toggle-switch">
+                    <input type="checkbox" id="gf-show-works" ${showWorks?'checked':''}>
+                    <span class="toggle-track"></span></label>`)}`;
+            body.querySelector('#gf-show-works').addEventListener('change', e => {
+                scene3d && scene3d.setShowWorks(e.target.checked);
+                document.getElementById('show-works').checked = e.target.checked;
+            });
+            break;
+
+        case 'interlocks':
+            body.innerHTML = `
+                ${row('インターロック表示', `<label class="toggle-switch">
+                    <input type="checkbox" id="gf-show-il" ${showIL?'checked':''}>
+                    <span class="toggle-track"></span></label>`)}`;
+            body.querySelector('#gf-show-il').addEventListener('change', e => {
+                scene3d && scene3d.setShowInterlocks(e.target.checked);
+                document.getElementById('show-interlocks').checked = e.target.checked;
+            });
+            break;
+
+        default:
+            body.innerHTML = '<div class="empty-hint">設定項目がありません</div>';
+    }
+
+    floatEl.classList.remove('hidden');
+}
+
+function closeG3DFloating() {
+    document.getElementById('g3d-floating').classList.add('hidden');
+    document.querySelectorAll('.g3d-sidebar-item').forEach(i => i.classList.remove('active'));
+}
+
+function saveG3DSettings() {
+    const settings = {
+        theme: document.getElementById('scene-theme').value,
+        shellOpacity: document.getElementById('shell-opacity').value,
+        internalRadius: document.getElementById('internal-radius').value,
+        showInternal: document.getElementById('show-internal').checked,
+        showStationNames: document.getElementById('show-station-names').checked,
+        showWorks: document.getElementById('show-works').checked,
+        showInterlocks: document.getElementById('show-interlocks').checked,
+    };
+    try { localStorage.setItem('fv_3d_settings', JSON.stringify(settings)); } catch {}
+}
+
+// ============================================================
+// ロジック編集タブ
+// ============================================================
+
+const GLE_NODE_W = 140;
+const GLE_NODE_H = 54;
+let _gleCurrentTool = 'select';
+let _gleConnectFrom = null;
+let _gleNodePositions = {};
+let _gleSelectedNode = null;
+
+function initGlobalLogicEditTab() {
+    // Tool buttons
+    document.querySelectorAll('[data-gle-tool]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            _gleCurrentTool = btn.dataset.gleTool;
+            document.querySelectorAll('[data-gle-tool]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            _gleConnectFrom = null;
+            _gleSelectedNode = null;
+            gleUpdateHint();
+            gleUpdateNodeStyles();
+        });
+    });
+
+    // New machine button
+    document.getElementById('btn-gle-add-machine').addEventListener('click', () => {
+        if (!state.currentFactory) { alert('工場を選択してください'); return; }
+        const modal = document.getElementById('new-machine-modal');
+        modal.classList.remove('hidden');
+        document.getElementById('new-machine-name').value = '';
+        document.getElementById('new-machine-name').focus();
+    });
+    document.getElementById('new-machine-modal-close').addEventListener('click', () =>
+        document.getElementById('new-machine-modal').classList.add('hidden'));
+    document.getElementById('new-machine-cancel').addEventListener('click', () =>
+        document.getElementById('new-machine-modal').classList.add('hidden'));
+    document.getElementById('new-machine-ok').addEventListener('click', gleAddMachine);
+    document.getElementById('new-machine-name').addEventListener('input', e => {
+        const sidInput = document.getElementById('new-machine-sid');
+        sidInput.value = gleGenerateStationId(e.target.value);
+    });
+    document.getElementById('new-machine-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('new-machine-sid').focus();
+    });
+    document.getElementById('new-machine-sid').addEventListener('keydown', e => {
+        if (e.key === 'Enter') gleAddMachine();
+    });
+}
+
+function gleUpdateHint() {
+    const hints = {
+        select:  '設備をドラッグして移動 / ダブルクリックで設備編集',
+        connect: '接続元の設備をクリック → 接続先の設備をクリック',
+        delete:  '削除したい接続線をクリック',
+    };
+    document.getElementById('gle-hint').textContent = hints[_gleCurrentTool] || '';
+}
+
+function gleLoadPositions() {
+    if (!state.currentFactory) { _gleNodePositions = {}; return; }
+    try {
+        const raw = localStorage.getItem(`fv_gle_pos_${state.currentFactory}`);
+        _gleNodePositions = raw ? JSON.parse(raw) : {};
+    } catch { _gleNodePositions = {}; }
+}
+
+function gleSavePositions() {
+    if (!state.currentFactory) return;
+    try { localStorage.setItem(`fv_gle_pos_${state.currentFactory}`, JSON.stringify(_gleNodePositions)); } catch {}
+}
+
+function gleAutoLayout(machines) {
+    const cols = Math.ceil(Math.sqrt(machines.length)) || 1;
+    machines.forEach((m, i) => {
+        if (!_gleNodePositions[m.stationId]) {
+            _gleNodePositions[m.stationId] = {
+                x: 60 + (i % cols) * (GLE_NODE_W + 60),
+                y: 60 + Math.floor(i / cols) * (GLE_NODE_H + 60),
+            };
+        }
+    });
+}
+
+function renderGlobalLogicGraph() {
+    gleLoadPositions();
+    const machines = state.stations.filter(s => s.stationType === 'machine');
+    gleAutoLayout(machines);
+
+    // Update sidebar list
+    const listEl = document.getElementById('gle-machine-list');
+    if (!state.currentFactory) {
+        listEl.innerHTML = '<div class="empty-hint">工場を選択してください</div>';
+    } else {
+        listEl.innerHTML = machines.map(m =>
+            `<div class="gle-machine-item" data-sid="${esc(m.stationId)}">${esc(m.name || m.stationId)}</div>`
+        ).join('') || '<div class="empty-hint">設備がありません</div>';
+        listEl.querySelectorAll('.gle-machine-item').forEach(item => {
+            item.addEventListener('click', () => {
+                // Pan to node
+                const sid = item.dataset.sid;
+                gleScrollToNode(sid);
+            });
+        });
+    }
+
+    // Build SVG
+    const connLayer = document.getElementById('gle-conn-layer');
+    const nodeLayer = document.getElementById('gle-node-layer');
+    connLayer.innerHTML = '';
+    nodeLayer.innerHTML = '';
+
+    // Draw connections
+    const machineIds = new Set(machines.map(m => m.stationId));
+    state.connections.filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation))
+        .forEach(c => gleDrawConnection(c, connLayer));
+
+    // Draw nodes
+    machines.forEach(m => gleDrawNode(m, nodeLayer));
+}
+
+function gleDrawNode(machine, layer) {
+    const pos = _gleNodePositions[machine.stationId] || { x: 60, y: 60 };
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'gle-node');
+    g.setAttribute('data-sid', machine.stationId);
+    g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('width', GLE_NODE_W);
+    rect.setAttribute('height', GLE_NODE_H);
+    rect.setAttribute('rx', 6);
+    rect.setAttribute('fill', 'var(--bg-panel)');
+    rect.setAttribute('stroke', 'var(--border-light)');
+    rect.setAttribute('stroke-width', '1.5');
+    rect.style.cursor = 'pointer';
+
+    const name = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    name.setAttribute('x', GLE_NODE_W / 2);
+    name.setAttribute('y', 22);
+    name.setAttribute('text-anchor', 'middle');
+    name.setAttribute('fill', 'var(--text-primary)');
+    name.setAttribute('font-size', '12');
+    name.setAttribute('font-family', 'inherit');
+    name.textContent = machine.name || machine.stationId;
+
+    const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    sub.setAttribute('x', GLE_NODE_W / 2);
+    sub.setAttribute('y', 38);
+    sub.setAttribute('text-anchor', 'middle');
+    sub.setAttribute('fill', 'var(--text-muted)');
+    sub.setAttribute('font-size', '10');
+    sub.setAttribute('font-family', 'inherit');
+    sub.textContent = 'machine';
+
+    g.appendChild(rect);
+    g.appendChild(name);
+    g.appendChild(sub);
+    layer.appendChild(g);
+
+    // Events
+    gleAttachNodeEvents(g, machine);
+}
+
+function gleDrawConnection(conn, layer) {
+    const fromPos = _gleNodePositions[conn.fromStation];
+    const toPos   = _gleNodePositions[conn.toStation];
+    if (!fromPos || !toPos) return;
+
+    const x1 = fromPos.x + GLE_NODE_W;
+    const y1 = fromPos.y + GLE_NODE_H / 2;
+    const x2 = toPos.x;
+    const y2 = toPos.y + GLE_NODE_H / 2;
+    const cx1 = x1 + 60;
+    const cx2 = x2 - 60;
+    const d = `M ${x1},${y1} C ${cx1},${y1} ${cx2},${y2} ${x2},${y2}`;
+
+    // Hit area (invisible, wide)
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hit.setAttribute('d', d);
+    hit.setAttribute('stroke', 'transparent');
+    hit.setAttribute('stroke-width', '12');
+    hit.setAttribute('fill', 'none');
+    hit.style.cursor = 'pointer';
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', '#4a9eff');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('marker-end', 'url(#gle-arrow)');
+    path.setAttribute('opacity', '0.75');
+    path.style.pointerEvents = 'none';
+
+    const cid = String(conn.id || conn.connectionId || '');
+    hit.dataset.cid = cid;
+    hit.addEventListener('click', () => gleHandleConnClick(cid));
+    hit.addEventListener('mouseenter', () => { path.setAttribute('opacity', '1'); path.setAttribute('stroke-width', '3'); });
+    hit.addEventListener('mouseleave', () => { path.setAttribute('opacity', '0.75'); path.setAttribute('stroke-width', '2'); });
+
+    layer.appendChild(path);
+    layer.appendChild(hit);
+}
+
+function gleAttachNodeEvents(g, machine) {
+    const sid = machine.stationId;
+    let dragActive = false, startX = 0, startY = 0, origX = 0, origY = 0;
+    let clickStartTime = 0;
+
+    g.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        clickStartTime = Date.now();
+        if (_gleCurrentTool === 'select') {
+            dragActive = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            const pos = _gleNodePositions[sid] || { x: 0, y: 0 };
+            origX = pos.x;
+            origY = pos.y;
+            e.preventDefault();
+        } else if (_gleCurrentTool === 'connect') {
+            gleHandleConnectClick(sid);
+            e.preventDefault();
+        }
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!dragActive) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        const newX = Math.max(0, origX + dx);
+        const newY = Math.max(0, origY + dy);
+        _gleNodePositions[sid] = { x: newX, y: newY };
+        g.setAttribute('transform', `translate(${newX},${newY})`);
+        gleRedrawConnections();
+    });
+
+    document.addEventListener('mouseup', e => {
+        if (dragActive) {
+            dragActive = false;
+            gleSavePositions();
+            gleRedrawConnections();
+        }
+    });
+
+    g.addEventListener('dblclick', e => {
+        e.stopPropagation();
+        openLocalWindow(sid);
+    });
+
+    g.querySelector('rect').addEventListener('mouseenter', () => {
+        g.querySelector('rect').setAttribute('stroke', 'var(--accent-blue)');
+    });
+    g.querySelector('rect').addEventListener('mouseleave', () => {
+        if (_gleSelectedNode !== sid)
+            g.querySelector('rect').setAttribute('stroke', 'var(--border-light)');
+    });
+}
+
+function gleRedrawConnections() {
+    const connLayer = document.getElementById('gle-conn-layer');
+    connLayer.innerHTML = '';
+    const machineIds = new Set(
+        state.stations.filter(s => s.stationType === 'machine').map(m => m.stationId)
+    );
+    state.connections
+        .filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation))
+        .forEach(c => gleDrawConnection(c, connLayer));
+}
+
+async function gleHandleConnectClick(sid) {
+    if (!_gleConnectFrom) {
+        _gleConnectFrom = sid;
+        gleSetNodeHighlight(sid, true);
+        document.getElementById('gle-hint').textContent = `"${sid}" から接続先を選択してください`;
+    } else {
+        if (_gleConnectFrom === sid) {
+            _gleConnectFrom = null;
+            gleSetNodeHighlight(sid, false);
+            gleUpdateHint();
+            return;
+        }
+        const from = _gleConnectFrom;
+        _gleConnectFrom = null;
+        gleSetNodeHighlight(from, false);
+        try {
+            const conn = await API.createConnection(state.currentFactory, from, sid);
+            state.connections.push(conn);
+            renderGlobalLogicGraph();
+        } catch (err) {
+            setStatus('接続作成失敗: ' + err.message, 'status-error');
+        }
+        gleUpdateHint();
+    }
+}
+
+async function gleHandleConnClick(cid) {
+    if (_gleCurrentTool !== 'delete') return;
+    if (!confirm('この接続を削除しますか？')) return;
+    try {
+        await API.deleteConnection(state.currentFactory, cid);
+        state.connections = state.connections.filter(c => String(c.id || c.connectionId) !== cid);
+        renderGlobalLogicGraph();
+    } catch (err) {
+        setStatus('接続削除失敗: ' + err.message, 'status-error');
+    }
+}
+
+function gleSetNodeHighlight(sid, on) {
+    const g = document.querySelector(`#gle-node-layer .gle-node[data-sid="${sid}"]`);
+    if (g) g.querySelector('rect').setAttribute('stroke', on ? 'var(--accent-blue)' : 'var(--border-light)');
+}
+
+function gleUpdateNodeStyles() {
+    // Reset all node highlights
+    document.querySelectorAll('#gle-node-layer .gle-node rect').forEach(r =>
+        r.setAttribute('stroke', 'var(--border-light)'));
+}
+
+function gleScrollToNode(sid) {
+    const pos = _gleNodePositions[sid];
+    if (!pos) return;
+    const wrap = document.getElementById('gle-canvas-wrap');
+    wrap.scrollLeft = Math.max(0, pos.x - wrap.clientWidth / 2 + GLE_NODE_W / 2);
+    wrap.scrollTop  = Math.max(0, pos.y - wrap.clientHeight / 2 + GLE_NODE_H / 2);
+}
+
+function gleGenerateStationId(name) {
+    const base = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'machine';
+    return `${base}.machine`;
+}
+
+async function gleAddMachine() {
+    const nameInput = document.getElementById('new-machine-name');
+    const sidInput  = document.getElementById('new-machine-sid');
+    const name = nameInput.value.trim();
+    const sid  = sidInput ? sidInput.value.trim() : '';
+    if (!name) { nameInput.focus(); return; }
+    if (!sid) { sidInput && sidInput.focus(); return; }
+    document.getElementById('new-machine-modal').classList.add('hidden');
+    try {
+        await API.createStation(state.currentFactory, {
+            stationId:   sid,
+            name,
+            stationType: 'machine',
+            posX: 0,
+            posY: 0,
+            posZ: 0,
+        });
+        // Reload stations from server (API returns only {status:"created"})
+        const stations = await API.fetchFactoryStations(state.currentFactory);
+        state.stations = Array.isArray(stations) ? stations : state.stations;
+        scene3d && scene3d.loadFactory(state.stations, state.connections);
+        renderObjectList(state.stations, state.activeWorks, state.activeFilters);
+        renderGlobalLogicGraph();
+        setStatus('設備を追加しました', 'status-ok');
+    } catch (err) {
+        setStatus('設備追加失敗: ' + err.message, 'status-error');
+    }
 }
