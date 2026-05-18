@@ -499,11 +499,70 @@ function _base64ToArrayBuffer(base64) {
     return bytes.buffer;
 }
 
+// Build a merged THREE.Group using greedy rectangle algorithm.
+// Adjacent filled cells are combined into the largest possible rectangular block,
+// so 4 cells in a 2x2 square become one BoxGeometry instead of four.
+function _buildMergedGroup() {
+    const { gridSize: gs, height: h, cols, rows, cells, origin } = _grid;
+    if (cells.size === 0) return null;
+
+    const filled = Array.from({ length: rows }, () => new Array(cols).fill(false));
+    for (const key of cells) {
+        const [c, r] = key.split(',').map(Number);
+        if (c >= 0 && c < cols && r >= 0 && r < rows) filled[r][c] = true;
+    }
+
+    const allCells = [...cells].map(k => k.split(',').map(Number));
+    const allC = allCells.map(([c]) => c);
+    const allR = allCells.map(([, r]) => r);
+    const refC = origin ? origin[0] : (Math.min(...allC) + Math.max(...allC)) / 2;
+    const refR = origin ? origin[1] : (Math.min(...allR) + Math.max(...allR)) / 2;
+
+    const processed = Array.from({ length: rows }, () => new Array(cols).fill(false));
+    const group = new THREE.Group();
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (!filled[r][c] || processed[r][c]) continue;
+
+            // Expand right
+            let w = 0;
+            while (c + w < cols && filled[r][c + w] && !processed[r][c + w]) w++;
+
+            // Expand down (all w columns must be unprocessed+filled in each next row)
+            let dh = 1;
+            outer: while (r + dh < rows) {
+                for (let dc = 0; dc < w; dc++) {
+                    if (!filled[r + dh][c + dc] || processed[r + dh][c + dc]) break outer;
+                }
+                dh++;
+            }
+
+            for (let dr = 0; dr < dh; dr++)
+                for (let dc = 0; dc < w; dc++)
+                    processed[r + dr][c + dc] = true;
+
+            const cx = (c + w / 2 - refC) * gs;
+            const cz = (r + dh / 2 - refR) * gs;
+            const geo = new THREE.BoxGeometry(w * gs, h, dh * gs);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x4a9eff, roughness: 0.35, metalness: 0.3 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(cx, h / 2, cz);
+            group.add(mesh);
+        }
+    }
+    return group;
+}
+
 function _exportModelGroupAsGlb() {
     return new Promise((resolve, reject) => {
-        if (!_3dModelGroup || _3dModelGroup.children.length === 0) { resolve(null); return; }
+        const mergedGroup = _buildMergedGroup();
+        if (!mergedGroup || mergedGroup.children.length === 0) { resolve(null); return; }
         const exporter = new GLTFExporter();
-        exporter.parse(_3dModelGroup, buffer => resolve(buffer), err => reject(err), { binary: true });
+        exporter.parse(mergedGroup, buffer => {
+            mergedGroup.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+            resolve(buffer);
+        }, err => reject(err), { binary: true });
     });
 }
 
