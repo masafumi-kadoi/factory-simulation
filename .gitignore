@@ -6,4 +6,18 @@ original-skills/
 vendor/
 .githooks/
 docs/ideas/
+
+# === OS ===
 .DS_Store
+Thumbs.db
+
+# === Node.js ===
+node_modules/
+
+# === 機密設定 ===
+.env
+!.env.example*
+
+# === テスト用バイナリアセット ===
+test-tools/*.gltf
+!test-tools/voxel_export2.gltf

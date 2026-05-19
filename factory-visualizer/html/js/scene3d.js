@@ -617,9 +617,49 @@ export class Scene3D {
     }
 
     fitView() {
-        const machines = [];
-        this._machines.forEach((m, id) => machines.push(m.station));
-        this._fitCamera(machines);
+        const box = new THREE.Box3();
+        let hasObjects = false;
+        this._equipmentGroups.forEach(({ group }) => {
+            const b = new THREE.Box3().setFromObject(group);
+            if (!b.isEmpty()) { box.union(b); hasObjects = true; }
+        });
+
+        if (!hasObjects) {
+            const machines = [];
+            this._machines.forEach((m) => machines.push(m.station));
+            this._fitCamera(machines);
+            return;
+        }
+
+        const center = new THREE.Vector3();
+        const size = new THREE.Vector3();
+        box.getCenter(center);
+        box.getSize(size);
+
+        const cx = center.x;
+        const cz = center.z;
+        const range = Math.max(size.x, size.z, 200);
+        const groundSize = range + 400;
+
+        this._groundSize = groundSize;
+        this._ground.scale.set(groundSize / 2000, 1, groundSize / 2000);
+        this._ground.position.set(cx, 0, cz);
+
+        if (this._grid) { this.scene.remove(this._grid); this._grid.geometry.dispose(); }
+        this._recreateGrid(groundSize, THEMES[this._theme]);
+        this._grid.position.set(cx, 0.2, cz);
+
+        this.scene.fog.near = groundSize * 0.3;
+        this.scene.fog.far = groundSize * 1.5;
+
+        const dist = range * 1.5 + 300;
+        this.camera.position.set(cx, dist * 0.7, cz + dist);
+        this.camera.far = groundSize * 3;
+        this.camera.updateProjectionMatrix();
+        this.camera.lookAt(cx, 0, cz);
+        this.controls.target.set(cx, 0, cz);
+        this.controls.maxDistance = groundSize * 1.5;
+        this.controls.update();
     }
 
     // ---- Placement mode (equipment drag) ----

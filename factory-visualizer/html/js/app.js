@@ -189,9 +189,13 @@ function initUI() {
         if (_topViewActive) {
             scene3d.setPerspView();
             btnTop.classList.remove('active');
+            btnTop.innerHTML = '↧ 2D';
+            btnTop.title = '2Dトップビューに切り替え';
         } else {
             scene3d.setTopView();
             btnTop.classList.add('active');
+            btnTop.innerHTML = '↥ 3D';
+            btnTop.title = '3Dパースビューに切り替え';
         }
         _topViewActive = !_topViewActive;
     });
