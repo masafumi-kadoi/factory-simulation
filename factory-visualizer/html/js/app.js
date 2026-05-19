@@ -370,7 +370,7 @@ async function pollExecution(execId, dataSourceId) {
         const exec = await API.fetchExecution(execId);
         if (exec.status === 'completed') return exec;
         if (exec.status === 'error' || exec.status === 'failed') {
-            throw new Error('シミュレーション失敗: ' + (exec.error || exec.status));
+            throw new Error('シミュレーション失敗: ' + (exec.errorMessage || exec.status));
         }
         setRunModalStatus(`実行中... (${i * 2}s)`);
     }

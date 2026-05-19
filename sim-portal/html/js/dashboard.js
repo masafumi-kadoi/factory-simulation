@@ -88,7 +88,7 @@ async function loadStats() {
             PortalAPI.getFactories().catch(() => ({ factories: [] })),
             PortalAPI.getExecutions().catch(() => [])
         ]);
-        const factories = factoriesData.factories || [];
+        const factories = Array.isArray(factoriesData) ? factoriesData : (factoriesData.factories || []);
         const execs = Array.isArray(execsData) ? execsData : [];
 
         document.getElementById('stat-scenarios').textContent = factories.length;

@@ -130,6 +130,7 @@ func (c *client) writePump() {
 			}
 
 		case <-ticker.C:
+			// Send application-level heartbeat
 			hb := serverMsg{
 				Type:       "heartbeat",
 				ServerTime: time.Now().UTC().Format(time.RFC3339Nano),
@@ -137,6 +138,12 @@ func (c *client) writePump() {
 			b, _ := json.Marshal(hb)
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.TextMessage, b); err != nil {
+				return
+			}
+			// Send WebSocket-level ping so browser auto-responds with pong,
+			// which updates the server read deadline and keeps connection alive.
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}

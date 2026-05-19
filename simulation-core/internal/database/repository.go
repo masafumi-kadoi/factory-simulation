@@ -733,7 +733,7 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 
 	// Load connections
 	connRows, err := r.db.GetConnection().Query(`
-		SELECT from_station, to_station, condition, from_port_index, to_port_index
+		SELECT from_station, to_station, condition, COALESCE(from_port_index, -1), COALESCE(to_port_index, -1)
 		FROM factory_connections
 		WHERE factory_id = $1
 		ORDER BY id
