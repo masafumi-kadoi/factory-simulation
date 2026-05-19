@@ -1194,7 +1194,8 @@ func (e *Engine) placeInitialWorks() error {
 	for stationID, cond := range e.initialWorks {
 		station := e.scenario.GetStation(stationID)
 		if station == nil {
-			continue // skip unknown stations
+			log.Printf("[WARN] placeInitialWorks: station %q not found in scenario, skipping", stationID)
+			continue
 		}
 
 		// Only processing/merge/split/drain stations can have initial works
@@ -1258,7 +1259,7 @@ func (e *Engine) placeInitialWorks() error {
 			return err
 		}
 
-		log.Printf("Placed initial work %s at station %s (elapsed=%.1f, remaining=%.1f)", work.ID, stationID, cond.ElapsedTime, processingTime-cond.ElapsedTime)
+		log.Printf("Placed initial work %s at station %s (elapsed=%.1f, remaining=%.1f)", work.ID, stationID, cond.ElapsedTime, remaining)
 	}
 
 	return nil

@@ -762,7 +762,9 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		return nil, fmt.Errorf("failed to iterate factory connections: %w", err)
 	}
 
-	return domain.NewScenario(factoryID, factoryName, stations, connections), nil
+	scenario := domain.NewScenario(factoryID, factoryName, stations, connections)
+	domain.MigrateScenario(scenario)
+	return scenario, nil
 }
 
 // ListScenarios retrieves all scenarios from the database, optionally filtered by factoryID.

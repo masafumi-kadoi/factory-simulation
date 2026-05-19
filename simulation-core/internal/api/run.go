@@ -80,9 +80,6 @@ func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Apply migrations
-	domain.MigrateScenario(scenario)
-
 	// Build initial conditions
 	workIDsByStation := make(map[string][]string)
 	initialWorks := make(map[string]simulation.InitialWorkCondition)

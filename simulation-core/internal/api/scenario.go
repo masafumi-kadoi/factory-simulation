@@ -374,6 +374,10 @@ func (h *Handler) GetScenario(scenarioID string) (*domain.Scenario, error) {
 		return nil, fmt.Errorf("scenario not found: %s", scenarioID)
 	}
 
+	// Migrate before caching so the cached pointer is already in the current format.
+	// This prevents concurrent MigrateScenario calls on the same pointer (race condition).
+	domain.MigrateScenario(scenario)
+
 	// Cache in memory for future use
 	h.mu.Lock()
 	h.scenarios[scenarioID] = scenario
