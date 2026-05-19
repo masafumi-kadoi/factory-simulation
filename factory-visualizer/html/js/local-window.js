@@ -11,6 +11,15 @@ const MACHINE_ID = params.get('machineId') || '';
 // 設備名: equipName URL param、なければ stationId のドット前の部分（例 fuga.001 → fuga）
 const EQUIP_NAME = params.get('equipName') || MACHINE_ID.replace(/\.[^.]+$/, '') || MACHINE_ID;
 
+// ステーションタイプの判定
+// .000 = 設備マスター（3Dモデル・設備情報を保持）
+// .001+ = サブマシン（ロジック・内部ステーションを保持）
+// サフィックスなし = スタンドアロン（全タブ表示）
+const _SUFFIX_MATCH = MACHINE_ID.match(/^(.+?)[._-](\d{3})$/);
+const _STATION_SUFFIX = _SUFFIX_MATCH ? _SUFFIX_MATCH[2] : null;
+const _IS_MASTER = !_SUFFIX_MATCH || _STATION_SUFFIX === '000';
+const _IS_SUB    = !!_SUFFIX_MATCH && _STATION_SUFFIX !== '000';
+
 let machineStation = null;
 let childStations = [];
 let childConnections = [];
@@ -65,7 +74,9 @@ const STATION_COLORS = {
 // ---- Boot ----
 
 document.addEventListener('DOMContentLoaded', async () => {
-    document.getElementById('local-title').textContent = `Machine Editor — ${EQUIP_NAME}`;
+    // タイトルをステーションタイプに応じて設定
+    const titleLabel = _IS_SUB ? `Station Editor — ${MACHINE_ID}` : `Equipment Editor — ${EQUIP_NAME}`;
+    document.getElementById('local-title').textContent = titleLabel;
     document.getElementById('local-factory-info').textContent = `factory: ${FACTORY_ID.substring(0, 8)}…`;
     document.getElementById('info-sid').value = MACHINE_ID;
 
@@ -75,6 +86,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function initTabs() {
+    // ステーションタイプに応じてタブを表示・非表示
+    if (_IS_SUB) {
+        // サブマシン (.001+): ロジックのみ、3Dモデルタブを非表示
+        const modelTab = document.querySelector('.tab[data-tab="model3d"]');
+        if (modelTab) modelTab.style.display = 'none';
+        // デフォルトをロジックタブに変更
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        const logicTab = document.querySelector('.tab[data-tab="logic"]');
+        if (logicTab) { logicTab.classList.add('active'); document.getElementById('tab-logic').classList.add('active'); }
+        else { document.querySelector('.tab[data-tab="info"]').classList.add('active'); document.getElementById('tab-info').classList.add('active'); }
+    } else if (_IS_MASTER && _SUFFIX_MATCH) {
+        // 設備マスター (.000): 3Dモデルのみ、ロジックタブを非表示
+        const logicTab = document.querySelector('.tab[data-tab="logic"]');
+        if (logicTab) logicTab.style.display = 'none';
+    }
+    // サフィックスなし (スタンドアロン): 全タブ表示
+
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -103,21 +132,29 @@ async function loadMachineData() {
     if (!FACTORY_ID || !MACHINE_ID) return;
     try {
         const allStations = await API.fetchFactoryStations(FACTORY_ID);
-        const allConns = await API.fetchFactoryConnections(FACTORY_ID);
-
         const stations = Array.isArray(allStations) ? allStations : [];
         machineStation = stations.find(s => s.stationId === MACHINE_ID);
 
-        // 設備メンバー = equipmentId が EQUIP_NAME と一致するステーション
-        // positions は config.equipmentLayout から復元（工場フロア座標を上書きしない）
         const layout = machineStation?.config?.equipmentLayout || {};
         const layoutMembers = layout.members || [];
-        childStations = stations
-            .filter(s => s.equipmentId === EQUIP_NAME)
-            .map(s => {
-                const lp = layoutMembers.find(m => m.stationId === s.stationId);
-                return { ...s, positionX: lp ? lp.x : null, positionY: lp ? lp.y : null };
-            });
+
+        if (layoutMembers.length > 0) {
+            // 保存済みレイアウトから復元（正規のソース）
+            childStations = layoutMembers.map(m => ({
+                stationId: m.stationId,
+                stationType: m.stationType || 'processing',
+                name: m.name || m.stationType || m.stationId,
+                parentId: MACHINE_ID,
+                positionX: m.x ?? null,
+                positionY: m.y ?? null,
+                config: m.config || {},
+            }));
+        } else {
+            // 未保存: 同設備の DBステーションをフォールバックとして使用（未配置状態）
+            childStations = stations
+                .filter(s => s.equipmentId === EQUIP_NAME && s.stationId !== MACHINE_ID)
+                .map(s => ({ ...s, positionX: null, positionY: null }));
+        }
 
         childConnections = Array.isArray(layout.connections) ? layout.connections : [];
 
@@ -1277,7 +1314,7 @@ function renderUnplacedList() {
     if (unplaced.length === 0) {
         const msg = document.createElement('div');
         msg.className = 'unplaced-empty';
-        msg.textContent = '全て配置済み';
+        msg.textContent = childStations.length === 0 ? 'ステーションなし' : '全て配置済み';
         list.appendChild(msg);
         return;
     }
@@ -1339,7 +1376,14 @@ async function saveAndClose() {
 
         // Tab 3: ステーション配置を equipmentLayout に保存（parentId は変更しない）
         newConfig.equipmentLayout = {
-            members: childStations.map(s => ({ stationId: s.stationId, x: s.positionX, y: s.positionY })),
+            members: childStations.map(s => ({
+                stationId: s.stationId,
+                stationType: s.stationType,
+                name: s.name,
+                x: s.positionX,
+                y: s.positionY,
+                config: s.config || {},
+            })),
             connections: childConnections,
         };
 

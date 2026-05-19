@@ -64,15 +64,18 @@ function initScene() {
         openLocalWindow(sid);
     });
     scene3d.setOnEquipmentDoubleClick(equipName => {
-        // Open local window for the primary machine of this equipment group
         const members = state.stations.filter(s => {
             if (s.stationType !== 'machine') return false;
             const m = s.stationId.match(/^(.+?)[._-]?(\d{3})$/);
             return m ? m[1] === equipName : s.stationId === equipName;
         });
         if (members.length === 0) return;
-        const primary = members.slice().sort((a, b) => a.stationId.localeCompare(b.stationId))[0];
-        openLocalWindow(primary.stationId);
+        // 設備マスター (.000) を優先して開く。なければ最初のステーション
+        const master = members.find(m => {
+            const match = m.stationId.match(/^(.+?)[._-]?(\d{3})$/);
+            return match && match[2] === '000';
+        }) || members.slice().sort((a, b) => a.stationId.localeCompare(b.stationId))[0];
+        openLocalWindow(master.stationId);
     });
     scene3d.setOnWorkClick(workId => {
         openInfoPanel({ stationId: workId, name: workId, stationType: 'work' }, 'work');

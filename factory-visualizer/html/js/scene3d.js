@@ -304,12 +304,18 @@ export class Scene3D {
         const label = this._createLabel(equipName, cx, H + 18, cz);
         shellGroup.add(label);
 
-        // 1設備 = 1モデル: 設備グループ内の任意マシンからモデルを取得して設備レベルで表示
-        const modelMachine = machines.find(m =>
+        // 1設備 = 1モデル: .000 ステーションが設備レベルのモデルを保持する設計
+        // .000 がなければ後方互換でモデルを持つ最初のマシンを使用
+        const masterMachine = machines.find(m => {
+            const match = m.stationId.match(/^(.+?)[._-]?(\d{3})$/);
+            return match && match[2] === '000';
+        });
+        const modelMachine = masterMachine || machines.find(m =>
             m.config?.model3DGlb?.data ||
             (Array.isArray(m.config?.model3DGrid?.cells) && m.config.model3DGrid.cells.length > 0)
         );
-        const hasCustomModel = !!modelMachine;
+        const hasCustomModel = !!(modelMachine?.config?.model3DGlb?.data ||
+            (Array.isArray(modelMachine?.config?.model3DGrid?.cells) && modelMachine.config.model3DGrid.cells.length > 0));
 
         if (hasCustomModel) {
             // shellMesh は opacity=0 にして不可視化するが visible=true のまま保持
