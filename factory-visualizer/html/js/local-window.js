@@ -1135,6 +1135,7 @@ function initToolPalette() {
     });
 
     document.getElementById('btn-refresh-logic')?.addEventListener('click', () => {
+        _initLogicProjection(); // 保存後の最新GLTFで投影を再構築（内部でviewBox/SVGも更新）
         _resetLogicViewBox();
         renderLogicSVG();
         renderUnplacedList();
