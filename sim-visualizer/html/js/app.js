@@ -228,6 +228,7 @@ class App {
     // --- Moduler hierarchy ---
 
     _buildModulerMap(flatScenario) {
+        const stationIds = new Set(flatScenario.stations.map(s => s.id));
         this.modulerMap.clear();
         this._drainIds.clear();
         for (const station of flatScenario.stations) {
@@ -235,7 +236,11 @@ class App {
             const dotIdx = station.id.lastIndexOf('.');
             if (dotIdx === -1) continue;
             const parentId = station.id.substring(0, dotIdx);
-            this.modulerMap.set(station.id, parentId);
+            // Only treat as a sub-station if the parent actually exists in the scenario.
+            // Factory station IDs like "source.000" use dots as naming convention, not hierarchy.
+            if (stationIds.has(parentId)) {
+                this.modulerMap.set(station.id, parentId);
+            }
         }
     }
 
@@ -425,7 +430,14 @@ class App {
     // --- Scenario building ---
 
     _buildLayer1Scenario(flatScenario) {
-        const topStations = flatScenario.stations.filter(s => !s.id.includes('.'));
+        const stationIds = new Set(flatScenario.stations.map(s => s.id));
+        // A station is top-level unless its parent (the part before the last dot) exists as a real station.
+        // This handles factory station IDs like "source.000" which are top-level despite containing dots.
+        const topStations = flatScenario.stations.filter(s => {
+            const dotIdx = s.id.lastIndexOf('.');
+            if (dotIdx === -1) return true;
+            return !stationIds.has(s.id.substring(0, dotIdx));
+        });
 
         const topStationIds = new Set(topStations.map(s => s.id));
 
