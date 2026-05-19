@@ -1254,14 +1254,7 @@ function initGlobalLogicEditTab() {
         document.getElementById('new-machine-modal').classList.add('hidden'));
     document.getElementById('new-machine-ok').addEventListener('click', gleAddMachine);
     document.getElementById('new-machine-name').addEventListener('input', e => {
-        const sidInput = document.getElementById('new-machine-sid');
-        const type = document.getElementById('new-machine-type').value;
-        sidInput.value = gleGenerateStationId(e.target.value, type);
-    });
-    document.getElementById('new-machine-type').addEventListener('change', () => {
-        const name = document.getElementById('new-machine-name').value;
-        const type = document.getElementById('new-machine-type').value;
-        if (name) document.getElementById('new-machine-sid').value = gleGenerateStationId(name, type);
+        document.getElementById('new-machine-sid').value = gleGenerateStationId(e.target.value);
     });
     document.getElementById('new-machine-name').addEventListener('keydown', e => {
         if (e.key === 'Enter') document.getElementById('new-machine-sid').focus();
@@ -1610,9 +1603,9 @@ function gleScrollToNode(sid) {
     wrap.scrollTop  = Math.max(0, pos.y - wrap.clientHeight / 2 + GLE_NODE_H / 2);
 }
 
-function gleGenerateStationId(name, type) {
+function gleGenerateStationId(name) {
     const base = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'machine';
-    return `${base}.${type || 'machine'}`;
+    return `${base}.000`;
 }
 
 async function gleAddMachine() {
@@ -1624,6 +1617,16 @@ async function gleAddMachine() {
     const stationType = typeSelect ? typeSelect.value : 'machine';
     if (!name) { nameInput.focus(); return; }
     if (!sid) { sidInput && sidInput.focus(); return; }
+
+    // 設備名の重複チェック
+    const newEquipName = _equipNameOf(sid);
+    const duplicate = (state.stations || []).some(s => _equipNameOf(s.stationId) === newEquipName);
+    if (duplicate) {
+        alert(`設備名 "${newEquipName}" は既に存在します。別の名前を使用してください。`);
+        nameInput.focus();
+        return;
+    }
+
     document.getElementById('new-machine-modal').classList.add('hidden');
     try {
         await API.createStation(state.currentFactory, {
