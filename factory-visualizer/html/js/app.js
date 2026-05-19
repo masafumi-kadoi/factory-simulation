@@ -1191,6 +1191,8 @@ function initGlobalLogicEditTab() {
         const modal = document.getElementById('new-machine-modal');
         modal.classList.remove('hidden');
         document.getElementById('new-machine-name').value = '';
+        document.getElementById('new-machine-sid').value = '';
+        document.getElementById('new-machine-type').value = 'machine';
         document.getElementById('new-machine-name').focus();
     });
     document.getElementById('new-machine-modal-close').addEventListener('click', () =>
@@ -1200,7 +1202,13 @@ function initGlobalLogicEditTab() {
     document.getElementById('new-machine-ok').addEventListener('click', gleAddMachine);
     document.getElementById('new-machine-name').addEventListener('input', e => {
         const sidInput = document.getElementById('new-machine-sid');
-        sidInput.value = gleGenerateStationId(e.target.value);
+        const type = document.getElementById('new-machine-type').value;
+        sidInput.value = gleGenerateStationId(e.target.value, type);
+    });
+    document.getElementById('new-machine-type').addEventListener('change', () => {
+        const name = document.getElementById('new-machine-name').value;
+        const type = document.getElementById('new-machine-type').value;
+        if (name) document.getElementById('new-machine-sid').value = gleGenerateStationId(name, type);
     });
     document.getElementById('new-machine-name').addEventListener('keydown', e => {
         if (e.key === 'Enter') document.getElementById('new-machine-sid').focus();
@@ -1246,7 +1254,7 @@ function gleAutoLayout(machines) {
 
 function renderGlobalLogicGraph() {
     gleLoadPositions();
-    const machines = state.stations.filter(s => s.stationType === 'machine');
+    const machines = state.stations.filter(s => ['machine', 'source', 'drain'].includes(s.stationType));
     // gleAutoLayout は自動呼び出しせず、配置済み（_gleNodePositions に位置あり）のみ描画
 
     // サイドバー: 未配置設備グループを表示
@@ -1309,8 +1317,10 @@ function renderGleUnplacedList(machines) {
     unplaced.forEach(({ equipName, members }) => {
         const item = document.createElement('div');
         item.className = 'gle-machine-item';
-        item.textContent = equipName;
-        item.title = `${equipName} (${members.length}台)  クリックで配置`;
+        const displayName = members.length === 1 && members[0].name ? members[0].name : equipName;
+        const typeLabel = members[0] ? (members[0].stationType || 'machine') : 'machine';
+        item.textContent = displayName;
+        item.title = `${displayName} [${typeLabel}]  クリックで配置`;
         item.addEventListener('click', () => gleAddEquipmentToCanvas(equipName, members));
         listEl.appendChild(item);
     });
@@ -1342,13 +1352,16 @@ function gleDrawNode(machine, layer) {
     g.setAttribute('data-sid', machine.stationId);
     g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
 
+    const GLE_TYPE_COLORS = { source: '#28a745', drain: '#6c757d', machine: '#4a9eff' };
+    const typeColor = GLE_TYPE_COLORS[machine.stationType] || '#4a9eff';
+
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('cx', GLE_NODE_W / 2);
     circle.setAttribute('cy', GLE_NODE_H / 2);
     circle.setAttribute('r', GLE_NODE_R);
     circle.setAttribute('fill', 'var(--bg-panel)');
-    circle.setAttribute('stroke', 'var(--border-light)');
-    circle.setAttribute('stroke-width', '1.5');
+    circle.setAttribute('stroke', typeColor);
+    circle.setAttribute('stroke-width', '2');
     circle.style.cursor = 'pointer';
 
     const name = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -1366,10 +1379,10 @@ function gleDrawNode(machine, layer) {
     sub.setAttribute('y', GLE_NODE_H / 2 + 12);
     sub.setAttribute('text-anchor', 'middle');
     sub.setAttribute('dominant-baseline', 'middle');
-    sub.setAttribute('fill', 'var(--text-muted)');
+    sub.setAttribute('fill', typeColor);
     sub.setAttribute('font-size', '10');
     sub.setAttribute('font-family', 'inherit');
-    sub.textContent = 'machine';
+    sub.textContent = machine.stationType || 'machine';
 
     g.appendChild(circle);
     g.appendChild(name);
@@ -1479,7 +1492,7 @@ function gleRedrawConnections() {
     const connLayer = document.getElementById('gle-conn-layer');
     connLayer.innerHTML = '';
     const machineIds = new Set(
-        state.stations.filter(s => s.stationType === 'machine').map(m => m.stationId)
+        state.stations.filter(s => ['machine', 'source', 'drain'].includes(s.stationType)).map(m => m.stationId)
     );
     state.connections
         .filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation)
@@ -1544,16 +1557,18 @@ function gleScrollToNode(sid) {
     wrap.scrollTop  = Math.max(0, pos.y - wrap.clientHeight / 2 + GLE_NODE_H / 2);
 }
 
-function gleGenerateStationId(name) {
+function gleGenerateStationId(name, type) {
     const base = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'machine';
-    return `${base}.machine`;
+    return `${base}.${type || 'machine'}`;
 }
 
 async function gleAddMachine() {
     const nameInput = document.getElementById('new-machine-name');
     const sidInput  = document.getElementById('new-machine-sid');
+    const typeSelect = document.getElementById('new-machine-type');
     const name = nameInput.value.trim();
     const sid  = sidInput ? sidInput.value.trim() : '';
+    const stationType = typeSelect ? typeSelect.value : 'machine';
     if (!name) { nameInput.focus(); return; }
     if (!sid) { sidInput && sidInput.focus(); return; }
     document.getElementById('new-machine-modal').classList.add('hidden');
@@ -1561,7 +1576,7 @@ async function gleAddMachine() {
         await API.createStation(state.currentFactory, {
             stationId:   sid,
             name,
-            stationType: 'machine',
+            stationType,
             posX: 0,
             posY: 0,
             posZ: 0,

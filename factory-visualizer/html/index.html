@@ -342,6 +342,14 @@
                     <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">設備名</label>
                     <input type="text" id="new-machine-name" class="input-dark" style="width:100%;" placeholder="例: Machine A">
                 </div>
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">種別</label>
+                    <select id="new-machine-type" class="input-dark" style="width:100%;">
+                        <option value="machine">machine（機械設備）</option>
+                        <option value="source">source（供給元）</option>
+                        <option value="drain">drain（排出先）</option>
+                    </select>
+                </div>
                 <div style="margin-bottom:16px;">
                     <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">Station ID <span style="color:var(--text-muted)">(形式: xxx.yyy)</span></label>
                     <input type="text" id="new-machine-sid" class="input-dark" style="width:100%;" placeholder="例: machine_a.machine">
