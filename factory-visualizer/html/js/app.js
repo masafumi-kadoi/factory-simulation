@@ -524,13 +524,14 @@ function buildInfoRows(station, type) {
 
 function openLocalWindow(machineStationId) {
     const st = state.stations.find(s => s.stationId === machineStationId);
+    const equipName = st?.equipmentId || machineStationId;
     const params = new URLSearchParams({
         factoryId: state.currentFactory || '',
         machineId: machineStationId,
-        machineName: (st && st.name) || machineStationId,
+        equipName,
     });
     const url = `/factory-visualizer/local-window.html?${params}`;
-    const win = window.open(url, `machine_${machineStationId}`, 'width=900,height=700,resizable=yes');
+    const win = window.open(url, `machine_${equipName}`, 'width=900,height=700,resizable=yes');
     if (!win) setStatus('ポップアップがブロックされました。許可してください。', 'status-warn');
 }
 
@@ -905,11 +906,13 @@ function openG3DFloating(groupId, title) {
             });
 
             body.innerHTML = `
-                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">設備をドラッグして移動。移動後に保存してください。</div>
-                <div style="max-height:200px;overflow-y:auto;margin-bottom:10px">${rows.join('') || '<div style="color:var(--text-muted);font-size:11px">設備がありません</div>'}</div>
+                <button class="btn-secondary" id="gf-exit-placement" style="width:100%;padding:5px;margin-bottom:4px;">設備配置モードを終了</button>
                 <button class="btn-primary" id="gf-save-placement" style="width:100%;padding:6px">全て保存</button>
+                <div style="font-size:11px;color:var(--text-muted);">設備をドラッグして移動。移動後に保存してください。</div>
+                <div style="max-height:200px;overflow-y:auto;">${rows.join('') || '<div style="color:var(--text-muted);font-size:11px">設備がありません</div>'}</div>
             `;
             _movedEquipment.clear();
+            body.querySelector('#gf-exit-placement').addEventListener('click', closeG3DFloating);
             body.querySelector('#gf-save-placement').addEventListener('click', saveEquipPlacement);
             break;
         }
@@ -1017,7 +1020,12 @@ function saveG3DSettings() {
 
 async function saveEquipPlacement() {
     const btn = document.getElementById('gf-save-placement');
-    if (!btn || _movedEquipment.size === 0) return;
+    if (!btn) return;
+    if (_movedEquipment.size === 0) {
+        btn.textContent = '移動した設備がありません';
+        setTimeout(() => { if (btn) btn.textContent = '全て保存'; }, 1500);
+        return;
+    }
     btn.disabled = true;
     btn.textContent = '保存中...';
 

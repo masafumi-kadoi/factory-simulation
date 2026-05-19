@@ -8,7 +8,8 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 const params = new URLSearchParams(location.search);
 const FACTORY_ID = params.get('factoryId') || '';
 const MACHINE_ID = params.get('machineId') || '';
-const MACHINE_NAME = params.get('machineName') || MACHINE_ID;
+// 設備名: equipName URL param、なければ stationId のドット前の部分（例 fuga.001 → fuga）
+const EQUIP_NAME = params.get('equipName') || MACHINE_ID.replace(/\.[^.]+$/, '') || MACHINE_ID;
 
 let machineStation = null;
 let childStations = [];
@@ -64,7 +65,7 @@ const STATION_COLORS = {
 // ---- Boot ----
 
 document.addEventListener('DOMContentLoaded', async () => {
-    document.getElementById('local-title').textContent = `Machine Editor — ${MACHINE_NAME}`;
+    document.getElementById('local-title').textContent = `Machine Editor — ${EQUIP_NAME}`;
     document.getElementById('local-factory-info').textContent = `factory: ${FACTORY_ID.substring(0, 8)}…`;
     document.getElementById('info-sid').value = MACHINE_ID;
 
@@ -104,13 +105,21 @@ async function loadMachineData() {
         const allStations = await API.fetchFactoryStations(FACTORY_ID);
         const allConns = await API.fetchFactoryConnections(FACTORY_ID);
 
-        machineStation = (Array.isArray(allStations) ? allStations : []).find(s => s.stationId === MACHINE_ID);
-        childStations = (Array.isArray(allStations) ? allStations : []).filter(s => s.parentId === MACHINE_ID);
+        const stations = Array.isArray(allStations) ? allStations : [];
+        machineStation = stations.find(s => s.stationId === MACHINE_ID);
 
-        const childIds = new Set(childStations.map(s => s.stationId));
-        childConnections = (Array.isArray(allConns) ? allConns : []).filter(c =>
-            childIds.has(c.fromStation) || childIds.has(c.toStation)
-        );
+        // 設備メンバー = equipmentId が EQUIP_NAME と一致するステーション
+        // positions は config.equipmentLayout から復元（工場フロア座標を上書きしない）
+        const layout = machineStation?.config?.equipmentLayout || {};
+        const layoutMembers = layout.members || [];
+        childStations = stations
+            .filter(s => s.equipmentId === EQUIP_NAME)
+            .map(s => {
+                const lp = layoutMembers.find(m => m.stationId === s.stationId);
+                return { ...s, positionX: lp ? lp.x : null, positionY: lp ? lp.y : null };
+            });
+
+        childConnections = Array.isArray(layout.connections) ? layout.connections : [];
 
         populateInfoTab();
         populateModelTab();
@@ -124,7 +133,7 @@ async function loadMachineData() {
 
 function populateInfoTab() {
     if (!machineStation) return;
-    document.getElementById('info-name').value = machineStation.name || '';
+    document.getElementById('info-name').value = EQUIP_NAME;
     const meta = machineStation.config?.metadata;
     document.getElementById('info-metadata').value = meta ? JSON.stringify(meta, null, 2) : '';
 }
@@ -1295,35 +1304,26 @@ async function saveAndClose() {
     btn.textContent = '保存中...';
 
     try {
-        // Tab 1: Save name + metadata
+        // config を段階的に構築して1回のsaveにまとめる
+        let newConfig = { ...(machineStation?.config || {}) };
+
+        // Tab 1: name + metadata
         const name = document.getElementById('info-name').value.trim();
         const metaStr = document.getElementById('info-metadata').value.trim();
-        let metaUpdate = {};
-        if (name) metaUpdate.name = name;
+        if (name) await API.updateStation(FACTORY_ID, MACHINE_ID, { name });
         if (metaStr) {
-            try { metaUpdate.config = { ...(machineStation?.config || {}), metadata: JSON.parse(metaStr) }; }
-            catch { /* ignore JSON parse error */ }
-        }
-        if (Object.keys(metaUpdate).length > 0) {
-            await API.updateStation(FACTORY_ID, MACHINE_ID, metaUpdate);
+            try { newConfig.metadata = JSON.parse(metaStr); } catch { /* ignore */ }
         }
 
-        // Tab 2: Save 3D model
-        const baseConfig = machineStation?.config || {};
+        // Tab 2: 3D model
         if (_deleteModel) {
-            // モデル削除: 編集用データとGLBの両方をリセット
-            await API.updateStation(FACTORY_ID, MACHINE_ID, {
-                config: { ...baseConfig, model3DGrid: null, model3DGlb: null },
-            });
+            delete newConfig.model3DGrid;
+            delete newConfig.model3DGlb;
         } else if (_importedGlb) {
-            // GLBインポート: model3DGlbのみ保存、model3DGridをクリア
-            const data = _arrayBufferToBase64(_importedGlb.arrayBuffer);
-            await API.updateStation(FACTORY_ID, MACHINE_ID, {
-                config: { ...baseConfig, model3DGlb: { data, name: _importedGlb.name }, model3DGrid: null },
-            });
+            newConfig.model3DGlb = { data: _arrayBufferToBase64(_importedGlb.arrayBuffer), name: _importedGlb.name };
+            delete newConfig.model3DGrid;
         } else if (_grid.cells.size > 0) {
-            // グリッド編集: model3DGrid（再編集用）+ model3DGlb（表示用GLBエクスポート）の両方保存
-            const model3DGrid = {
+            newConfig.model3DGrid = {
                 gridSize: _grid.gridSize,
                 height: _grid.height,
                 cols: _grid.cols,
@@ -1332,16 +1332,18 @@ async function saveAndClose() {
                 origin: _grid.origin,
             };
             const glbBuffer = await _exportModelGroupAsGlb();
-            const model3DGlb = glbBuffer
+            newConfig.model3DGlb = glbBuffer
                 ? { data: _arrayBufferToBase64(glbBuffer), name: 'model.glb' }
                 : null;
-            await API.updateStation(FACTORY_ID, MACHINE_ID, {
-                config: { ...baseConfig, model3DGrid, model3DGlb },
-            });
         }
 
-        // Tab 3: Save logic (stations with positionX/Y + connections)
-        await API.saveMachineLogic(FACTORY_ID, MACHINE_ID, childStations, childConnections);
+        // Tab 3: ステーション配置を equipmentLayout に保存（parentId は変更しない）
+        newConfig.equipmentLayout = {
+            members: childStations.map(s => ({ stationId: s.stationId, x: s.positionX, y: s.positionY })),
+            connections: childConnections,
+        };
+
+        await API.updateStation(FACTORY_ID, MACHINE_ID, { config: newConfig });
 
         btn.disabled = false;
         btn.textContent = '保存する';
