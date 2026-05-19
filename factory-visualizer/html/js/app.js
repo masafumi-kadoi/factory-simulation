@@ -29,6 +29,7 @@ let scene3d = null;
 let timeline = null;
 let infoPanel = null;
 const _movedEquipment = new Map(); // equipName → { centroid, machines[] }
+let _dragEquipData = null;         // ドラッグ中の設備データ { equipName, members }
 
 // ---- Boot ----
 
@@ -873,17 +874,51 @@ function renderG3DUnplacedList() {
         const item = document.createElement('div');
         item.className = 'g3d-unplaced-item';
         item.textContent = equipName;
-        item.title = `${equipName} (${members.length}台)  クリックで配置`;
+        item.title = `${equipName} (${members.length}台)  ドラッグまたはクリックで配置`;
+        item.draggable = true;
         item.addEventListener('click', () => placeEquipmentFromSidebar(equipName, members));
+        item.addEventListener('dragstart', e => {
+            _dragEquipData = { equipName, members };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', equipName);
+            item.classList.add('dragging');
+        });
+        item.addEventListener('dragend', () => {
+            _dragEquipData = null;
+            item.classList.remove('dragging');
+            document.getElementById('g3d-scene')?.classList.remove('drop-target');
+        });
         list.appendChild(item);
     });
 }
 
+// 指定座標に設備を配置し、3D シーンを更新する共通コア
+function _placeEquipAtPosition(equipName, members, cx, cz) {
+    members.forEach(s => { s.positionX = cx; s.positionY = cz; });
+    _movedEquipment.set(equipName, {
+        centroid: { x: cx, z: cz },
+        machines: members.map(s => ({ stationId: s.stationId, positionX: cx, positionY: cz })),
+    });
+    scene3d && scene3d.loadFactory(state.stations, state.connections);
+    renderG3DUnplacedList();
+    // 配置モードを起動して保存ボタンを表示
+    if (!scene3d?._placementMode) {
+        scene3d && scene3d.setPlacementMode(true);
+        document.querySelectorAll('.g3d-sidebar-item').forEach(i => i.classList.remove('active'));
+        const placementItem = document.querySelector('.g3d-sidebar-item[data-group="placement"]');
+        if (placementItem) placementItem.classList.add('active');
+        openG3DFloating('placement');
+    } else {
+        const floatEl = document.getElementById('g3d-floating');
+        if (floatEl && !floatEl.classList.contains('hidden')) openG3DFloating('placement');
+    }
+}
+
+// クリック配置: カメラ注視点付近の空き位置に自動配置
 function placeEquipmentFromSidebar(equipName, members) {
     const target = scene3d ? scene3d.controls.target : { x: 0, z: 0 };
     const SPACING = 300;
 
-    // 既配置設備のセントロイド一覧を収集
     const occupiedCentroids = [];
     const existMap = new Map();
     (state.stations || []).filter(s => s.stationType === 'machine' && s.positionX != null).forEach(s => {
@@ -899,36 +934,13 @@ function placeEquipmentFromSidebar(equipName, members) {
     });
     _movedEquipment.forEach(({ centroid }) => occupiedCentroids.push(centroid));
 
-    // 重ならない位置を探す
     let cx = target.x, cz = target.z;
     for (let attempt = 0; attempt < 30; attempt++) {
         if (!occupiedCentroids.some(p => Math.abs(p.x - cx) < SPACING && Math.abs(p.z - cz) < SPACING)) break;
         cx += SPACING;
         if (attempt % 5 === 4) { cx = target.x; cz += SPACING; }
     }
-
-    // ステーション全員を同一座標に配置（シェルが囲む）
-    members.forEach(s => { s.positionX = cx; s.positionY = cz; });
-
-    _movedEquipment.set(equipName, {
-        centroid: { x: cx, z: cz },
-        machines: members.map(s => ({ stationId: s.stationId, positionX: cx, positionY: cz })),
-    });
-
-    scene3d && scene3d.loadFactory(state.stations, state.connections);
-    renderG3DUnplacedList();
-
-    // 配置モードを起動して保存ボタンを表示
-    if (!scene3d?._placementMode) {
-        scene3d && scene3d.setPlacementMode(true);
-        document.querySelectorAll('.g3d-sidebar-item').forEach(i => i.classList.remove('active'));
-        const placementItem = document.querySelector('.g3d-sidebar-item[data-group="placement"]');
-        if (placementItem) placementItem.classList.add('active');
-        openG3DFloating('placement');
-    } else {
-        const floatEl = document.getElementById('g3d-floating');
-        if (floatEl && !floatEl.classList.contains('hidden')) openG3DFloating('placement');
-    }
+    _placeEquipAtPosition(equipName, members, cx, cz);
 }
 
 function initGlobal3DEditTab() {
@@ -971,6 +983,45 @@ function initGlobal3DEditTab() {
         floatEl.style.top  = (e.clientY - oy) + 'px';
     });
     document.addEventListener('mouseup', () => { dragging = false; });
+
+    setupG3DDragDrop();
+}
+
+function setupG3DDragDrop() {
+    const sceneEl = document.getElementById('g3d-scene');
+    if (!sceneEl) return;
+
+    sceneEl.addEventListener('dragover', e => {
+        if (!_dragEquipData) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        sceneEl.classList.add('drop-target');
+    });
+
+    sceneEl.addEventListener('dragleave', e => {
+        // relatedTarget が sceneEl の外に出た時のみ解除
+        if (!sceneEl.contains(e.relatedTarget)) {
+            sceneEl.classList.remove('drop-target');
+        }
+    });
+
+    sceneEl.addEventListener('drop', e => {
+        e.preventDefault();
+        sceneEl.classList.remove('drop-target');
+        if (!_dragEquipData || !scene3d) { _dragEquipData = null; return; }
+
+        const { equipName, members } = _dragEquipData;
+        _dragEquipData = null;
+
+        // ドロップ座標を地面ワールド座標に変換
+        const pos = scene3d.getGroundPositionAtScreen(e.clientX, e.clientY);
+        if (pos) {
+            _placeEquipAtPosition(equipName, members, pos.x, pos.z);
+        } else {
+            // レイキャスト失敗時はクリック配置と同じ自動位置
+            placeEquipmentFromSidebar(equipName, members);
+        }
+    });
 }
 
 function openG3DFloating(groupId, title) {

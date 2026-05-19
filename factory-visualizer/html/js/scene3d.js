@@ -681,6 +681,22 @@ export class Scene3D {
 
     setOnEquipmentMove(cb) { this._onEquipmentMove = cb; }
 
+    // スクリーン座標 (clientX, clientY) → 地面(y=0)上のワールド座標を返す。失敗時は null
+    getGroundPositionAtScreen(clientX, clientY) {
+        const canvas = this.renderer.domElement;
+        const rect = canvas.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+            ((clientX - rect.left) / rect.width) * 2 - 1,
+            -((clientY - rect.top) / rect.height) * 2 + 1,
+        );
+        const activeCam = this._useOrtho ? this._orthoCamera : this.camera;
+        this._raycaster.setFromCamera(mouse, activeCam);
+        const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const floorPoint = new THREE.Vector3();
+        if (!this._raycaster.ray.intersectPlane(floorPlane, floorPoint)) return null;
+        return { x: floorPoint.x, z: floorPoint.z };
+    }
+
     _handleMouseDown(e) {
         if (!this._placementMode || e.button !== 0) return;
 
