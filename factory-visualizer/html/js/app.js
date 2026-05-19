@@ -1230,6 +1230,7 @@ function initGlobalLogicEditTab() {
             _gleCurrentTool = btn.dataset.gleTool;
             document.querySelectorAll('[data-gle-tool]').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            if (_gleConnectFrom) gleSetNodeHighlight(_gleConnectFrom.equipName || _gleConnectFrom, false);
             _gleConnectFrom = null;
             _gleSelectedNode = null;
             gleUpdateHint();
@@ -1289,11 +1290,104 @@ function gleSavePositions() {
     try { localStorage.setItem(`fv_gle_pos_${state.currentFactory}`, JSON.stringify(_gleNodePositions)); } catch {}
 }
 
-function gleAutoLayout(machines) {
-    const cols = Math.ceil(Math.sqrt(machines.length)) || 1;
-    machines.forEach((m, i) => {
-        if (!_gleNodePositions[m.stationId]) {
-            _gleNodePositions[m.stationId] = {
+function _gleEquips() {
+    const equipMap = new Map();
+    state.stations
+        .filter(s => s.stationType === 'machine' || s.stationType === 'source' || s.stationType === 'drain')
+        .forEach(s => {
+            const en = _equipNameOf(s.stationId);
+            if (!equipMap.has(en)) equipMap.set(en, []);
+            equipMap.get(en).push(s);
+        });
+    const equips = [];
+    equipMap.forEach((members, equipName) => {
+        const rep = members.find(m => m.stationId === `${equipName}.000`) || members[0];
+        const memberIds = new Set(members.map(m => m.stationId));
+        const exitPorts  = state.stations.filter(s => s.stationType === 'exit'  && s.parentId && memberIds.has(s.parentId));
+        const entryPorts = state.stations.filter(s => s.stationType === 'entry' && s.parentId && memberIds.has(s.parentId));
+        equips.push({ equipName, members, rep, exitPorts, entryPorts });
+    });
+    return equips;
+}
+
+function _gleStationToEquip() {
+    const map = new Map();
+    // top-level equipment stations
+    state.stations
+        .filter(s => s.stationType === 'machine' || s.stationType === 'source' || s.stationType === 'drain')
+        .forEach(s => map.set(s.stationId, _equipNameOf(s.stationId)));
+    // entry/exit port stations → map via parentId
+    state.stations
+        .filter(s => s.stationType === 'entry' || s.stationType === 'exit')
+        .forEach(s => {
+            const parentEquip = s.parentId ? (map.get(s.parentId) || _equipNameOf(s.parentId)) : _equipNameOf(s.stationId);
+            map.set(s.stationId, parentEquip);
+        });
+    return map;
+}
+
+// ポートの SVG 内位置を計算する
+// returns Map<portStationId, {relX, relY, absX, absY}>
+function _gleCalcPortPositions(equips, stationToEquip) {
+    const portPos = new Map();
+    const cx = GLE_NODE_W / 2;
+    const cy = GLE_NODE_H / 2;
+
+    equips.forEach(equip => {
+        const { equipName, exitPorts, entryPorts } = equip;
+        const pos = _gleNodePositions[equipName];
+        if (!pos) return;
+        const absCx = pos.x + cx;
+        const absCy = pos.y + cy;
+
+        const calcAngle = (portSid, defaultAngle) => {
+            const conn = state.connections.find(c => c.fromStation === portSid || c.toStation === portSid);
+            if (conn) {
+                const otherSid = conn.fromStation === portSid ? conn.toStation : conn.fromStation;
+                const otherEquip = stationToEquip.get(otherSid);
+                const otherPos = otherEquip && _gleNodePositions[otherEquip];
+                if (otherPos) {
+                    return Math.atan2((otherPos.y + cy) - absCy, (otherPos.x + cx) - absCx);
+                }
+            }
+            return defaultAngle;
+        };
+
+        const spread = Math.PI / 3; // 60° の範囲に分散
+        exitPorts.forEach((port, i) => {
+            const base = 0; // 右側
+            const def = exitPorts.length === 1 ? base
+                : base + (i / (exitPorts.length - 1) - 0.5) * spread;
+            const angle = calcAngle(port.stationId, def);
+            portPos.set(port.stationId, {
+                relX: cx + GLE_NODE_R * Math.cos(angle),
+                relY: cy + GLE_NODE_R * Math.sin(angle),
+                absX: absCx + GLE_NODE_R * Math.cos(angle),
+                absY: absCy + GLE_NODE_R * Math.sin(angle),
+            });
+        });
+
+        entryPorts.forEach((port, i) => {
+            const base = Math.PI; // 左側
+            const def = entryPorts.length === 1 ? base
+                : base + (i / (entryPorts.length - 1) - 0.5) * spread;
+            const angle = calcAngle(port.stationId, def);
+            portPos.set(port.stationId, {
+                relX: cx + GLE_NODE_R * Math.cos(angle),
+                relY: cy + GLE_NODE_R * Math.sin(angle),
+                absX: absCx + GLE_NODE_R * Math.cos(angle),
+                absY: absCy + GLE_NODE_R * Math.sin(angle),
+            });
+        });
+    });
+    return portPos;
+}
+
+function gleAutoLayout(equips) {
+    const cols = Math.ceil(Math.sqrt(equips.length)) || 1;
+    equips.forEach((e, i) => {
+        if (!_gleNodePositions[e.equipName]) {
+            _gleNodePositions[e.equipName] = {
                 x: 60 + (i % cols) * (GLE_NODE_W + 60),
                 y: 60 + Math.floor(i / cols) * (GLE_NODE_H + 60),
             };
@@ -1303,31 +1397,36 @@ function gleAutoLayout(machines) {
 
 function renderGlobalLogicGraph() {
     gleLoadPositions();
-    const machines = state.stations.filter(s => s.stationId.endsWith('.000'));
-    // gleAutoLayout は自動呼び出しせず、配置済み（_gleNodePositions に位置あり）のみ描画
+    const equips = _gleEquips();
+    renderGleUnplacedList(equips);
 
-    // サイドバー: 未配置設備グループを表示
-    renderGleUnplacedList(machines);
-
-    // SVG 再描画
     const connLayer = document.getElementById('gle-conn-layer');
     const nodeLayer = document.getElementById('gle-node-layer');
     connLayer.innerHTML = '';
     nodeLayer.innerHTML = '';
 
-    // 配置済みノード間の接続のみ描画
-    const machineIds = new Set(machines.map(m => m.stationId));
-    state.connections
-        .filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation)
-                  && _gleNodePositions[c.fromStation] && _gleNodePositions[c.toStation])
-        .forEach(c => gleDrawConnection(c, connLayer));
+    const stationToEquip = _gleStationToEquip();
+    const placedEquips = new Set(equips.filter(e => _gleNodePositions[e.equipName]).map(e => e.equipName));
+    const portPositions = _gleCalcPortPositions(equips, stationToEquip);
 
-    // 配置済みノードのみ描画
-    machines.filter(m => _gleNodePositions[m.stationId])
-            .forEach(m => gleDrawNode(m, nodeLayer));
+    // 接続を1本ずつ描画（ポートレベルで重複排除）
+    const drawnKeys = new Set();
+    state.connections.forEach(c => {
+        const fromEquip = stationToEquip.get(c.fromStation);
+        const toEquip   = stationToEquip.get(c.toStation);
+        if (!fromEquip || !toEquip || fromEquip === toEquip) return;
+        if (!placedEquips.has(fromEquip) || !placedEquips.has(toEquip)) return;
+        const key = `${c.fromStation}→${c.toStation}`;
+        if (drawnKeys.has(key)) return;
+        drawnKeys.add(key);
+        gleDrawConnection(c, connLayer, portPositions, stationToEquip);
+    });
+
+    equips.filter(e => _gleNodePositions[e.equipName])
+          .forEach(e => gleDrawNode(e, nodeLayer, portPositions));
 }
 
-function renderGleUnplacedList(machines) {
+function renderGleUnplacedList(equips) {
     const listEl = document.getElementById('gle-machine-list');
     if (!listEl) return;
 
@@ -1336,21 +1435,7 @@ function renderGleUnplacedList(machines) {
         return;
     }
 
-    // 設備グループ単位で集計
-    const equipMap = new Map();
-    machines.forEach(s => {
-        const equip = _equipNameOf(s.stationId);
-        if (!equipMap.has(equip)) equipMap.set(equip, []);
-        equipMap.get(equip).push(s);
-    });
-
-    // 未配置 = グループのメンバー全員が _gleNodePositions に存在しない
-    const unplaced = [];
-    equipMap.forEach((members, equipName) => {
-        if (members.every(s => !_gleNodePositions[s.stationId])) {
-            unplaced.push({ equipName, members });
-        }
-    });
+    const unplaced = equips.filter(e => !_gleNodePositions[e.equipName]);
 
     listEl.innerHTML = '';
     if (unplaced.length === 0) {
@@ -1358,16 +1443,16 @@ function renderGleUnplacedList(machines) {
         msg.className = 'empty-hint';
         msg.style.fontSize = '11px';
         msg.style.padding = '6px 12px';
-        msg.textContent = machines.length === 0 ? '設備がありません' : '全て配置済み';
+        msg.textContent = equips.length === 0 ? '設備がありません' : '全て配置済み';
         listEl.appendChild(msg);
         return;
     }
 
-    unplaced.forEach(({ equipName, members }) => {
+    unplaced.forEach(({ equipName, members, rep }) => {
         const item = document.createElement('div');
         item.className = 'gle-machine-item';
-        const displayName = members.length === 1 && members[0].name ? members[0].name : equipName;
-        const typeLabel = members[0] ? (members[0].stationType || 'machine') : 'machine';
+        const displayName = rep?.name || equipName;
+        const typeLabel = rep?.stationType || 'machine';
         item.textContent = displayName;
         item.title = `${displayName} [${typeLabel}]  ドラッグまたはクリックで配置`;
         item.draggable = true;
@@ -1390,31 +1475,23 @@ function renderGleUnplacedList(machines) {
 // クリック配置: 既存ノードの下に自動配置
 function gleAddEquipmentToCanvas(equipName, members) {
     const existing = Object.values(_gleNodePositions);
-    const SPACING_X = GLE_NODE_W + 60;
     const SPACING_Y = GLE_NODE_H + 60;
-
     let startX = 60;
     let startY = 60;
     if (existing.length > 0) {
         startY = Math.max(...existing.map(p => p.y)) + SPACING_Y;
     }
-
-    members.forEach((s, i) => {
-        _gleNodePositions[s.stationId] = { x: startX + i * SPACING_X, y: startY };
-    });
-
+    _gleNodePositions[equipName] = { x: startX, y: startY };
     gleSavePositions();
     renderGlobalLogicGraph();
 }
 
 // ドロップ配置: 指定 SVG 座標に配置
 function gleAddEquipmentAtPosition(equipName, members, svgX, svgY) {
-    const SPACING_X = GLE_NODE_W + 20;
-    const cx = svgX - GLE_NODE_W / 2;
-    const cy = svgY - GLE_NODE_H / 2;
-    members.forEach((s, i) => {
-        _gleNodePositions[s.stationId] = { x: Math.max(0, cx + i * SPACING_X), y: Math.max(0, cy) };
-    });
+    _gleNodePositions[equipName] = {
+        x: Math.max(0, svgX - GLE_NODE_W / 2),
+        y: Math.max(0, svgY - GLE_NODE_H / 2),
+    };
     gleSavePositions();
     renderGlobalLogicGraph();
 }
@@ -1453,15 +1530,20 @@ function setupGleDragDrop() {
     });
 }
 
-function gleDrawNode(machine, layer) {
-    const pos = _gleNodePositions[machine.stationId] || { x: 60, y: 60 };
+const GLE_PORT_R = 6;
+const GLE_PORT_EXIT_COLOR  = '#28a745';
+const GLE_PORT_ENTRY_COLOR = '#e67e22';
+
+function gleDrawNode(equip, layer, portPositions) {
+    const { equipName, rep, exitPorts, entryPorts } = equip;
+    const pos = _gleNodePositions[equipName] || { x: 60, y: 60 };
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'gle-node');
-    g.setAttribute('data-sid', machine.stationId);
+    g.setAttribute('data-eid', equipName);
     g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
 
     const GLE_TYPE_COLORS = { source: '#28a745', drain: '#6c757d', machine: '#4a9eff' };
-    const typeColor = GLE_TYPE_COLORS[machine.stationType] || '#4a9eff';
+    const typeColor = GLE_TYPE_COLORS[rep?.stationType] || '#4a9eff';
 
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('cx', GLE_NODE_W / 2);
@@ -1480,7 +1562,7 @@ function gleDrawNode(machine, layer) {
     name.setAttribute('fill', 'var(--text-primary)');
     name.setAttribute('font-size', '12');
     name.setAttribute('font-family', 'inherit');
-    name.textContent = machine.name || machine.stationId;
+    name.textContent = rep?.name || equipName;
 
     const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     sub.setAttribute('x', GLE_NODE_W / 2);
@@ -1490,45 +1572,72 @@ function gleDrawNode(machine, layer) {
     sub.setAttribute('fill', typeColor);
     sub.setAttribute('font-size', '10');
     sub.setAttribute('font-family', 'inherit');
-    sub.textContent = machine.stationType || 'machine';
+    sub.textContent = rep?.stationType || 'machine';
 
     g.appendChild(circle);
     g.appendChild(name);
     g.appendChild(sub);
-    layer.appendChild(g);
 
-    // Events
-    gleAttachNodeEvents(g, machine);
+    // ポート円を描画（設備円の上に重ねるため後から追加）
+    [...exitPorts, ...entryPorts].forEach(port => {
+        const pp = portPositions?.get(port.stationId);
+        if (!pp) return;
+        const isExit = port.stationType === 'exit';
+        const pc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        pc.setAttribute('cx', pp.relX);
+        pc.setAttribute('cy', pp.relY);
+        pc.setAttribute('r', GLE_PORT_R);
+        pc.setAttribute('fill', isExit ? GLE_PORT_EXIT_COLOR : GLE_PORT_ENTRY_COLOR);
+        pc.setAttribute('stroke', 'var(--bg-panel)');
+        pc.setAttribute('stroke-width', '1.5');
+        pc.setAttribute('data-port-id', port.stationId);
+        pc.style.cursor = 'pointer';
+        pc.addEventListener('click', e => {
+            e.stopPropagation();
+            if (_gleCurrentTool === 'connect') gleHandleConnectInteraction(port.stationId, equipName);
+        });
+        pc.addEventListener('mouseenter', () => pc.setAttribute('stroke', 'var(--accent-blue)'));
+        pc.addEventListener('mouseleave', () => pc.setAttribute('stroke', 'var(--bg-panel)'));
+        g.appendChild(pc);
+    });
+
+    layer.appendChild(g);
+    gleAttachNodeEvents(g, equip);
 }
 
-function gleDrawConnection(conn, layer) {
-    const fromPos = _gleNodePositions[conn.fromStation];
-    const toPos   = _gleNodePositions[conn.toStation];
-    if (!fromPos || !toPos) return;
+function gleDrawConnection(conn, layer, portPositions, stationToEquip) {
+    const fromEquip = stationToEquip.get(conn.fromStation);
+    const toEquip   = stationToEquip.get(conn.toStation);
+    if (!fromEquip || !toEquip || fromEquip === toEquip) return;
 
-    // 各円の中心
-    const fcx = fromPos.x + GLE_NODE_W / 2;
-    const fcy = fromPos.y + GLE_NODE_H / 2;
-    const tcx = toPos.x  + GLE_NODE_W / 2;
-    const tcy = toPos.y  + GLE_NODE_H / 2;
+    const fromEquipPos = _gleNodePositions[fromEquip];
+    const toEquipPos   = _gleNodePositions[toEquip];
+    if (!fromEquipPos || !toEquipPos) return;
 
-    // 中心間の方向ベクトルを正規化
-    const dx = tcx - fcx;
-    const dy = tcy - fcy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < GLE_NODE_R * 2) return; // 円が重なる場合は描画しない
-    const nx = dx / dist;
-    const ny = dy / dist;
+    const fromPort = portPositions?.get(conn.fromStation);
+    const toPort   = portPositions?.get(conn.toStation);
 
-    // 円周上の始点・終点（接続方向の角度から算出）
-    const x1 = fcx + nx * GLE_NODE_R;
-    const y1 = fcy + ny * GLE_NODE_R;
-    const x2 = tcx - nx * GLE_NODE_R;
-    const y2 = tcy - ny * GLE_NODE_R;
+    let x1, y1, x2, y2;
+    if (fromPort && toPort) {
+        // ポート間接続: ポートの絶対座標を使用
+        x1 = fromPort.absX; y1 = fromPort.absY;
+        x2 = toPort.absX;   y2 = toPort.absY;
+    } else {
+        // フォールバック: 設備円周上の交点
+        const fcx = fromEquipPos.x + GLE_NODE_W / 2;
+        const fcy = fromEquipPos.y + GLE_NODE_H / 2;
+        const tcx = toEquipPos.x  + GLE_NODE_W / 2;
+        const tcy = toEquipPos.y  + GLE_NODE_H / 2;
+        const dx = tcx - fcx, dy = tcy - fcy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < GLE_NODE_R * 2) return;
+        const nx = dx / dist, ny = dy / dist;
+        x1 = fcx + nx * GLE_NODE_R; y1 = fcy + ny * GLE_NODE_R;
+        x2 = tcx - nx * GLE_NODE_R; y2 = tcy - ny * GLE_NODE_R;
+    }
 
     const d = `M ${x1},${y1} L ${x2},${y2}`;
 
-    // Hit area (invisible, wide)
     const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     hit.setAttribute('d', d);
     hit.setAttribute('stroke', 'transparent');
@@ -1545,9 +1654,9 @@ function gleDrawConnection(conn, layer) {
     path.setAttribute('opacity', '0.75');
     path.style.pointerEvents = 'none';
 
-    const cid = String(conn.id || conn.connectionId || '');
-    hit.dataset.cid = cid;
-    hit.addEventListener('click', () => gleHandleConnClick(cid));
+    const fromSid = conn.fromStation;
+    const toSid   = conn.toStation;
+    hit.addEventListener('click', () => gleHandleConnClick(fromSid, toSid));
     hit.addEventListener('mouseenter', () => { path.setAttribute('opacity', '1'); path.setAttribute('stroke-width', '3'); });
     hit.addEventListener('mouseleave', () => { path.setAttribute('opacity', '0.75'); path.setAttribute('stroke-width', '2'); });
 
@@ -1555,40 +1664,38 @@ function gleDrawConnection(conn, layer) {
     layer.appendChild(hit);
 }
 
-function gleAttachNodeEvents(g, machine) {
-    const sid = machine.stationId;
+function gleAttachNodeEvents(g, equip) {
+    const { equipName, rep } = equip;
+    const repSid = rep?.stationId || equipName;
     let dragActive = false, startX = 0, startY = 0, origX = 0, origY = 0;
-    let clickStartTime = 0;
 
     g.addEventListener('mousedown', e => {
         if (e.button !== 0) return;
-        clickStartTime = Date.now();
+        // ポート円クリックは stopPropagation されるので、ここに来るのは設備円本体
         if (_gleCurrentTool === 'select') {
             dragActive = true;
             startX = e.clientX;
             startY = e.clientY;
-            const pos = _gleNodePositions[sid] || { x: 0, y: 0 };
+            const pos = _gleNodePositions[equipName] || { x: 0, y: 0 };
             origX = pos.x;
             origY = pos.y;
             e.preventDefault();
         } else if (_gleCurrentTool === 'connect') {
-            gleHandleConnectClick(sid);
+            gleHandleConnectInteraction(repSid, equipName);
             e.preventDefault();
         }
     });
 
     document.addEventListener('mousemove', e => {
         if (!dragActive) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        const newX = Math.max(0, origX + dx);
-        const newY = Math.max(0, origY + dy);
-        _gleNodePositions[sid] = { x: newX, y: newY };
+        const newX = Math.max(0, origX + e.clientX - startX);
+        const newY = Math.max(0, origY + e.clientY - startY);
+        _gleNodePositions[equipName] = { x: newX, y: newY };
         g.setAttribute('transform', `translate(${newX},${newY})`);
         gleRedrawConnections();
     });
 
-    document.addEventListener('mouseup', e => {
+    document.addEventListener('mouseup', () => {
         if (dragActive) {
             dragActive = false;
             gleSavePositions();
@@ -1598,14 +1705,18 @@ function gleAttachNodeEvents(g, machine) {
 
     g.addEventListener('dblclick', e => {
         e.stopPropagation();
-        openLocalWindow(sid);
+        openLocalWindow(repSid);
     });
 
-    const shape = g.querySelector('circle') || g.querySelector('rect');
-    if (shape) {
-        shape.addEventListener('mouseenter', () => shape.setAttribute('stroke', 'var(--accent-blue)'));
-        shape.addEventListener('mouseleave', () => {
-            if (_gleSelectedNode !== sid) shape.setAttribute('stroke', 'var(--border-light)');
+    // 設備本体の円のみホバー（ポート円は自前のイベントを持つ）
+    const mainCircle = g.querySelector('circle:not([data-port-id])');
+    if (mainCircle) {
+        mainCircle.addEventListener('mouseenter', () => mainCircle.setAttribute('stroke', 'var(--accent-blue)'));
+        mainCircle.addEventListener('mouseleave', () => {
+            if (_gleSelectedNode !== equipName) {
+                const GLE_TYPE_COLORS = { source: '#28a745', drain: '#6c757d', machine: '#4a9eff' };
+                mainCircle.setAttribute('stroke', GLE_TYPE_COLORS[rep?.stationType] || '#4a9eff');
+            }
         });
     }
 }
@@ -1613,32 +1724,75 @@ function gleAttachNodeEvents(g, machine) {
 function gleRedrawConnections() {
     const connLayer = document.getElementById('gle-conn-layer');
     connLayer.innerHTML = '';
-    const machineIds = new Set(
-        state.stations.filter(s => s.stationId.endsWith('.000')).map(m => m.stationId)
-    );
-    state.connections
-        .filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation)
-                  && _gleNodePositions[c.fromStation] && _gleNodePositions[c.toStation])
-        .forEach(c => gleDrawConnection(c, connLayer));
+    const equips = _gleEquips();
+    const stationToEquip = _gleStationToEquip();
+    const portPositions = _gleCalcPortPositions(equips, stationToEquip);
+
+    const drawnKeys = new Set();
+    state.connections.forEach(c => {
+        const fromEquip = stationToEquip.get(c.fromStation);
+        const toEquip   = stationToEquip.get(c.toStation);
+        if (!fromEquip || !toEquip || fromEquip === toEquip) return;
+        if (!_gleNodePositions[fromEquip] || !_gleNodePositions[toEquip]) return;
+        const key = `${c.fromStation}→${c.toStation}`;
+        if (drawnKeys.has(key)) return;
+        drawnKeys.add(key);
+        gleDrawConnection(c, connLayer, portPositions, stationToEquip);
+    });
+
+    // ドラッグ中もポート位置を更新
+    _gleUpdatePortPositions(equips, portPositions);
 }
 
-async function gleHandleConnectClick(sid) {
+function _gleUpdatePortPositions(equips, portPositions) {
+    equips.forEach(equip => {
+        const nodeG = document.querySelector(`#gle-node-layer .gle-node[data-eid="${equip.equipName}"]`);
+        if (!nodeG) return;
+        [...equip.exitPorts, ...equip.entryPorts].forEach(port => {
+            const pp = portPositions.get(port.stationId);
+            if (!pp) return;
+            const el = nodeG.querySelector(`circle[data-port-id="${port.stationId}"]`);
+            if (el) { el.setAttribute('cx', pp.relX); el.setAttribute('cy', pp.relY); }
+        });
+    });
+}
+
+// 接続モードの統合ハンドラ（設備円クリック・ポート円クリック共用）
+async function gleHandleConnectInteraction(sid, equipName) {
     if (!_gleConnectFrom) {
-        _gleConnectFrom = sid;
-        gleSetNodeHighlight(sid, true);
-        document.getElementById('gle-hint').textContent = `"${sid}" から接続先を選択してください`;
+        _gleConnectFrom = { sid, equipName };
+        gleSetNodeHighlight(equipName, true);
+        document.getElementById('gle-hint').textContent = `"${equipName}" から接続先を選択してください`;
     } else {
-        if (_gleConnectFrom === sid) {
+        if (_gleConnectFrom.sid === sid || _gleConnectFrom.equipName === equipName) {
+            const fromEquip = _gleConnectFrom.equipName;
             _gleConnectFrom = null;
-            gleSetNodeHighlight(sid, false);
+            gleSetNodeHighlight(fromEquip, false);
             gleUpdateHint();
             return;
         }
         const from = _gleConnectFrom;
         _gleConnectFrom = null;
-        gleSetNodeHighlight(from, false);
+        gleSetNodeHighlight(from.equipName, false);
+
+        // 設備レベルで接続元 stationId を解決（ポートでなければ rep.000 を使用）
+        const resolveRepSid = (sid, en) => {
+            const st = state.stations.find(s => s.stationId === sid);
+            if (st && (st.stationType === 'entry' || st.stationType === 'exit')) return sid;
+            const members = state.stations.filter(s => _equipNameOf(s.stationId) === en);
+            return members.find(m => m.stationId === `${en}.000`)?.stationId || members[0]?.stationId || sid;
+        };
+        const fromSid = resolveRepSid(from.sid, from.equipName);
+        const toSid   = resolveRepSid(sid, equipName);
+
+        // 同一ポートペアの重複チェック
+        if (state.connections.some(c => c.fromStation === fromSid && c.toStation === toSid)) {
+            gleUpdateHint();
+            return;
+        }
+
         try {
-            const conn = await API.createConnection(state.currentFactory, from, sid);
+            const conn = await API.createConnection(state.currentFactory, fromSid, toSid);
             state.connections.push(conn);
             renderGlobalLogicGraph();
         } catch (err) {
@@ -1648,31 +1802,47 @@ async function gleHandleConnectClick(sid) {
     }
 }
 
-async function gleHandleConnClick(cid) {
+async function gleHandleConnClick(fromStation, toStation) {
     if (_gleCurrentTool !== 'delete') return;
     if (!confirm('この接続を削除しますか？')) return;
+    const c = state.connections.find(conn => conn.fromStation === fromStation && conn.toStation === toStation);
+    if (!c) return;
     try {
-        await API.deleteConnection(state.currentFactory, cid);
-        state.connections = state.connections.filter(c => String(c.id || c.connectionId) !== cid);
+        await API.deleteConnection(state.currentFactory, String(c.id || c.connectionId || ''));
+        state.connections = state.connections.filter(conn => !(conn.fromStation === fromStation && conn.toStation === toStation));
         renderGlobalLogicGraph();
     } catch (err) {
         setStatus('接続削除失敗: ' + err.message, 'status-error');
     }
 }
 
-function gleSetNodeHighlight(sid, on) {
-    const g = document.querySelector(`#gle-node-layer .gle-node[data-sid="${sid}"]`);
-    if (g) g.querySelector('circle').setAttribute('stroke', on ? 'var(--accent-blue)' : 'var(--border-light)');
+function gleSetNodeHighlight(equipName, on) {
+    const g = document.querySelector(`#gle-node-layer .gle-node[data-eid="${equipName}"]`);
+    if (!g) return;
+    const circle = g.querySelector('circle');
+    if (!circle) return;
+    if (on) {
+        circle.setAttribute('stroke', 'var(--accent-blue)');
+    } else {
+        const equip = _gleEquips().find(e => e.equipName === equipName);
+        const GLE_TYPE_COLORS = { source: '#28a745', drain: '#6c757d', machine: '#4a9eff' };
+        circle.setAttribute('stroke', GLE_TYPE_COLORS[equip?.rep?.stationType] || '#4a9eff');
+    }
 }
 
 function gleUpdateNodeStyles() {
-    // Reset all node highlights
-    document.querySelectorAll('#gle-node-layer .gle-node circle').forEach(r =>
-        r.setAttribute('stroke', 'var(--border-light)'));
+    document.querySelectorAll('#gle-node-layer .gle-node').forEach(g => {
+        const eid = g.dataset.eid;
+        const equip = _gleEquips().find(e => e.equipName === eid);
+        const GLE_TYPE_COLORS = { source: '#28a745', drain: '#6c757d', machine: '#4a9eff' };
+        const color = GLE_TYPE_COLORS[equip?.rep?.stationType] || '#4a9eff';
+        const circle = g.querySelector('circle');
+        if (circle) circle.setAttribute('stroke', color);
+    });
 }
 
-function gleScrollToNode(sid) {
-    const pos = _gleNodePositions[sid];
+function gleScrollToNode(equipName) {
+    const pos = _gleNodePositions[equipName];
     if (!pos) return;
     const wrap = document.getElementById('gle-canvas-wrap');
     wrap.scrollLeft = Math.max(0, pos.x - wrap.clientWidth / 2 + GLE_NODE_W / 2);
