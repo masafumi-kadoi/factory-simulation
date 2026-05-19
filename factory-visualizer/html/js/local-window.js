@@ -1310,7 +1310,7 @@ function renderUnplacedList() {
     const list = document.getElementById('unplaced-station-list');
     if (!list) return;
     list.innerHTML = '';
-    const unplaced = childStations.filter(s => s.positionX == null);
+    const unplaced = childStations.filter(s => s.positionX == null && !/[._-]000$/.test(s.stationId));
     if (unplaced.length === 0) {
         const msg = document.createElement('div');
         msg.className = 'unplaced-empty';

@@ -85,7 +85,7 @@ function initScene() {
         const posEl = document.getElementById(`gf-pos-${equipName}`);
         if (posEl) posEl.textContent = `X: ${Math.round(data.centroid.x)}, Y: ${Math.round(data.centroid.z)}`;
         const saveBtn = document.getElementById('gf-save-placement');
-        if (saveBtn) { saveBtn.textContent = '全て保存 *'; saveBtn.disabled = false; }
+        if (saveBtn) { saveBtn.textContent = '保存して確定 *'; saveBtn.disabled = false; }
     });
 }
 
@@ -834,6 +834,11 @@ async function importFactoryJSON(e) {
 function initGlobal3DEditTab() {
     document.querySelectorAll('.g3d-sidebar-item').forEach(item => {
         item.addEventListener('click', () => {
+            // 配置モードが ON の場合: active クラスがなくてもボタン再押しで終了できるようにする
+            if (item.dataset.group === 'placement' && scene3d && scene3d._placementMode) {
+                closeG3DFloating();
+                return;
+            }
             if (item.classList.contains('active')) {
                 closeG3DFloating();
                 return;
@@ -900,8 +905,10 @@ function openG3DFloating(groupId, title) {
 
             const rows = [];
             equipMap.forEach((members, equipName) => {
-                const cx = members.reduce((acc, m) => acc + (m.positionX || 0), 0) / members.length;
-                const cz = members.reduce((acc, m) => acc + (m.positionY || 0), 0) / members.length;
+                // 未保存の移動がある場合はその座標を表示、なければ DB の値を使用
+                const moved = _movedEquipment.get(equipName);
+                const cx = moved ? moved.centroid.x : members.reduce((acc, m) => acc + (m.positionX || 0), 0) / members.length;
+                const cz = moved ? moved.centroid.z : members.reduce((acc, m) => acc + (m.positionY || 0), 0) / members.length;
                 rows.push(`<div class="gf-equip-row">
                     <span class="gf-equip-name">${esc(equipName)}</span>
                     <span class="gf-equip-pos" id="gf-pos-${esc(equipName)}">X: ${Math.round(cx)}, Y: ${Math.round(cz)}</span>
@@ -909,12 +916,11 @@ function openG3DFloating(groupId, title) {
             });
 
             body.innerHTML = `
-                <button class="btn-secondary" id="gf-exit-placement" style="width:100%;padding:5px;margin-bottom:4px;">設備配置モードを終了</button>
-                <button class="btn-primary" id="gf-save-placement" style="width:100%;padding:6px">全て保存</button>
-                <div style="font-size:11px;color:var(--text-muted);">設備をドラッグして移動。移動後に保存してください。</div>
+                <button class="btn-primary" id="gf-save-placement" style="width:100%;padding:6px;margin-bottom:4px;">保存して確定</button>
+                <button class="btn-secondary" id="gf-exit-placement" style="width:100%;padding:5px;margin-bottom:4px;">保存せず終了</button>
+                <div style="font-size:11px;color:var(--text-muted);">設備をドラッグして移動。確定で SimDB に保存されます。</div>
                 <div style="max-height:200px;overflow-y:auto;">${rows.join('') || '<div style="color:var(--text-muted);font-size:11px">設備がありません</div>'}</div>
             `;
-            _movedEquipment.clear();
             body.querySelector('#gf-exit-placement').addEventListener('click', closeG3DFloating);
             body.querySelector('#gf-save-placement').addEventListener('click', saveEquipPlacement);
             break;
@@ -1026,7 +1032,7 @@ async function saveEquipPlacement() {
     if (!btn) return;
     if (_movedEquipment.size === 0) {
         btn.textContent = '移動した設備がありません';
-        setTimeout(() => { if (btn) btn.textContent = '全て保存'; }, 1500);
+        setTimeout(() => { if (btn) btn.textContent = '保存して確定'; }, 1500);
         return;
     }
     btn.disabled = true;
@@ -1041,13 +1047,12 @@ async function saveEquipPlacement() {
         });
         await Promise.all(promises);
         _movedEquipment.clear();
-        btn.textContent = '全て保存';
-        btn.disabled = false;
-        // Reload to sync internal stations
+        // Reload to sync saved positions, then exit placement mode
         if (state.currentFactory) await selectFactory(state.currentFactory);
+        closeG3DFloating();
     } catch (err) {
         alert('保存失敗: ' + err.message);
-        btn.textContent = '全て保存 *';
+        btn.textContent = '保存して確定 *';
         btn.disabled = false;
     }
 }
