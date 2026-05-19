@@ -1303,7 +1303,7 @@ function gleAutoLayout(machines) {
 
 function renderGlobalLogicGraph() {
     gleLoadPositions();
-    const machines = state.stations.filter(s => ['machine', 'source', 'drain'].includes(s.stationType));
+    const machines = state.stations.filter(s => s.stationId.endsWith('.000'));
     // gleAutoLayout は自動呼び出しせず、配置済み（_gleNodePositions に位置あり）のみ描画
 
     // サイドバー: 未配置設備グループを表示
@@ -1614,7 +1614,7 @@ function gleRedrawConnections() {
     const connLayer = document.getElementById('gle-conn-layer');
     connLayer.innerHTML = '';
     const machineIds = new Set(
-        state.stations.filter(s => ['machine', 'source', 'drain'].includes(s.stationType)).map(m => m.stationId)
+        state.stations.filter(s => s.stationId.endsWith('.000')).map(m => m.stationId)
     );
     state.connections
         .filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation)
