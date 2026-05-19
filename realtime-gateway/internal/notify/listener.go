@@ -3,6 +3,7 @@ package notify
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,10 +84,11 @@ func (h *Hub) loop() {
 				continue
 			}
 			// channel is "events_{uuid}"
-			dataSourceID := ""
-			if len(n.Channel) > 7 {
-				dataSourceID = n.Channel[7:]
+			if !strings.HasPrefix(n.Channel, "events_") {
+				log.Printf("[notify] unexpected channel format: %s", n.Channel)
+				continue
 			}
+			dataSourceID := n.Channel[7:]
 			h.broadcast(dataSourceID, n.Extra)
 		case <-time.After(90 * time.Second):
 			if err := h.listener.Ping(); err != nil {

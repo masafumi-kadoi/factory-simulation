@@ -387,7 +387,26 @@ async function loadExecutionResult(execId, dataSourceId, startDatetime, simulati
         });
 
         state.liveDataSourceId = dataSourceId;
-        subscribeWebSocket(dataSourceId);
+        // subscribeWebSocket also loads the layout (locationMap) before connecting WS
+        await subscribeWebSocket(dataSourceId);
+
+        // Replay historical events so the 3D view shows the final simulation state.
+        // Simulation is already complete, so no live WS events will arrive — we must
+        // load the full history from the events API.
+        try {
+            const events = await API.fetchDataSourceEvents(
+                dataSourceId,
+                new Date(0).toISOString(),
+                new Date('2100-01-01').toISOString()
+            );
+            if (Array.isArray(events)) {
+                for (const ev of events) {
+                    handleWsEvent(ev);
+                }
+            }
+        } catch (e) {
+            console.warn('[loadExecutionResult] failed to load historical events:', e);
+        }
 
         const vizBtn = document.getElementById('btn-open-visualizer');
         if (vizBtn && dataSourceId) vizBtn.disabled = false;
