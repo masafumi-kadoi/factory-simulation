@@ -396,8 +396,8 @@ async function executeSimulation() {
                 <div class="info-grid" style="margin-top: 0.5rem">
                     <span class="info-label">Execution ID:</span>
                     <span class="info-value">${escapeHtml(result.executionId)}</span>
-                    <span class="info-label">Simulation ID:</span>
-                    <span class="info-value">${escapeHtml(result.simulationId)}</span>
+                    <span class="info-label">Data Source ID:</span>
+                    <span class="info-value">${escapeHtml(result.dataSourceId)}</span>
                     <span class="info-label">Status:</span>
                     <span class="info-value"><span class="status-badge status-${escapeHtml(result.status)}">${escapeHtml(result.status)}</span></span>
                 </div>

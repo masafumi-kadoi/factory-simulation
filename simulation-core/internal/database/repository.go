@@ -553,9 +553,11 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 			return nil, fmt.Errorf("failed to scan station: %w", err)
 		}
 
-		var config map[string]interface{}
-		if err := json.Unmarshal(configJSON, &config); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		config := make(map[string]interface{})
+		if len(configJSON) > 0 {
+			if err := json.Unmarshal(configJSON, &config); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+			}
 		}
 
 		// Extract embedded SubScenario, EntryCount, ExitCount from config

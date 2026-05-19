@@ -163,10 +163,8 @@ function renderExecutionItem(exec, number) {
     }
 
     let actions = '';
-    if (exec.status === 'completed' && exec.simulationId) {
-        const vizParam = exec.dataSourceId
-            ? `ds=${encodeURIComponent(exec.dataSourceId)}`
-            : `ds=${encodeURIComponent(exec.simulationId)}`;
+    if (exec.status === 'completed' && exec.dataSourceId) {
+        const vizParam = `ds=${encodeURIComponent(exec.dataSourceId)}`;
         actions = `
             <a href="/visualizer/?${vizParam}" target="_blank" class="btn btn-outline btn-sm">View in sim-visualizer</a>
             <a href="execution.html?scenarioId=${encodeURIComponent(currentScenarioId)}&rerun=${encodeURIComponent(exec.id)}" class="btn btn-outline btn-sm">Re-run</a>
