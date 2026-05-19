@@ -75,7 +75,7 @@ export async function deleteConnection(factoryId, connId) {
 
 export async function saveMachineLogic(factoryId, machineStationId, stations, connections) {
     return req('PUT', `/factories/${encodeURIComponent(factoryId)}/machines/${encodeURIComponent(machineStationId)}/logic`, {
-        stations, connections,
+        children: stations, connections,
     });
 }
 

@@ -31,9 +31,9 @@ type FactoryStation struct {
 	ParentID    *string         `json:"parentId,omitempty"`
 	Name        *string         `json:"name,omitempty"`
 	StationType string          `json:"stationType"`
-	PositionX   float64         `json:"positionX"`
-	PositionY   float64         `json:"positionY"`
-	PositionZ   float64         `json:"positionZ"`
+	PositionX   *float64        `json:"positionX"`
+	PositionY   *float64        `json:"positionY"`
+	PositionZ   *float64        `json:"positionZ"`
 	Config      json.RawMessage `json:"config"`
 }
 

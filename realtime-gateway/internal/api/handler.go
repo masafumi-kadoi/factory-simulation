@@ -676,8 +676,8 @@ func (h *Handler) handleCSVImport(w http.ResponseWriter, r *http.Request, factor
 			EquipmentID: equipmentID,
 			Name:        &n,
 			StationType: stationType,
-			PositionX:   posX,
-			PositionY:   posY,
+			PositionX:   &posX,
+			PositionY:   &posY,
 			Config:      json.RawMessage("{}"),
 		})
 	}

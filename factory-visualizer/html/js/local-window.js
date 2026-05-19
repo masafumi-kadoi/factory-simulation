@@ -34,9 +34,15 @@ let _3dCamera = null;
 let _3dControls = null;
 let _3dModelGroup = null;
 let _importedGlb = null; // { arrayBuffer: ArrayBuffer, name: string } | null
+let _glbPreviewBuffer = null; // 3Dプレビュー用GLBバッファ（保存済みGLBをプレビューに表示するため）
 let _deleteModel = false; // 保存時にmodel3DGrid/model3DGlbを両方削除するフラグ
 let _logicProjectionRenderer = null; // Three.js WebGLRenderer for logic tab top-down view
+let _logicProjectionCamera = null;   // OrthographicCamera (re-used on zoom/pan)
+let _logicProjectionScene = null;    // Scene (re-used on zoom/pan)
+let _logicProjectionCX = 0;          // Camera center X (world)
+let _logicProjectionCZ = 0;          // Camera center Z (world)
 let _logicWorldBounds = null; // { left, right, top, bottom } in Three.js world coords (X and Z axes)
+let _logicViewBox = { x: 0, y: 0, w: 200, h: 200 }; // current SVG viewBox (zoom/pan state)
 
 // ---- Logic tab state ----
 
@@ -44,6 +50,7 @@ let _activeTool = 'select';
 let _selectedStation = null;    // stationId string
 let _connectSource = null;      // stationId of pending connection source
 let _dragState = null;          // { stationId, startSVGX, startSVGY, origX, origY }
+let _svgPanState = null;        // { clientX, clientY, vb: snapshot } for middle-click pan
 let _pendingAddType = null;     // stationType to place on next canvas click
 
 // ---- Station colors ----
@@ -77,7 +84,10 @@ function initTabs() {
             if (tab.dataset.tab === 'model3d') {
                 renderGridCanvas();
                 init3DPreview();
-                if (_importedGlb && _3dRenderer) _loadGlbPreview(_importedGlb.arrayBuffer);
+                if (_3dRenderer) {
+                    if (_importedGlb) _loadGlbPreview(_importedGlb.arrayBuffer);
+                    else if (_glbPreviewBuffer) _loadGlbPreview(_glbPreviewBuffer);
+                }
             }
         });
     });
@@ -125,6 +135,7 @@ function populateModelTab() {
     initModelTab();
     _deleteModel = false;
     _importedGlb = null;
+    _glbPreviewBuffer = null;
     _gridZoom = 1.0;
     const cfg = machineStation?.config || {};
 
@@ -138,6 +149,10 @@ function populateModelTab() {
         if (g.origin)   _grid.origin   = g.origin;
         _grid.cells.clear();
         g.cells.forEach(([c, r]) => _grid.cells.add(`${c},${r}`));
+        // 保存済みGLBがある場合は3DプレビューにそのGLBを表示（編集始めたらvoxelに切替）
+        if (cfg.model3DGlb?.data) {
+            _glbPreviewBuffer = _base64ToArrayBuffer(cfg.model3DGlb.data);
+        }
         renderGridCanvas();
         return;
     }
@@ -270,6 +285,7 @@ function initModelTab() {
             return;
         }
         _grid.isDragging = true;
+        _glbPreviewBuffer = null; // グリッド編集開始 → voxelプレビューに切替
         const key = `${cell.col},${cell.row}`;
         if (_grid.cells.has(key)) { _grid.dragMode = 'remove'; _grid.cells.delete(key); }
         else { _grid.dragMode = 'add'; _grid.cells.add(key); }
@@ -439,6 +455,8 @@ function init3DPreview() {
 
     if (_importedGlb) {
         _loadGlbPreview(_importedGlb.arrayBuffer);
+    } else if (_glbPreviewBuffer) {
+        _loadGlbPreview(_glbPreviewBuffer);
     } else {
         update3DPreview();
     }
@@ -531,6 +549,8 @@ function _initLogicProjection() {
         _logicProjectionRenderer.dispose();
         _logicProjectionRenderer = null;
     }
+    _logicProjectionCamera = null;
+    _logicProjectionScene = null;
     _logicWorldBounds = null;
 
     // キャンバスサイズ（親要素から取得）
@@ -569,12 +589,12 @@ function _initLogicProjection() {
         const halfWcam = Math.max(halfModelW, halfModelH * aspect);
         const halfHcam = halfWcam / aspect;
 
-        // ワールド座標のビュー範囲を記録（座標変換に使用）
+        // ワールド座標のビュー範囲をメートル単位で記録（Three.js単位 ÷ METER_SCALE）
         _logicWorldBounds = {
-            left:   cx - halfWcam,
-            right:  cx + halfWcam,
-            top:    cz - halfHcam,   // 画面上端 = 小さいZ
-            bottom: cz + halfHcam,   // 画面下端 = 大きいZ
+            left:   (cx - halfWcam) / METER_SCALE,
+            right:  (cx + halfWcam) / METER_SCALE,
+            top:    (cz - halfHcam) / METER_SCALE,   // 画面上端 = 小さいZ
+            bottom: (cz + halfHcam) / METER_SCALE,   // 画面下端 = 大きいZ
         };
 
         // OrthographicCamera: 真上(-Y方向)から見下ろす
@@ -587,27 +607,69 @@ function _initLogicProjection() {
         cam.lookAt(cx, 0, cz);
         cam.up.set(0, 0, -1); // Z-方向が画面上端
 
+        // グローバルに保持。CX/CZはメートル単位で保存（viewBoxと合わせる）
+        _logicProjectionCamera = cam;
+        _logicProjectionScene = scene;
+        _logicProjectionCX = cx / METER_SCALE;
+        _logicProjectionCZ = cz / METER_SCALE;
+
         renderer.render(scene, cam);
 
-        // SVG viewBoxをGLTFのワールド座標に合わせる
-        _updateLogicViewBox();
-        renderStations();
-        renderConnections();
+        // SVG viewBoxをGLTFのワールド座標に合わせてリセット（初回のみ全体表示）
+        _resetLogicViewBox();
+        renderLogicSVG();
     }, undefined, err => {
         URL.revokeObjectURL(url);
         console.error('Logic projection load error:', err);
     });
 }
 
-function _updateLogicViewBox() {
-    const svg = document.getElementById('logic-svg');
-    if (!svg) return;
+function _resetLogicViewBox() {
+    // 初期viewBoxをGLTFバウンディングまたはステーション座標から設定（ズームリセット）
     if (_logicWorldBounds) {
         const { left, top, right, bottom } = _logicWorldBounds;
-        svg.setAttribute('viewBox', `${left} ${top} ${right - left} ${bottom - top}`);
+        _logicViewBox = { x: left, y: top, w: right - left, h: bottom - top };
     } else {
-        refreshLogicSVGSize();
+        const PAD = 60;
+        let minX = -80, maxX = 80, minY = -80, maxY = 80;
+        childStations.forEach(s => {
+            if (s.positionX == null) return;
+            const x = s.positionX, y = s.positionY || 0;
+            if (x - PAD < minX) minX = x - PAD;
+            if (x + PAD > maxX) maxX = x + PAD;
+            if (y - PAD < minY) minY = y - PAD;
+            if (y + PAD > maxY) maxY = y + PAD;
+        });
+        _logicViewBox = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
     }
+    _applyLogicViewBox();
+    _rerenderLogicProjection();
+}
+
+function _applyLogicViewBox() {
+    const svg = document.getElementById('logic-svg');
+    if (!svg) return;
+    svg.setAttribute('viewBox', `${_logicViewBox.x} ${_logicViewBox.y} ${_logicViewBox.w} ${_logicViewBox.h}`);
+}
+
+function _rerenderLogicProjection() {
+    if (!_logicProjectionRenderer || !_logicProjectionCamera || !_logicProjectionScene) return;
+    const { x: vx, y: vy, w: vw, h: vh } = _logicViewBox;
+    const cam = _logicProjectionCamera;
+    // viewBoxはメートル単位、カメラはThree.js単位なのでMETER_SCALEを掛けて変換
+    cam.left   = (vx - _logicProjectionCX) * METER_SCALE;
+    cam.right  = ((vx + vw) - _logicProjectionCX) * METER_SCALE;
+    cam.top    = (_logicProjectionCZ - vy) * METER_SCALE;
+    cam.bottom = (_logicProjectionCZ - (vy + vh)) * METER_SCALE;
+    cam.updateProjectionMatrix();
+    const canvas = document.getElementById('logic-projection-canvas');
+    const area = canvas?.parentElement;
+    if (area) _logicProjectionRenderer.setSize(area.clientWidth, area.clientHeight, false);
+    _logicProjectionRenderer.render(_logicProjectionScene, _logicProjectionCamera);
+}
+
+function _updateLogicViewBox() {
+    _applyLogicViewBox();
 }
 
 function _arrayBufferToBase64(buffer) {
@@ -702,33 +764,17 @@ function populateLogicTab() {
     initToolPalette();
     initPropsPanel();
     initSVGEvents();
-    _initLogicProjection();
-    refreshLogicSVGSize();
+    _initLogicProjection(); // GLTFがある場合 → _resetLogicViewBox()を呼ぶ
+    if (!_logicWorldBounds) _resetLogicViewBox(); // GLTFなし場合もviewBox初期化
     renderLogicSVG();
     renderUnplacedList();
     updateInfoBar();
 }
 
 function refreshLogicSVGSize() {
-    if (_logicWorldBounds) {
-        // GLTF投影モード: viewBoxはGLTFのワールド座標に固定
-        _updateLogicViewBox();
-        return;
-    }
-    // GLTFなしモード: ステーション座標から動的にviewBoxを計算
-    const PAD = 60;
-    let minX = -80, maxX = 80, minY = -80, maxY = 80;
-    childStations.forEach(s => {
-        if (s.positionX == null) return;
-        const x = s.positionX;
-        const y = s.positionY || 0;
-        if (x - PAD < minX) minX = x - PAD;
-        if (x + PAD > maxX) maxX = x + PAD;
-        if (y - PAD < minY) minY = y - PAD;
-        if (y + PAD > maxY) maxY = y + PAD;
-    });
-    const svg = document.getElementById('logic-svg');
-    svg.setAttribute('viewBox', `${minX} ${minY} ${maxX - minX} ${maxY - minY}`);
+    // ズーム/パン中はviewBoxを維持。ステーション移動後もviewBoxはそのまま。
+    // 初期化はpopulateLogicTab → _initLogicProjection → _resetLogicViewBoxで行う。
+    _applyLogicViewBox();
 }
 
 function renderLogicSVG() {
@@ -742,30 +788,43 @@ function renderGrid() {
     const layer = document.getElementById('logic-grid-layer');
     layer.innerHTML = '';
 
-    const vb = svg.viewBox.baseVal;
-    const x0 = Math.floor(vb.x / 20) * 20;
-    const y0 = Math.floor(vb.y / 20) * 20;
-    const x1 = vb.x + vb.width;
-    const y1 = vb.y + vb.height;
+    const vb = _logicViewBox;
+    // グリッドステップをviewBox幅から自動計算（~15本になるよう調整）
+    const rawStep = vb.w / 15;
+    const step = _niceStep(rawStep);
+    const sw = vb.w / 500; // stroke-widthもviewBoxに比例
+    const x0 = Math.floor(vb.x / step) * step;
+    const y0 = Math.floor(vb.y / step) * step;
+    const x1 = vb.x + vb.w;
+    const y1 = vb.y + vb.h;
 
-    for (let x = x0; x <= x1; x += 20) {
+    for (let x = x0; x <= x1 + step * 0.01; x += step) {
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', x); line.setAttribute('y1', vb.y);
         line.setAttribute('x2', x); line.setAttribute('y2', y1);
-        const isOrigin = x === 0;
+        const isOrigin = Math.abs(x) < step * 0.01;
         line.setAttribute('stroke', isOrigin ? '#2a4070' : '#1a2744');
-        line.setAttribute('stroke-width', isOrigin ? '0.8' : '0.4');
+        line.setAttribute('stroke-width', (isOrigin ? sw * 2 : sw).toFixed(4));
         layer.appendChild(line);
     }
-    for (let y = y0; y <= y1; y += 20) {
+    for (let y = y0; y <= y1 + step * 0.01; y += step) {
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', vb.x); line.setAttribute('y1', y);
         line.setAttribute('x2', x1); line.setAttribute('y2', y);
-        const isOrigin = y === 0;
+        const isOrigin = Math.abs(y) < step * 0.01;
         line.setAttribute('stroke', isOrigin ? '#2a4070' : '#1a2744');
-        line.setAttribute('stroke-width', isOrigin ? '0.8' : '0.4');
+        line.setAttribute('stroke-width', (isOrigin ? sw * 2 : sw).toFixed(4));
         layer.appendChild(line);
     }
+}
+
+function _niceStep(raw) {
+    const exp = Math.pow(10, Math.floor(Math.log10(raw)));
+    const frac = raw / exp;
+    if (frac < 1.5) return exp;
+    if (frac < 3.5) return 2 * exp;
+    if (frac < 7.5) return 5 * exp;
+    return 10 * exp;
 }
 
 function renderConnections() {
@@ -776,13 +835,16 @@ function renderConnections() {
         const from = childStations.find(s => s.stationId === conn.fromStation);
         const to = childStations.find(s => s.stationId === conn.toStation);
         if (!from || !to) return;
+        if (from.positionX == null || to.positionX == null) return; // 未配置はスキップ
 
-        const x1 = from.positionX || 0;
+        const x1 = from.positionX;
         const y1 = from.positionY || 0;
-        const x2 = to.positionX || 0;
+        const x2 = to.positionX;
         const y2 = to.positionY || 0;
 
-        const R = 16;
+        const R = _logicViewBox.w / 25;
+        const lw = _logicViewBox.w / 400;
+        const hitW = R * 0.6;
         const dx = x2 - x1; const dy = y2 - y1;
         const len = Math.sqrt(dx * dx + dy * dy) || 1;
         const ux = dx / len; const uy = dy / len;
@@ -794,7 +856,7 @@ function renderConnections() {
         line.setAttribute('x1', sx); line.setAttribute('y1', sy);
         line.setAttribute('x2', ex); line.setAttribute('y2', ey);
         line.setAttribute('stroke', '#4a9eff');
-        line.setAttribute('stroke-width', '1.5');
+        line.setAttribute('stroke-width', lw);
         line.setAttribute('marker-end', 'url(#arrowhead)');
         line.setAttribute('data-conn-id', conn.id || '');
         line.setAttribute('data-from', conn.fromStation);
@@ -807,7 +869,7 @@ function renderConnections() {
         hit.setAttribute('x1', sx); hit.setAttribute('y1', sy);
         hit.setAttribute('x2', ex); hit.setAttribute('y2', ey);
         hit.setAttribute('stroke', 'transparent');
-        hit.setAttribute('stroke-width', '8');
+        hit.setAttribute('stroke-width', hitW);
         hit.setAttribute('data-conn-id', conn.id || '');
         hit.setAttribute('data-from', conn.fromStation);
         hit.setAttribute('data-to', conn.toStation);
@@ -821,10 +883,14 @@ function renderStations() {
     const layer = document.getElementById('logic-station-layer');
     layer.innerHTML = '';
 
+    const R = _logicViewBox.w / 25; // viewBox幅の1/25をステーション半径に
+    const sw = R / 5;
+    const fs = R * 0.65;
+
     childStations.forEach(s => {
-        const x = s.positionX || 0;
+        if (s.positionX == null) return; // 未配置はサイドバーに表示
+        const x = s.positionX;
         const y = s.positionY || 0;
-        const R = 16;
         const isSelected = s.stationId === _selectedStation;
         const isConnSource = s.stationId === _connectSource;
 
@@ -837,13 +903,13 @@ function renderStations() {
         circle.setAttribute('r', R);
         circle.setAttribute('fill', STATION_COLORS[s.stationType] || '#666');
         circle.setAttribute('stroke', isSelected ? '#fff' : (isConnSource ? '#ffcc00' : 'none'));
-        circle.setAttribute('stroke-width', isSelected || isConnSource ? '2' : '0');
+        circle.setAttribute('stroke-width', isSelected || isConnSource ? sw : '0');
         g.appendChild(circle);
 
         const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         label.setAttribute('text-anchor', 'middle');
         label.setAttribute('dominant-baseline', 'middle');
-        label.setAttribute('font-size', '8');
+        label.setAttribute('font-size', fs);
         label.setAttribute('fill', '#fff');
         label.setAttribute('pointer-events', 'none');
         label.textContent = (s.name || s.stationId).substring(0, 10);
@@ -873,8 +939,8 @@ function initSVGEvents() {
         const dy = p.y - _dragState.startSVGY;
         const s = childStations.find(s => s.stationId === _dragState.stationId);
         if (!s) return;
-        s.positionX = Math.round(_dragState.origX + dx);
-        s.positionY = Math.round(_dragState.origY + dy);
+        s.positionX = Math.round((_dragState.origX + dx) * 100) / 100;
+        s.positionY = Math.round((_dragState.origY + dy) * 100) / 100;
         refreshLogicSVGSize();
         renderLogicSVG();
         updatePropsPanel();
@@ -895,6 +961,48 @@ function initSVGEvents() {
                 renderStations();
             }
         }
+    });
+
+    // ---- Wheel zoom ----
+    svg.addEventListener('wheel', e => {
+        e.preventDefault();
+        const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+        const p = svgPoint(svg, e);
+        _logicViewBox = {
+            x: p.x - (p.x - _logicViewBox.x) * factor,
+            y: p.y - (p.y - _logicViewBox.y) * factor,
+            w: _logicViewBox.w * factor,
+            h: _logicViewBox.h * factor,
+        };
+        _applyLogicViewBox();
+        _rerenderLogicProjection();
+        renderLogicSVG();
+    }, { passive: false });
+
+    // ---- Middle-click pan ----
+    svg.addEventListener('mousedown', e => {
+        if (e.button === 1) {
+            e.preventDefault();
+            _svgPanState = { cx: e.clientX, cy: e.clientY, vb: { ..._logicViewBox } };
+        }
+    });
+    svg.addEventListener('mousemove', e => {
+        if (!_svgPanState) return;
+        const rect = svg.getBoundingClientRect();
+        const scaleX = _svgPanState.vb.w / rect.width;
+        const scaleY = _svgPanState.vb.h / rect.height;
+        _logicViewBox = {
+            x: _svgPanState.vb.x - (e.clientX - _svgPanState.cx) * scaleX,
+            y: _svgPanState.vb.y - (e.clientY - _svgPanState.cy) * scaleY,
+            w: _svgPanState.vb.w,
+            h: _svgPanState.vb.h,
+        };
+        _applyLogicViewBox();
+        _rerenderLogicProjection();
+        renderLogicSVG();
+    });
+    window.addEventListener('mouseup', e => {
+        if (e.button === 1) _svgPanState = null;
     });
 }
 
@@ -996,8 +1104,8 @@ function initPropsPanel() {
             if (!s) return;
             if (id === 'props-name') s.name = el.value;
             else if (id === 'props-type') s.stationType = el.value;
-            else if (id === 'props-pos-x') { s.positionX = parseInt(el.value) || 0; refreshLogicSVGSize(); renderLogicSVG(); }
-            else if (id === 'props-pos-y') { s.positionY = parseInt(el.value) || 0; refreshLogicSVGSize(); renderLogicSVG(); }
+            else if (id === 'props-pos-x') { s.positionX = parseFloat(el.value) || 0; refreshLogicSVGSize(); renderLogicSVG(); }
+            else if (id === 'props-pos-y') { s.positionY = parseFloat(el.value) || 0; refreshLogicSVGSize(); renderLogicSVG(); }
             else if (id === 'props-processing-time') {
                 s.config = s.config || {};
                 s.config.processingTime = parseInt(el.value) || 0;
@@ -1007,6 +1115,20 @@ function initPropsPanel() {
             }
             updatePalettePos();
         });
+    });
+
+    document.getElementById('props-unplace').addEventListener('click', () => {
+        if (!_selectedStation) return;
+        const s = childStations.find(s => s.stationId === _selectedStation);
+        if (!s) return;
+        s.positionX = null;
+        s.positionY = null;
+        _selectedStation = null;
+        refreshLogicSVGSize();
+        renderLogicSVG();
+        renderUnplacedList();
+        updatePropsPanel();
+        updateInfoBar();
     });
 
     document.getElementById('props-delete').addEventListener('click', () => {
@@ -1046,7 +1168,7 @@ function updatePalettePos() {
     if (!_selectedStation) { el.innerHTML = 'X: —<br>Y: —'; return; }
     const s = childStations.find(s => s.stationId === _selectedStation);
     if (!s) { el.innerHTML = 'X: —<br>Y: —'; return; }
-    el.innerHTML = `X: ${s.positionX || 0}<br>Y: ${s.positionY || 0}`;
+    el.innerHTML = `X: ${s.positionX || 0}m<br>Y: ${s.positionY || 0}m`;
 }
 
 function updateInfoBar(msg) {
@@ -1221,10 +1343,11 @@ async function saveAndClose() {
         // Tab 3: Save logic (stations with positionX/Y + connections)
         await API.saveMachineLogic(FACTORY_ID, MACHINE_ID, childStations, childConnections);
 
-        window.close();
+        btn.disabled = false;
+        btn.textContent = '保存する';
     } catch (err) {
         alert('保存失敗: ' + err.message);
         btn.disabled = false;
-        btn.textContent = '保存して閉じる';
+        btn.textContent = '保存する';
     }
 }

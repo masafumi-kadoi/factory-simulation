@@ -689,7 +689,7 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		var stationID, stationType string
 		var parentID *string
 		var stationName *string
-		var posX, posY float64
+		var posX, posY *float64
 		var configJSON []byte
 
 		if err := stationRows.Scan(&stationID, &stationType, &parentID, &stationName, &posX, &posY, &configJSON); err != nil {
@@ -721,9 +721,8 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		}
 		station.ParentID = parentID
 		station.LocationID = locationID
-		px, py := posX, posY
-		station.PositionX = &px
-		station.PositionY = &py
+		station.PositionX = posX
+		station.PositionY = posY
 		stations = append(stations, *station)
 	}
 	if err := stationRows.Err(); err != nil {
