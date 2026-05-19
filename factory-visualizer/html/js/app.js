@@ -1506,13 +1506,27 @@ function gleDrawConnection(conn, layer) {
     const toPos   = _gleNodePositions[conn.toStation];
     if (!fromPos || !toPos) return;
 
-    const x1 = fromPos.x + GLE_NODE_W / 2 + GLE_NODE_R;
-    const y1 = fromPos.y + GLE_NODE_H / 2;
-    const x2 = toPos.x + GLE_NODE_W / 2 - GLE_NODE_R;
-    const y2 = toPos.y + GLE_NODE_H / 2;
-    const cx1 = x1 + 60;
-    const cx2 = x2 - 60;
-    const d = `M ${x1},${y1} C ${cx1},${y1} ${cx2},${y2} ${x2},${y2}`;
+    // 各円の中心
+    const fcx = fromPos.x + GLE_NODE_W / 2;
+    const fcy = fromPos.y + GLE_NODE_H / 2;
+    const tcx = toPos.x  + GLE_NODE_W / 2;
+    const tcy = toPos.y  + GLE_NODE_H / 2;
+
+    // 中心間の方向ベクトルを正規化
+    const dx = tcx - fcx;
+    const dy = tcy - fcy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < GLE_NODE_R * 2) return; // 円が重なる場合は描画しない
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    // 円周上の始点・終点（接続方向の角度から算出）
+    const x1 = fcx + nx * GLE_NODE_R;
+    const y1 = fcy + ny * GLE_NODE_R;
+    const x2 = tcx - nx * GLE_NODE_R;
+    const y2 = tcy - ny * GLE_NODE_R;
+
+    const d = `M ${x1},${y1} L ${x2},${y2}`;
 
     // Hit area (invisible, wide)
     const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
