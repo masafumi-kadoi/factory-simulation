@@ -1307,7 +1307,9 @@ class App {
 
             // Build scenario from layout
             const scenario = this._layoutToScenario(layout, scenarioConfigs);
-            this._dsStartTime = ds.startedAt;
+            // Will be overridden by earliest event time below; leave null so that
+            // if there are no historical events, live events set their own base.
+            this._dsStartTime = null;
 
             document.getElementById('sim-info').textContent = ds.friendlyName || dsId.substring(0, 8);
 
@@ -1451,6 +1453,10 @@ class App {
 
     _onLiveEvent(rawEvent) {
         if (!this.logs) return;
+        // Set base time from first live event when there were no historical events.
+        if (this._dsStartTime == null && rawEvent.event_time) {
+            this._dsStartTime = rawEvent.event_time;
+        }
         const ev = wdhEventToInternal(rawEvent, this._locationMap, this._dsStartTime);
         if (!ev) return;
 

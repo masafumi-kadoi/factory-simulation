@@ -1213,7 +1213,8 @@ class ScenarioEditor {
                 if (this.scenario._parentStation) {
                     this.scenario._parentStation.config.subScenario = {
                         stations: this.scenario.stations,
-                        connections: this.scenario.connections
+                        connections: this.scenario.connections,
+                        localCoords: true,
                     };
                 }
                 const prev = this._editStack.pop();
@@ -1306,7 +1307,10 @@ class ScenarioEditor {
                 })),
                 connections: this.scenario.connections.map(c => ({
                     from: c.from,
-                    to: c.to
+                    to: c.to,
+                    condition: c.condition || 'default',
+                    fromPortIndex: c.fromPortIndex != null ? c.fromPortIndex : -1,
+                    toPortIndex: c.toPortIndex != null ? c.toPortIndex : -1,
                 }))
             },
             ui: {
