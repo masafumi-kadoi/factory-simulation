@@ -575,6 +575,7 @@ type LocationRecord struct {
 	ParentLocationID *int64   `json:"parentLocationId,omitempty"`
 	PosX             *float64 `json:"posX,omitempty"`
 	PosY             *float64 `json:"posY,omitempty"`
+	PosZ             *float64 `json:"posZ,omitempty"`
 	MaxCapacity      *int64   `json:"maxCapacity,omitempty"`
 	ProcessingTime   *float64 `json:"processingTime,omitempty"`
 }
@@ -590,7 +591,7 @@ type ConnectionRecord struct {
 
 func (r *Repository) GetLayout(dataSourceID string) ([]LocationRecord, []ConnectionRecord, error) {
 	locRows, err := r.db.Conn().Query(
-		`SELECT id, name, station_type, parent_location_id, pos_x, pos_y, max_capacity, processing_time
+		`SELECT id, name, station_type, parent_location_id, pos_x, pos_y, pos_z, max_capacity, processing_time
 		 FROM location_master WHERE data_source_id=$1 ORDER BY id`, dataSourceID)
 	if err != nil {
 		return nil, nil, err
@@ -600,7 +601,7 @@ func (r *Repository) GetLayout(dataSourceID string) ([]LocationRecord, []Connect
 	for locRows.Next() {
 		var l LocationRecord
 		if err := locRows.Scan(&l.ID, &l.Name, &l.StationType, &l.ParentLocationID,
-			&l.PosX, &l.PosY, &l.MaxCapacity, &l.ProcessingTime); err != nil {
+			&l.PosX, &l.PosY, &l.PosZ, &l.MaxCapacity, &l.ProcessingTime); err != nil {
 			return nil, nil, err
 		}
 		locs = append(locs, l)
