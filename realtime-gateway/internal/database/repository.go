@@ -682,7 +682,7 @@ func (r *Repository) ListExecutionsByFactory(factoryID string) ([]ExecutionConfi
 		        end_condition_type, end_condition_value,
 		        initial_conditions, status, data_source_id, error_message, created_at, updated_at
 		 FROM execution_configs
-		 WHERE factory_id=$1 AND status='completed'
+		 WHERE factory_id=$1
 		 ORDER BY created_at DESC LIMIT 50`,
 		factoryID)
 	if err != nil {
