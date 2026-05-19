@@ -75,7 +75,7 @@ const STATION_COLORS = {
 
 document.addEventListener('DOMContentLoaded', async () => {
     // タイトルをステーションタイプに応じて設定
-    const titleLabel = _IS_SUB ? `Station Editor — ${MACHINE_ID}` : `Equipment Editor — ${EQUIP_NAME}`;
+    const titleLabel = _IS_SUB ? `Station Editor — ${MACHINE_ID}` : `Machine Editor — ${EQUIP_NAME}`;
     document.getElementById('local-title').textContent = titleLabel;
     document.getElementById('local-factory-info').textContent = `factory: ${FACTORY_ID.substring(0, 8)}…`;
     document.getElementById('info-sid').value = MACHINE_ID;
