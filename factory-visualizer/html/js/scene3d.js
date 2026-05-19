@@ -278,7 +278,7 @@ export class Scene3D {
         shellGroup.userData.equipmentName = equipName;
         shellGroup.userData.isEquipment = true;
 
-        // Semi-transparent shell
+        // Semi-transparent shell (also serves as invisible drag hitbox in placement mode)
         const shellGeo = new THREE.BoxGeometry(W, H, D);
         const shellMat = new THREE.MeshStandardMaterial({
             color: 0x4a9eff,
@@ -304,30 +304,48 @@ export class Scene3D {
         const label = this._createLabel(equipName, cx, H + 18, cz);
         shellGroup.add(label);
 
+        // 1設備 = 1モデル: 設備グループ内の任意マシンからモデルを取得して設備レベルで表示
+        const modelMachine = machines.find(m =>
+            m.config?.model3DGlb?.data ||
+            (Array.isArray(m.config?.model3DGrid?.cells) && m.config.model3DGrid.cells.length > 0)
+        );
+        const hasCustomModel = !!modelMachine;
+
+        if (hasCustomModel) {
+            // shellMesh は opacity=0 にして不可視化するが visible=true のまま保持
+            // → 配置モードのレイキャスト（ドラッグ）対象として機能させるため
+            shellMesh.material.opacity = 0;
+            shellMesh.material.depthWrite = false;
+            edgeMesh.visible = false;
+
+            // モデルをセントロイド位置に配置（設備グループの一部として移動に追従）
+            const modelGroup = new THREE.Group();
+            modelGroup.position.set(cx, 0, cz);
+            shellGroup.add(modelGroup);
+
+            const cfg = modelMachine.config || {};
+            if (cfg.model3DGlb?.data) {
+                this._loadGlbForMachine(cfg.model3DGlb.data, modelGroup);
+            } else if (cfg.model3DGrid) {
+                const voxelMesh = this._buildVoxelMesh(cfg.model3DGrid, 1.0);
+                modelGroup.add(voxelMesh);
+            }
+        }
+
         this.scene.add(shellGroup);
         this._equipmentGroups.set(equipName, {
             group: shellGroup,
             shellMesh,
+            hasCustomModel,
             machines,
             centroid: { x: cx, z: cz },
         });
 
-        // Add individual machines inside the shell
-        machines.forEach(m => this._addMachine(m));
-
-        // Hide shell when any machine has a custom 3D model
-        const hasCustomModel = machines.some(m => {
-            const cells = m.config?.model3DGrid?.cells;
-            if (Array.isArray(cells) && cells.length > 0) return true;
-            return !!m.config?.model3DGlb?.data;
-        });
-        if (hasCustomModel) {
-            shellMesh.visible = false;
-            edgeMesh.visible = false;
-        }
+        // 個別マシンを登録（設備にモデルがある場合はビジュアルメッシュを非表示）
+        machines.forEach(m => this._addMachine(m, hasCustomModel));
     }
 
-    _addMachine(station) {
+    _addMachine(station, groupHasCustomModel = false) {
         const cfg = station.config || {};
         const px = station.positionX || 0;
         const py = station.positionZ || 0;
@@ -338,7 +356,10 @@ export class Scene3D {
         group.userData.isMachine = true;
 
         let mesh;
-        if (cfg.model3DGlb?.data) {
+        if (groupHasCustomModel) {
+            // 設備レベルでモデルを表示済み。個別マシンは空グループ（クリック/ワーク用に登録だけ）
+            mesh = new THREE.Group();
+        } else if (cfg.model3DGlb?.data) {
             mesh = new THREE.Group(); // placeholder; filled asynchronously
             this._loadGlbForMachine(cfg.model3DGlb.data, mesh);
         } else if (cfg.model3DGrid) {
@@ -729,7 +750,7 @@ export class Scene3D {
         const eg = this._equipmentGroups.get(equipName);
         if (!eg || !eg.shellMesh) return;
         eg.shellMesh.material.color.setHex(0x4a9eff);
-        eg.shellMesh.material.opacity = 0.12;
+        eg.shellMesh.material.opacity = eg.hasCustomModel ? 0 : 0.12;
     }
 
     setTopView() {
