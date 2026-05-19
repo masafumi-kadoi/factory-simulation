@@ -169,9 +169,10 @@ export class Scene3D {
         if (this._groundSize) this._recreateGrid(this._groundSize, t);
     }
 
-    _createGround(size) {
-        this._groundSize = size;
-        const geo = new THREE.PlaneGeometry(size, size);
+    _createGround(gridSize) {
+        this._groundSize = gridSize;
+        // 地面は常に巨大な固定サイズ（フォグで端を隠す無限地面効果）
+        const geo = new THREE.PlaneGeometry(50000, 50000);
         const mat = new THREE.MeshStandardMaterial({
             color: THEMES[this._theme].ground,
             roughness: 0.9, metalness: 0.1, depthWrite: false,
@@ -181,7 +182,7 @@ export class Scene3D {
         this._ground.receiveShadow = true;
         this._ground.renderOrder = -1;
         this.scene.add(this._ground);
-        this._recreateGrid(size, THEMES[this._theme]);
+        this._recreateGrid(gridSize, THEMES[this._theme]);
     }
 
     _recreateGrid(size, t) {
@@ -590,29 +591,25 @@ export class Scene3D {
 
         const cx = (minX + maxX) / 2;
         const cz = (minZ + maxZ) / 2;
-        const rangeX = maxX - minX;
-        const rangeZ = maxZ - minZ;
-        const range = Math.max(rangeX, rangeZ, 200);
-        const size = range + 400;
+        const range = Math.max(maxX - minX, maxZ - minZ, 200);
+        const gridSize = range + 400;
 
-        this._groundSize = size;
-        this._ground.scale.set(size / 2000, 1, size / 2000);
-        this._ground.position.set(cx, 0, cz);
-
+        // グリッドを設備中心に配置（地面プレーンはスケール不要）
+        this._groundSize = gridSize;
         if (this._grid) { this.scene.remove(this._grid); this._grid.geometry.dispose(); }
-        this._recreateGrid(size, THEMES[this._theme]);
+        this._recreateGrid(gridSize, THEMES[this._theme]);
         this._grid.position.set(cx, 0.2, cz);
 
-        this.scene.fog.near = size * 0.3;
-        this.scene.fog.far = size * 1.5;
+        const dist = range * 0.9 + 200;
+        this.scene.fog.near = dist * 2;
+        this.scene.fog.far = dist * 6;
 
-        const dist = range * 1.5 + 300;
-        this.camera.position.set(cx, dist * 0.7, cz + dist);
-        this.camera.far = size * 3;
+        this.camera.position.set(cx, dist * 0.6, cz + dist);
+        this.camera.far = dist * 10;
         this.camera.updateProjectionMatrix();
         this.camera.lookAt(cx, 0, cz);
         this.controls.target.set(cx, 0, cz);
-        this.controls.maxDistance = size * 1.5;
+        this.controls.maxDistance = dist * 5;
         this.controls.update();
     }
 
@@ -631,34 +628,37 @@ export class Scene3D {
             return;
         }
 
-        const center = new THREE.Vector3();
-        const size = new THREE.Vector3();
-        box.getCenter(center);
-        box.getSize(size);
+        // 境界球から FOV に基づく最適カメラ距離を計算
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        const R = sphere.radius;
+        const cx = sphere.center.x;
+        const cz = sphere.center.z;
 
-        const cx = center.x;
-        const cz = center.z;
-        const range = Math.max(size.x, size.z, 200);
-        const groundSize = range + 400;
+        const fov = this.camera.fov * (Math.PI / 180);
+        const aspect = (this.container.clientWidth || 1) / (this.container.clientHeight || 1);
+        const fovH = 2 * Math.atan(Math.tan(fov / 2) * aspect);
+        // 縦横のうち制約の厳しい方でフィット（1.1 = 10% 余白）
+        const dist = (R / Math.sin(Math.min(fov, fovH) / 2)) * 1.1;
 
-        this._groundSize = groundSize;
-        this._ground.scale.set(groundSize / 2000, 1, groundSize / 2000);
-        this._ground.position.set(cx, 0, cz);
-
+        // グリッドを設備中心に配置（地面プレーンはスケール不要）
+        const gridSize = Math.max(R * 2 + 400, 600);
+        this._groundSize = gridSize;
         if (this._grid) { this.scene.remove(this._grid); this._grid.geometry.dispose(); }
-        this._recreateGrid(groundSize, THEMES[this._theme]);
+        this._recreateGrid(gridSize, THEMES[this._theme]);
         this._grid.position.set(cx, 0.2, cz);
 
-        this.scene.fog.near = groundSize * 0.3;
-        this.scene.fog.far = groundSize * 1.5;
+        // フォグはカメラ距離ベースで設定
+        this.scene.fog.near = dist * 2;
+        this.scene.fog.far = dist * 6;
 
-        const dist = range * 1.5 + 300;
-        this.camera.position.set(cx, dist * 0.7, cz + dist);
-        this.camera.far = groundSize * 3;
+        // カメラを 35° 仰角で配置してモデルを最大表示
+        const elev = 35 * Math.PI / 180;
+        this.camera.position.set(cx, dist * Math.sin(elev), cz + dist * Math.cos(elev));
+        this.camera.far = dist * 10;
         this.camera.updateProjectionMatrix();
         this.camera.lookAt(cx, 0, cz);
         this.controls.target.set(cx, 0, cz);
-        this.controls.maxDistance = groundSize * 1.5;
+        this.controls.maxDistance = dist * 5;
         this.controls.update();
     }
 
