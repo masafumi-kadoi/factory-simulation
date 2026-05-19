@@ -791,7 +791,6 @@ function renderGrid() {
     // グリッドステップをviewBox幅から自動計算（~15本になるよう調整）
     const rawStep = vb.w / 15;
     const step = _niceStep(rawStep);
-    const sw = vb.w / 500; // stroke-widthもviewBoxに比例
     const x0 = Math.floor(vb.x / step) * step;
     const y0 = Math.floor(vb.y / step) * step;
     const x1 = vb.x + vb.w;
@@ -802,8 +801,9 @@ function renderGrid() {
         line.setAttribute('x1', x); line.setAttribute('y1', vb.y);
         line.setAttribute('x2', x); line.setAttribute('y2', y1);
         const isOrigin = Math.abs(x) < step * 0.01;
-        line.setAttribute('stroke', isOrigin ? '#2a4070' : '#1a2744');
-        line.setAttribute('stroke-width', (isOrigin ? sw * 2 : sw).toFixed(4));
+        line.setAttribute('stroke', isOrigin ? '#2a4880' : '#182240');
+        line.setAttribute('stroke-width', isOrigin ? '1' : '0.5');
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
         layer.appendChild(line);
     }
     for (let y = y0; y <= y1 + step * 0.01; y += step) {
@@ -811,8 +811,9 @@ function renderGrid() {
         line.setAttribute('x1', vb.x); line.setAttribute('y1', y);
         line.setAttribute('x2', x1); line.setAttribute('y2', y);
         const isOrigin = Math.abs(y) < step * 0.01;
-        line.setAttribute('stroke', isOrigin ? '#2a4070' : '#1a2744');
-        line.setAttribute('stroke-width', (isOrigin ? sw * 2 : sw).toFixed(4));
+        line.setAttribute('stroke', isOrigin ? '#2a4880' : '#182240');
+        line.setAttribute('stroke-width', isOrigin ? '1' : '0.5');
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
         layer.appendChild(line);
     }
 }
