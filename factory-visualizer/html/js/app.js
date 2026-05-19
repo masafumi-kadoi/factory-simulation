@@ -247,6 +247,7 @@ async function selectFactory(factoryId) {
         buildLocationMap();
 
         scene3d.loadFactory(state.stations, state.connections);
+        renderG3DUnplacedList();
 
         renderObjectList(state.stations, state.activeWorks, state.activeFilters);
         renderExecutionList(Array.isArray(executions) ? executions : []);
@@ -838,6 +839,98 @@ async function importFactoryJSON(e) {
 // 3Dモデル編集タブ
 // ============================================================
 
+function _equipNameOf(stationId) {
+    const m = stationId.match(/^(.+?)[._-]?(\d{3})$/);
+    return m ? m[1] : stationId;
+}
+
+function renderG3DUnplacedList() {
+    const list = document.getElementById('g3d-unplaced-list');
+    if (!list) return;
+
+    const equipMap = new Map();
+    (state.stations || []).filter(s => s.stationType === 'machine').forEach(s => {
+        const equip = _equipNameOf(s.stationId);
+        if (!equipMap.has(equip)) equipMap.set(equip, []);
+        equipMap.get(equip).push(s);
+    });
+
+    const unplaced = [];
+    equipMap.forEach((members, equipName) => {
+        if (members.every(s => s.positionX == null)) unplaced.push({ equipName, members });
+    });
+
+    list.innerHTML = '';
+    if (unplaced.length === 0) {
+        const msg = document.createElement('div');
+        msg.className = 'g3d-unplaced-empty';
+        msg.textContent = (state.stations || []).length === 0 ? '工場を選択してください' : '全て配置済み';
+        list.appendChild(msg);
+        return;
+    }
+
+    unplaced.forEach(({ equipName, members }) => {
+        const item = document.createElement('div');
+        item.className = 'g3d-unplaced-item';
+        item.textContent = equipName;
+        item.title = `${equipName} (${members.length}台)  クリックで配置`;
+        item.addEventListener('click', () => placeEquipmentFromSidebar(equipName, members));
+        list.appendChild(item);
+    });
+}
+
+function placeEquipmentFromSidebar(equipName, members) {
+    const target = scene3d ? scene3d.controls.target : { x: 0, z: 0 };
+    const SPACING = 300;
+
+    // 既配置設備のセントロイド一覧を収集
+    const occupiedCentroids = [];
+    const existMap = new Map();
+    (state.stations || []).filter(s => s.stationType === 'machine' && s.positionX != null).forEach(s => {
+        const en = _equipNameOf(s.stationId);
+        if (!existMap.has(en)) existMap.set(en, []);
+        existMap.get(en).push(s);
+    });
+    existMap.forEach(ms => {
+        occupiedCentroids.push({
+            x: ms.reduce((a, s) => a + s.positionX, 0) / ms.length,
+            z: ms.reduce((a, s) => a + s.positionY, 0) / ms.length,
+        });
+    });
+    _movedEquipment.forEach(({ centroid }) => occupiedCentroids.push(centroid));
+
+    // 重ならない位置を探す
+    let cx = target.x, cz = target.z;
+    for (let attempt = 0; attempt < 30; attempt++) {
+        if (!occupiedCentroids.some(p => Math.abs(p.x - cx) < SPACING && Math.abs(p.z - cz) < SPACING)) break;
+        cx += SPACING;
+        if (attempt % 5 === 4) { cx = target.x; cz += SPACING; }
+    }
+
+    // ステーション全員を同一座標に配置（シェルが囲む）
+    members.forEach(s => { s.positionX = cx; s.positionY = cz; });
+
+    _movedEquipment.set(equipName, {
+        centroid: { x: cx, z: cz },
+        machines: members.map(s => ({ stationId: s.stationId, positionX: cx, positionY: cz })),
+    });
+
+    scene3d && scene3d.loadFactory(state.stations, state.connections);
+    renderG3DUnplacedList();
+
+    // 配置モードを起動して保存ボタンを表示
+    if (!scene3d?._placementMode) {
+        scene3d && scene3d.setPlacementMode(true);
+        document.querySelectorAll('.g3d-sidebar-item').forEach(i => i.classList.remove('active'));
+        const placementItem = document.querySelector('.g3d-sidebar-item[data-group="placement"]');
+        if (placementItem) placementItem.classList.add('active');
+        openG3DFloating('placement');
+    } else {
+        const floatEl = document.getElementById('g3d-floating');
+        if (floatEl && !floatEl.classList.contains('hidden')) openG3DFloating('placement');
+    }
+}
+
 function initGlobal3DEditTab() {
     document.querySelectorAll('.g3d-sidebar-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -1071,7 +1164,8 @@ async function saveEquipPlacement() {
 // ============================================================
 
 const GLE_NODE_W = 140;
-const GLE_NODE_H = 54;
+const GLE_NODE_H = 80;
+const GLE_NODE_R = 36;
 let _gleCurrentTool = 'select';
 let _gleConnectFrom = null;
 let _gleNodePositions = {};
@@ -1194,19 +1288,20 @@ function gleDrawNode(machine, layer) {
     g.setAttribute('data-sid', machine.stationId);
     g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
 
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('width', GLE_NODE_W);
-    rect.setAttribute('height', GLE_NODE_H);
-    rect.setAttribute('rx', 6);
-    rect.setAttribute('fill', 'var(--bg-panel)');
-    rect.setAttribute('stroke', 'var(--border-light)');
-    rect.setAttribute('stroke-width', '1.5');
-    rect.style.cursor = 'pointer';
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', GLE_NODE_W / 2);
+    circle.setAttribute('cy', GLE_NODE_H / 2);
+    circle.setAttribute('r', GLE_NODE_R);
+    circle.setAttribute('fill', 'var(--bg-panel)');
+    circle.setAttribute('stroke', 'var(--border-light)');
+    circle.setAttribute('stroke-width', '1.5');
+    circle.style.cursor = 'pointer';
 
     const name = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     name.setAttribute('x', GLE_NODE_W / 2);
-    name.setAttribute('y', 22);
+    name.setAttribute('y', GLE_NODE_H / 2 - 5);
     name.setAttribute('text-anchor', 'middle');
+    name.setAttribute('dominant-baseline', 'middle');
     name.setAttribute('fill', 'var(--text-primary)');
     name.setAttribute('font-size', '12');
     name.setAttribute('font-family', 'inherit');
@@ -1214,14 +1309,15 @@ function gleDrawNode(machine, layer) {
 
     const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     sub.setAttribute('x', GLE_NODE_W / 2);
-    sub.setAttribute('y', 38);
+    sub.setAttribute('y', GLE_NODE_H / 2 + 12);
     sub.setAttribute('text-anchor', 'middle');
+    sub.setAttribute('dominant-baseline', 'middle');
     sub.setAttribute('fill', 'var(--text-muted)');
     sub.setAttribute('font-size', '10');
     sub.setAttribute('font-family', 'inherit');
     sub.textContent = 'machine';
 
-    g.appendChild(rect);
+    g.appendChild(circle);
     g.appendChild(name);
     g.appendChild(sub);
     layer.appendChild(g);
@@ -1235,9 +1331,9 @@ function gleDrawConnection(conn, layer) {
     const toPos   = _gleNodePositions[conn.toStation];
     if (!fromPos || !toPos) return;
 
-    const x1 = fromPos.x + GLE_NODE_W;
+    const x1 = fromPos.x + GLE_NODE_W / 2 + GLE_NODE_R;
     const y1 = fromPos.y + GLE_NODE_H / 2;
-    const x2 = toPos.x;
+    const x2 = toPos.x + GLE_NODE_W / 2 - GLE_NODE_R;
     const y2 = toPos.y + GLE_NODE_H / 2;
     const cx1 = x1 + 60;
     const cx2 = x2 - 60;
@@ -1376,12 +1472,12 @@ async function gleHandleConnClick(cid) {
 
 function gleSetNodeHighlight(sid, on) {
     const g = document.querySelector(`#gle-node-layer .gle-node[data-sid="${sid}"]`);
-    if (g) g.querySelector('rect').setAttribute('stroke', on ? 'var(--accent-blue)' : 'var(--border-light)');
+    if (g) g.querySelector('circle').setAttribute('stroke', on ? 'var(--accent-blue)' : 'var(--border-light)');
 }
 
 function gleUpdateNodeStyles() {
     // Reset all node highlights
-    document.querySelectorAll('#gle-node-layer .gle-node rect').forEach(r =>
+    document.querySelectorAll('#gle-node-layer .gle-node circle').forEach(r =>
         r.setAttribute('stroke', 'var(--border-light)'));
 }
 

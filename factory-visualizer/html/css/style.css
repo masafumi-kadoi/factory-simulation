@@ -900,6 +900,48 @@ input[type="range"] {
 .gf-equip-name { font-weight: 600; color: var(--text-primary); }
 .gf-equip-pos { color: var(--text-muted); font-size: 11px; font-family: monospace; }
 
+/* --- 未配置設備リスト (g3d-sidebar) --- */
+.g3d-sidebar-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 6px 8px;
+    flex-shrink: 0;
+}
+.g3d-unplaced-list {
+    overflow-y: auto;
+    max-height: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 8px 8px;
+    min-height: 30px;
+}
+.g3d-unplaced-item {
+    padding: 6px 8px;
+    font-size: 11px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    user-select: none;
+    transition: background 0.1s, color 0.1s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.g3d-unplaced-item:hover {
+    background: rgba(74,158,255,0.12);
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+}
+.g3d-unplaced-empty {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 2px;
+    text-align: center;
+}
+
 /* ============================================================
    ロジック編集タブ (gle)
    ============================================================ */
