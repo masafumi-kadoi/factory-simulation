@@ -899,15 +899,10 @@ export class Scene3D {
 
     setShellOpacity(v) {
         this._shellOpacity = v;
-        this._machines.forEach(({ mesh }) => {
-            const setOpacity = (obj) => {
-                if (obj.material) {
-                    obj.material.opacity = v;
-                    obj.material.transparent = v < 1;
-                }
-                obj.children && obj.children.forEach(setOpacity);
-            };
-            setOpacity(mesh);
+        this._equipmentGroups.forEach(({ shellMesh, hasCustomModel }) => {
+            if (!shellMesh || hasCustomModel) return;
+            shellMesh.material.opacity = v;
+            shellMesh.material.transparent = v < 1;
         });
     }
 

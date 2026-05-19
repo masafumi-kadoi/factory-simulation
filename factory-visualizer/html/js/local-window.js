@@ -357,12 +357,15 @@ function initModelTab() {
     }, { passive: false });
 
     document.getElementById('btn-refresh-3d-preview').addEventListener('click', () => {
-        if (_3dRenderer) {
-            if (_importedGlb) _loadGlbPreview(_importedGlb.arrayBuffer);
-            else if (_glbPreviewBuffer) _loadGlbPreview(_glbPreviewBuffer);
-            else update3DPreview();
+        if (!_3dRenderer) { init3DPreview(); return; }
+        if (_importedGlb) {
+            _loadGlbPreview(_importedGlb.arrayBuffer);
+        } else if (_glbPreviewBuffer) {
+            _loadGlbPreview(_glbPreviewBuffer);
         } else {
-            init3DPreview();
+            const savedGlb = machineStation?.config?.model3DGlb?.data;
+            if (savedGlb) _loadGlbPreview(_base64ToArrayBuffer(savedGlb));
+            else update3DPreview();
         }
     });
 }
@@ -510,7 +513,9 @@ function init3DPreview() {
     } else if (_glbPreviewBuffer) {
         _loadGlbPreview(_glbPreviewBuffer);
     } else {
-        update3DPreview();
+        const savedGlb = machineStation?.config?.model3DGlb?.data;
+        if (savedGlb) _loadGlbPreview(_base64ToArrayBuffer(savedGlb));
+        else update3DPreview();
     }
 }
 
@@ -1365,6 +1370,7 @@ async function saveAndClose() {
         }
 
         // Tab 2: 3D model
+        let _savedGlbBuffer = null;
         if (_deleteModel) {
             delete newConfig.model3DGrid;
             delete newConfig.model3DGlb;
@@ -1384,6 +1390,7 @@ async function saveAndClose() {
             newConfig.model3DGlb = glbBuffer
                 ? { data: _arrayBufferToBase64(glbBuffer), name: 'model.glb' }
                 : null;
+            _savedGlbBuffer = glbBuffer;
         }
 
         // Tab 3: ステーション配置を equipmentLayout に保存（parentId は変更しない）
@@ -1400,6 +1407,10 @@ async function saveAndClose() {
         };
 
         await API.updateStation(FACTORY_ID, MACHINE_ID, { config: newConfig });
+
+        // 保存成功後: ローカル状態を更新して 更新ボタン が最新 GLTF を表示できるようにする
+        if (machineStation) machineStation.config = newConfig;
+        if (_savedGlbBuffer) _glbPreviewBuffer = _savedGlbBuffer;
 
         btn.disabled = false;
         btn.textContent = '保存する';
