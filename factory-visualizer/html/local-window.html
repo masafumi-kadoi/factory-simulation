@@ -251,7 +251,7 @@
             <canvas id="model-grid-canvas"></canvas>
         </div>
         <div class="model-right">
-            <div class="model-3d-header">3D プレビュー</div>
+            <div class="model-3d-header">3D プレビュー <button class="tool-btn" id="btn-refresh-3d-preview" style="float:right;font-size:10px;padding:2px 8px;line-height:1.4;">更新</button></div>
             <canvas id="model-3d-canvas"></canvas>
         </div>
     </div>
@@ -259,7 +259,7 @@
     <!-- Tab: Logic -->
     <div class="tab-content" id="tab-logic">
         <div class="logic-palette">
-            <div class="palette-section">ツール</div>
+            <div class="palette-section" style="display:flex;justify-content:space-between;align-items:center;">ツール <button class="tool-btn" id="btn-refresh-logic" style="font-size:10px;padding:1px 6px;line-height:1.4;">更新</button></div>
             <button class="tool-btn active" data-tool="select">選択</button>
             <button class="tool-btn" data-tool="connect">接続</button>
             <button class="tool-btn" data-tool="delete">削除</button>

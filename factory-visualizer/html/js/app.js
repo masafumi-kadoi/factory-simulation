@@ -1082,6 +1082,10 @@ function initGlobalLogicEditTab() {
         });
     });
 
+    document.getElementById('btn-gle-refresh').addEventListener('click', async () => {
+        if (state.currentFactory) await selectFactory(state.currentFactory);
+    });
+
     // New machine button
     document.getElementById('btn-gle-add-machine').addEventListener('click', () => {
         if (!state.currentFactory) { alert('工場を選択してください'); return; }

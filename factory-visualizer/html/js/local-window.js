@@ -106,7 +106,7 @@ function initTabs() {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             tab.classList.add('active');
             document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
-            if (tab.dataset.tab === 'logic') refreshLogicSVGSize();
+            if (tab.dataset.tab === 'logic') { _resetLogicViewBox(); renderLogicSVG(); }
             if (tab.dataset.tab === 'model3d') {
                 renderGridCanvas();
                 init3DPreview();
@@ -355,6 +355,16 @@ function initModelTab() {
         _gridZoom = Math.max(0.2, Math.min(8, _gridZoom * factor));
         renderGridCanvas();
     }, { passive: false });
+
+    document.getElementById('btn-refresh-3d-preview').addEventListener('click', () => {
+        if (_3dRenderer) {
+            if (_importedGlb) _loadGlbPreview(_importedGlb.arrayBuffer);
+            else if (_glbPreviewBuffer) _loadGlbPreview(_glbPreviewBuffer);
+            else update3DPreview();
+        } else {
+            init3DPreview();
+        }
+    });
 }
 
 function _getCellFromEvent(canvas, e) {
@@ -1117,6 +1127,12 @@ function initToolPalette() {
             renderStations();
             updateInfoBar();
         });
+    });
+
+    document.getElementById('btn-refresh-logic')?.addEventListener('click', () => {
+        _resetLogicViewBox();
+        renderLogicSVG();
+        renderUnplacedList();
     });
 
     // 新規ステーション追加ボタン
