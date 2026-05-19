@@ -163,11 +163,11 @@ function renderExecutionItem(exec, number) {
     }
 
     let actions = '';
-    if (exec.status === 'completed' && exec.dataSourceId) {
+    if (exec.dataSourceId) {
         const vizParam = `ds=${encodeURIComponent(exec.dataSourceId)}`;
         actions = `
             <a href="/visualizer/?${vizParam}" target="_blank" class="btn btn-outline btn-sm">View in sim-visualizer</a>
-            <a href="execution.html?scenarioId=${encodeURIComponent(currentScenarioId)}&rerun=${encodeURIComponent(exec.id)}" class="btn btn-outline btn-sm">Re-run</a>
+            ${exec.status === 'completed' ? `<a href="execution.html?scenarioId=${encodeURIComponent(currentScenarioId)}&rerun=${encodeURIComponent(exec.id)}" class="btn btn-outline btn-sm">Re-run</a>` : ''}
         `;
     } else if (exec.status === 'error') {
         actions = `

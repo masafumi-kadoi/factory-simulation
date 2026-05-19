@@ -333,30 +333,69 @@ func (h *Handler) HandleExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract dataSourceId from gateway response
+	// Extract dataSourceId and gatewayExecutionId from gateway response
 	dataSourceID := ""
 	if dsid, ok := gwRespBody["dataSourceId"].(string); ok {
 		dataSourceID = dsid
 	}
-	status := "completed"
-	if s, ok := gwRespBody["status"].(string); ok {
-		status = s
+	gatewayExecID := ""
+	if geid, ok := gwRespBody["executionId"].(string); ok {
+		gatewayExecID = geid
 	}
 
 	var dsPtr *string
 	if dataSourceID != "" {
 		dsPtr = &dataSourceID
 	}
-	if err := h.repo.UpdateExecutionStatus(executionID, status, dsPtr, nil); err != nil {
+	// Save as "pending" — a background goroutine will poll the gateway and update to completed/error
+	if err := h.repo.UpdateExecutionStatus(executionID, "pending", dsPtr, nil); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to update execution status", "DB_ERROR")
 		return
+	}
+
+	// Poll the gateway in the background until the execution finishes, then update local status
+	if gatewayExecID != "" {
+		go h.pollGatewayExecution(executionID, gatewayExecID, dataSourceID)
 	}
 
 	respondJSON(w, http.StatusOK, ExecuteResponse{
 		ExecutionID:  executionID,
 		DataSourceID: dataSourceID,
-		Status:       status,
+		Status:       "pending",
 	})
+}
+
+// pollGatewayExecution polls the realtime-gateway until the execution completes,
+// then updates the local execution record with the final status.
+func (h *Handler) pollGatewayExecution(localExecID, gatewayExecID, dataSourceID string) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	url := h.realtimeGatewayURL + "/api/executions/" + gatewayExecID
+	var dsPtr *string
+	if dataSourceID != "" {
+		dsPtr = &dataSourceID
+	}
+	for i := 0; i < 360; i++ { // poll up to 30 min (360 × 5s)
+		time.Sleep(5 * time.Second)
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		var body map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		status, _ := body["status"].(string)
+		if status == "completed" || status == "error" {
+			var errMsgPtr *string
+			if errMsg, _ := body["errorMessage"].(string); errMsg != "" {
+				errMsgPtr = &errMsg
+			}
+			h.repo.UpdateExecutionStatus(localExecID, status, dsPtr, errMsgPtr)
+			return
+		}
+	}
+	// Timed out — mark as error
+	msg := "polling timed out"
+	h.repo.UpdateExecutionStatus(localExecID, "error", dsPtr, &msg)
 }
 
 // HandleGetExecutions handles GET /api/executor/executions

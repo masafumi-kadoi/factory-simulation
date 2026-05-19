@@ -408,6 +408,9 @@ async function loadExecutionResult(execId, dataSourceId, startDatetime, simulati
             console.warn('[loadExecutionResult] failed to load historical events:', e);
         }
 
+        // Advance timeline to end so the 3D view matches the replayed final state.
+        timeline.seekToEnd();
+
         const vizBtn = document.getElementById('btn-open-visualizer');
         if (vizBtn && dataSourceId) vizBtn.disabled = false;
     } catch (err) {
