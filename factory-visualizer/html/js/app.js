@@ -1290,6 +1290,26 @@ function gleSavePositions() {
     try { localStorage.setItem(`fv_gle_pos_${state.currentFactory}`, JSON.stringify(_gleNodePositions)); } catch {}
 }
 
+// entry/exitポートをマシン設備のconfig.equipmentLayout.membersから抽出する
+function _gleExtractPorts(machineStation) {
+    const layout = machineStation?.config?.equipmentLayout;
+    const exitPorts = [];
+    const entryPorts = [];
+    if (layout && Array.isArray(layout.members)) {
+        layout.members.forEach(child => {
+            const portObj = {
+                stationId: child.stationId,
+                stationType: child.stationType,
+                name: child.name || child.stationType,
+                parentId: machineStation.stationId,
+            };
+            if (child.stationType === 'exit')  exitPorts.push(portObj);
+            else if (child.stationType === 'entry') entryPorts.push(portObj);
+        });
+    }
+    return { exitPorts, entryPorts };
+}
+
 function _gleEquips() {
     const equipMap = new Map();
     state.stations
@@ -1302,9 +1322,15 @@ function _gleEquips() {
     const equips = [];
     equipMap.forEach((members, equipName) => {
         const rep = members.find(m => m.stationId === `${equipName}.000`) || members[0];
-        const memberIds = new Set(members.map(m => m.stationId));
-        const exitPorts  = state.stations.filter(s => s.stationType === 'exit'  && s.parentId && memberIds.has(s.parentId));
-        const entryPorts = state.stations.filter(s => s.stationType === 'entry' && s.parentId && memberIds.has(s.parentId));
+        // entry/exitポートはconfig.equipmentLayout.membersに埋め込まれているため
+        // state.stationsではなくマシン設備のconfigから抽出する
+        const exitPorts = [];
+        const entryPorts = [];
+        members.forEach(m => {
+            const { exitPorts: ep, entryPorts: np } = _gleExtractPorts(m);
+            exitPorts.push(...ep);
+            entryPorts.push(...np);
+        });
         equips.push({ equipName, members, rep, exitPorts, entryPorts });
     });
     return equips;
@@ -1316,12 +1342,13 @@ function _gleStationToEquip() {
     state.stations
         .filter(s => s.stationType === 'machine' || s.stationType === 'source' || s.stationType === 'drain')
         .forEach(s => map.set(s.stationId, _equipNameOf(s.stationId)));
-    // entry/exit port stations → map via parentId
+    // entry/exit port stations → config.equipmentLayout.membersから抽出してマッピング
     state.stations
-        .filter(s => s.stationType === 'entry' || s.stationType === 'exit')
-        .forEach(s => {
-            const parentEquip = s.parentId ? (map.get(s.parentId) || _equipNameOf(s.parentId)) : _equipNameOf(s.stationId);
-            map.set(s.stationId, parentEquip);
+        .filter(s => s.stationType === 'machine')
+        .forEach(m => {
+            const equipName = _equipNameOf(m.stationId);
+            const { exitPorts, entryPorts } = _gleExtractPorts(m);
+            [...exitPorts, ...entryPorts].forEach(p => map.set(p.stationId, equipName));
         });
     return map;
 }
@@ -1777,8 +1804,12 @@ async function gleHandleConnectInteraction(sid, equipName) {
 
         // 設備レベルで接続元 stationId を解決（ポートでなければ rep.000 を使用）
         const resolveRepSid = (sid, en) => {
-            const st = state.stations.find(s => s.stationId === sid);
-            if (st && (st.stationType === 'entry' || st.stationType === 'exit')) return sid;
+            // entry/exitポートはconfig.equipmentLayout.membersに埋め込まれているため確認
+            const machineMembers = state.stations.filter(s => _equipNameOf(s.stationId) === en && s.stationType === 'machine');
+            for (const m of machineMembers) {
+                const { exitPorts, entryPorts } = _gleExtractPorts(m);
+                if ([...exitPorts, ...entryPorts].some(p => p.stationId === sid)) return sid;
+            }
             const members = state.stations.filter(s => _equipNameOf(s.stationId) === en);
             return members.find(m => m.stationId === `${en}.000`)?.stationId || members[0]?.stationId || sid;
         };
