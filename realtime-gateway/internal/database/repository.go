@@ -152,7 +152,7 @@ func (r *Repository) ListFactoryStations(factoryID string) ([]FactoryStation, er
 	return result, rows.Err()
 }
 
-func (r *Repository) AddFactoryStation(factoryID, stationID, name, stationType string, posX, posY, posZ float64, parentID *string) error {
+func (r *Repository) AddFactoryStation(factoryID, stationID, name, stationType string, posX, posY, posZ *float64, parentID *string) error {
 	// Derive equipment_id from the part before the last dot
 	equipID := stationID
 	if dotIdx := strings.LastIndex(stationID, "."); dotIdx >= 0 {

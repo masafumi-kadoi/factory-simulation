@@ -1186,7 +1186,7 @@ function initGlobalLogicEditTab() {
     });
 
     // New machine button
-    document.getElementById('btn-gle-add-machine').addEventListener('click', () => {
+    const _openNewMachineModal = () => {
         if (!state.currentFactory) { alert('工場を選択してください'); return; }
         const modal = document.getElementById('new-machine-modal');
         modal.classList.remove('hidden');
@@ -1194,7 +1194,9 @@ function initGlobalLogicEditTab() {
         document.getElementById('new-machine-sid').value = '';
         document.getElementById('new-machine-type').value = 'machine';
         document.getElementById('new-machine-name').focus();
-    });
+    };
+    document.getElementById('btn-gle-add-machine').addEventListener('click', _openNewMachineModal);
+    document.getElementById('btn-g3d-add-machine').addEventListener('click', _openNewMachineModal);
     document.getElementById('new-machine-modal-close').addEventListener('click', () =>
         document.getElementById('new-machine-modal').classList.add('hidden'));
     document.getElementById('new-machine-cancel').addEventListener('click', () =>
@@ -1577,15 +1579,13 @@ async function gleAddMachine() {
             stationId:   sid,
             name,
             stationType,
-            posX: 0,
-            posY: 0,
-            posZ: 0,
         });
         // Reload stations from server (API returns only {status:"created"})
         const stations = await API.fetchFactoryStations(state.currentFactory);
         state.stations = Array.isArray(stations) ? stations : state.stations;
         scene3d && scene3d.loadFactory(state.stations, state.connections);
         renderObjectList(state.stations, state.activeWorks, state.activeFilters);
+        renderG3DUnplacedList();
         renderGlobalLogicGraph();
         setStatus('設備を追加しました', 'status-ok');
     } catch (err) {

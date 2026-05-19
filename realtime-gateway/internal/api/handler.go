@@ -209,13 +209,13 @@ func (h *Handler) handleFactoryStations(w http.ResponseWriter, r *http.Request, 
 		respondJSON(w, 200, stations)
 	case http.MethodPost:
 		var body struct {
-			StationID   string  `json:"stationId"`
-			Name        string  `json:"name"`
-			StationType string  `json:"stationType"`
-			PosX        float64 `json:"posX"`
-			PosY        float64 `json:"posY"`
-			PosZ        float64 `json:"posZ"`
-			ParentID    *string `json:"parentId"`
+			StationID   string   `json:"stationId"`
+			Name        string   `json:"name"`
+			StationType string   `json:"stationType"`
+			PosX        *float64 `json:"posX"`
+			PosY        *float64 `json:"posY"`
+			PosZ        *float64 `json:"posZ"`
+			ParentID    *string  `json:"parentId"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.StationID == "" {
 			respondError(w, 400, "stationId is required")
