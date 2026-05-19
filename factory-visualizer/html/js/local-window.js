@@ -1159,32 +1159,275 @@ function initToolPalette() {
 // ---- Props panel ----
 
 function initPropsPanel() {
-    ['props-name', 'props-type', 'props-pos-x', 'props-pos-y', 'props-processing-time', 'props-location-id'].forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.addEventListener('change', () => {
-            if (!_selectedStation) return;
-            const s = childStations.find(s => s.stationId === _selectedStation);
-            if (!s) return;
-            if (id === 'props-name') s.name = el.value;
-            else if (id === 'props-type') s.stationType = el.value;
-            else if (id === 'props-pos-x') { s.positionX = parseFloat(el.value) || 0; refreshLogicSVGSize(); renderLogicSVG(); }
-            else if (id === 'props-pos-y') { s.positionY = parseFloat(el.value) || 0; refreshLogicSVGSize(); renderLogicSVG(); }
-            else if (id === 'props-processing-time') {
-                s.config = s.config || {};
-                s.config.processingTime = parseInt(el.value) || 0;
-            } else if (id === 'props-location-id') {
-                s.config = s.config || {};
-                s.config.locationId = parseInt(el.value) || 0;
-            }
-            updatePalettePos();
+    // Listeners are attached dynamically in _attachPropsListeners after each render.
+}
+
+// --- Helper: HTML escape ---
+function _escapeHtml(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// --- Helper: config fields per type ---
+function _getConfigFields(type) {
+    const map = {
+        source:     [
+            { key: 'workCount',      label: 'Work Count',         step: '1',   min: '1' },
+            { key: 'departureTime',  label: 'Departure Time (s)', step: '0.1', min: '0.1' },
+        ],
+        processing: [
+            { key: 'processingTime', label: 'Processing Time (s)', step: '0.1', min: '0.1' },
+            { key: 'arrivalTime',    label: 'Arrival Time (s)',    step: '0.1', min: '0.1' },
+            { key: 'departureTime',  label: 'Departure Time (s)', step: '0.1', min: '0.1' },
+        ],
+        drain:      [
+            { key: 'arrivalTime',    label: 'Arrival Time (s)',   step: '0.1', min: '0.1' },
+        ],
+        merge:      [
+            { key: 'processingTime', label: 'Processing Time (s)', step: '0.1', min: '0' },
+            { key: 'arrivalTime',    label: 'Arrival Time (s)',    step: '0.1', min: '0.1' },
+            { key: 'departureTime',  label: 'Departure Time (s)', step: '0.1', min: '0.1' },
+        ],
+        split:      [
+            { key: 'processingTime', label: 'Processing Time (s)', step: '0.1', min: '0' },
+            { key: 'arrivalTime',    label: 'Arrival Time (s)',    step: '0.1', min: '0.1' },
+            { key: 'departureTime',  label: 'Departure Time (s)', step: '0.1', min: '0.1' },
+        ],
+        entry: [],
+        exit:  [],
+    };
+    return map[type] || [];
+}
+
+// --- Helper: merge port rows HTML ---
+function _buildMergePortsHtml(s) {
+    const count = s.config.mergeCount || 2;
+    const ports = s.config.inPorts || [];
+    return Array.from({ length: count }, (_, i) => {
+        const cap = ports[i]?.capacity || 1;
+        return `<div class="props-port-row" data-index="${i}">
+            <span class="props-port-label">Port ${i + 1}</span>
+            <input type="number" class="props-port-capacity" value="${cap}" min="1" step="1" data-port-index="${i}">
+            <span class="props-port-unit">容量</span>
+        </div>`;
+    }).join('');
+}
+
+// --- Helper: split port rows HTML ---
+function _buildSplitPortsHtml(s) {
+    const count = s.config.splitCount || 2;
+    const ports = s.config.outPorts || [];
+    return Array.from({ length: count }, (_, i) => {
+        const cap = ports[i]?.capacity || 1;
+        return `<div class="props-port-row" data-index="${i}">
+            <span class="props-port-label">Port ${i + 1}</span>
+            <input type="number" class="props-port-capacity" value="${cap}" min="1" step="1" data-port-index="${i}">
+            <span class="props-port-unit">容量</span>
+        </div>`;
+    }).join('');
+}
+
+// --- Helper: type-specific config section HTML ---
+function _buildTypeConfigHtml(s) {
+    const type = s.stationType;
+    const cfg = s.config || {};
+    const fields = _getConfigFields(type);
+
+    const fieldsHtml = fields.map(f => {
+        const disabled = (type === 'source' && f.key === 'workCount' && cfg.continuous) ? 'disabled' : '';
+        return `<div class="props-field">
+            <label>${_escapeHtml(f.label)}</label>
+            <input type="number" id="props-cfg-${f.key}" value="${cfg[f.key] != null ? cfg[f.key] : ''}"
+                step="${f.step}" min="${f.min || '0'}" ${disabled}>
+        </div>`;
+    }).join('');
+
+    let extraHtml = '';
+
+    if (type === 'source') {
+        extraHtml = `
+        <div class="props-field">
+            <label class="props-checkbox-label">
+                <input type="checkbox" id="props-cfg-continuous" ${cfg.continuous ? 'checked' : ''}>
+                Continuous（Duration中ずっと生成）
+            </label>
+            <div class="props-hint">ONの場合 Work Count は自動計算</div>
+        </div>
+        <div class="props-field">
+            <label>Work Type</label>
+            <input type="text" id="props-cfg-workType" value="${_escapeHtml(cfg.workType || '')}" placeholder="(例: partA)">
+            <div class="props-hint">生成ワーク種別（Merge/Split で使用）</div>
+        </div>`;
+    }
+
+    if (type === 'merge') {
+        extraHtml = `
+        <div class="props-field props-section-header">入力ポート (Merge Ports)</div>
+        <div class="props-field">
+            <label>ポート数</label>
+            <input type="number" id="props-cfg-mergeCount" value="${cfg.mergeCount || 2}" min="1" step="1">
+        </div>
+        <div id="props-merge-ports">${_buildMergePortsHtml(s)}</div>
+        <div class="props-field">
+            <label>出力ワーク Type</label>
+            <input type="text" id="props-cfg-outputWorkType" value="${_escapeHtml(cfg.outputWorkType || '')}" placeholder="(例: assembly-AB)">
+        </div>`;
+    }
+
+    if (type === 'split') {
+        extraHtml = `
+        <div class="props-field props-section-header">出力ポート (Split Ports)</div>
+        <div class="props-field">
+            <label>ポート数</label>
+            <input type="number" id="props-cfg-splitCount" value="${cfg.splitCount || 2}" min="1" step="1">
+        </div>
+        <div id="props-split-ports">${_buildSplitPortsHtml(s)}</div>`;
+    }
+
+    return fieldsHtml + extraHtml;
+}
+
+// --- Helper: full props panel HTML ---
+function _buildPropsHtml(s) {
+    const typeOptions = ['source', 'processing', 'drain', 'merge', 'split', 'entry', 'exit']
+        .map(t => `<option value="${t}" ${s.stationType === t ? 'selected' : ''}>${t}</option>`)
+        .join('');
+
+    return `
+        <div class="props-field">
+            <label>名前</label>
+            <input type="text" id="props-name" value="${_escapeHtml(s.name || '')}">
+        </div>
+        <div class="props-field">
+            <label>タイプ</label>
+            <select id="props-type">${typeOptions}</select>
+        </div>
+        <div class="props-field">
+            <label>位置 X (m)</label>
+            <input type="number" id="props-pos-x" value="${s.positionX != null ? s.positionX : 0}" step="0.1">
+        </div>
+        <div class="props-field">
+            <label>位置 Y (m)</label>
+            <input type="number" id="props-pos-y" value="${s.positionY != null ? s.positionY : 0}" step="0.1">
+        </div>
+        <div class="props-field">
+            <label>Location ID</label>
+            <input type="number" id="props-location-id" value="${s.config?.locationId || 0}" min="0" step="1">
+        </div>
+        <div id="props-type-config">${_buildTypeConfigHtml(s)}</div>
+        <button id="props-unplace" style="margin-top:8px;font-size:11px;padding:4px 8px;background:var(--bg-surface);color:var(--text-secondary);border:1px solid var(--border-color);border-radius:3px;cursor:pointer;width:100%;">配置を解除</button>
+        <button class="props-delete-btn" id="props-delete">このステーションを削除</button>`;
+}
+
+// --- Attach listeners for merge port capacity inputs ---
+function _attachMergePortListeners(s) {
+    document.querySelectorAll('#props-merge-ports .props-port-capacity').forEach((inp, i) => {
+        inp.addEventListener('change', e => {
+            s.config.inPorts = s.config.inPorts || [];
+            if (!s.config.inPorts[i]) s.config.inPorts[i] = {};
+            s.config.inPorts[i].capacity = parseInt(e.target.value) || 1;
+        });
+    });
+}
+
+// --- Attach listeners for split port capacity inputs ---
+function _attachSplitPortListeners(s) {
+    document.querySelectorAll('#props-split-ports .props-port-capacity').forEach((inp, i) => {
+        inp.addEventListener('change', e => {
+            s.config.outPorts = s.config.outPorts || [];
+            if (!s.config.outPorts[i]) s.config.outPorts[i] = {};
+            s.config.outPorts[i].capacity = parseInt(e.target.value) || 1;
+        });
+    });
+}
+
+// --- Attach all event listeners after rendering the props panel ---
+function _attachPropsListeners(s) {
+    const fields = document.getElementById('props-fields');
+    if (!fields) return;
+
+    fields.querySelector('#props-name')?.addEventListener('change', e => {
+        s.name = e.target.value;
+        renderLogicSVG();
+    });
+
+    fields.querySelector('#props-type')?.addEventListener('change', e => {
+        s.stationType = e.target.value;
+        s.config = {};
+        updatePropsPanel();
+        renderLogicSVG();
+        renderUnplacedList();
+    });
+
+    fields.querySelector('#props-pos-x')?.addEventListener('change', e => {
+        s.positionX = parseFloat(e.target.value) || 0;
+        refreshLogicSVGSize();
+        renderLogicSVG();
+        updatePalettePos();
+    });
+
+    fields.querySelector('#props-pos-y')?.addEventListener('change', e => {
+        s.positionY = parseFloat(e.target.value) || 0;
+        refreshLogicSVGSize();
+        renderLogicSVG();
+        updatePalettePos();
+    });
+
+    fields.querySelector('#props-location-id')?.addEventListener('change', e => {
+        s.config = s.config || {};
+        s.config.locationId = parseInt(e.target.value) || 0;
+    });
+
+    // Numeric config fields
+    _getConfigFields(s.stationType).forEach(f => {
+        fields.querySelector(`#props-cfg-${f.key}`)?.addEventListener('change', e => {
+            s.config = s.config || {};
+            s.config[f.key] = parseFloat(e.target.value) || 0;
         });
     });
 
-    document.getElementById('props-unplace').addEventListener('click', () => {
-        if (!_selectedStation) return;
-        const s = childStations.find(s => s.stationId === _selectedStation);
-        if (!s) return;
+    // Source extras
+    if (s.stationType === 'source') {
+        fields.querySelector('#props-cfg-continuous')?.addEventListener('change', e => {
+            s.config = s.config || {};
+            s.config.continuous = e.target.checked;
+            const wc = fields.querySelector('#props-cfg-workCount');
+            if (wc) wc.disabled = e.target.checked;
+        });
+        fields.querySelector('#props-cfg-workType')?.addEventListener('change', e => {
+            s.config = s.config || {};
+            s.config.workType = e.target.value.trim();
+        });
+    }
+
+    // Merge extras
+    if (s.stationType === 'merge') {
+        fields.querySelector('#props-cfg-mergeCount')?.addEventListener('change', e => {
+            s.config = s.config || {};
+            s.config.mergeCount = parseInt(e.target.value) || 2;
+            const list = fields.querySelector('#props-merge-ports');
+            if (list) { list.innerHTML = _buildMergePortsHtml(s); _attachMergePortListeners(s); }
+        });
+        _attachMergePortListeners(s);
+        fields.querySelector('#props-cfg-outputWorkType')?.addEventListener('change', e => {
+            s.config = s.config || {};
+            s.config.outputWorkType = e.target.value.trim();
+        });
+    }
+
+    // Split extras
+    if (s.stationType === 'split') {
+        fields.querySelector('#props-cfg-splitCount')?.addEventListener('change', e => {
+            s.config = s.config || {};
+            s.config.splitCount = parseInt(e.target.value) || 2;
+            const list = fields.querySelector('#props-split-ports');
+            if (list) { list.innerHTML = _buildSplitPortsHtml(s); _attachSplitPortListeners(s); }
+        });
+        _attachSplitPortListeners(s);
+    }
+
+    fields.querySelector('#props-unplace')?.addEventListener('click', () => {
         s.positionX = null;
         s.positionY = null;
         _selectedStation = null;
@@ -1195,7 +1438,7 @@ function initPropsPanel() {
         updateInfoBar();
     });
 
-    document.getElementById('props-delete').addEventListener('click', () => {
+    fields.querySelector('#props-delete')?.addEventListener('click', () => {
         if (_selectedStation) deleteStation(_selectedStation);
     });
 }
@@ -1207,23 +1450,20 @@ function updatePropsPanel() {
     if (!_selectedStation) {
         empty.style.display = '';
         fields.style.display = 'none';
+        fields.innerHTML = '';
         return;
     }
     const s = childStations.find(s => s.stationId === _selectedStation);
     if (!s) {
         empty.style.display = '';
         fields.style.display = 'none';
+        fields.innerHTML = '';
         return;
     }
     empty.style.display = 'none';
     fields.style.display = '';
-
-    document.getElementById('props-name').value = s.name || '';
-    document.getElementById('props-type').value = s.stationType || 'processing';
-    document.getElementById('props-pos-x').value = s.positionX || 0;
-    document.getElementById('props-pos-y').value = s.positionY || 0;
-    document.getElementById('props-processing-time').value = s.config?.processingTime || 0;
-    document.getElementById('props-location-id').value = s.config?.locationId || 0;
+    fields.innerHTML = _buildPropsHtml(s);
+    _attachPropsListeners(s);
 }
 
 function updatePalettePos() {

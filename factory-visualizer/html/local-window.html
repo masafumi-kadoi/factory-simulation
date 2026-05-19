@@ -168,6 +168,20 @@
             background: var(--status-error, #dc3545); color: #fff;
             border: none; border-radius: 3px; cursor: pointer; width: 100%;
         }
+        .props-section-header {
+            font-size: 10px; font-weight: 600; color: var(--text-secondary);
+            border-top: 1px solid var(--border-color); margin-top: 4px; padding-top: 8px;
+        }
+        .props-hint { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
+        .props-checkbox-label { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-muted); cursor: pointer; }
+        .props-checkbox-label input[type="checkbox"] { width: auto; margin: 0; }
+        .props-port-row {
+            display: flex; align-items: center; gap: 4px;
+            margin-bottom: 4px; font-size: 10px;
+        }
+        .props-port-label { color: var(--text-muted); min-width: 40px; }
+        .props-port-capacity { width: 44px !important; text-align: right; }
+        .props-port-unit { color: var(--text-muted); white-space: nowrap; }
 
         /* ---- Bottom bar ---- */
         .bottom-bar {
@@ -300,42 +314,7 @@
         <div class="logic-props" id="logic-props">
             <div class="props-title">プロパティ</div>
             <div class="props-empty" id="props-empty">ステーションを選択</div>
-            <div id="props-fields" style="display:none;">
-                <div class="props-field">
-                    <label>名前</label>
-                    <input type="text" id="props-name">
-                </div>
-                <div class="props-field">
-                    <label>タイプ</label>
-                    <select id="props-type">
-                        <option value="source">source</option>
-                        <option value="processing">processing</option>
-                        <option value="drain">drain</option>
-                        <option value="merge">merge</option>
-                        <option value="split">split</option>
-                        <option value="entry">entry</option>
-                        <option value="exit">exit</option>
-                    </select>
-                </div>
-                <div class="props-field">
-                    <label>位置 X (m)</label>
-                    <input type="number" id="props-pos-x" step="0.1">
-                </div>
-                <div class="props-field">
-                    <label>位置 Y (m)</label>
-                    <input type="number" id="props-pos-y" step="0.1">
-                </div>
-                <div class="props-field">
-                    <label>処理時間 (秒)</label>
-                    <input type="number" id="props-processing-time" min="0" step="1">
-                </div>
-                <div class="props-field">
-                    <label>Location ID</label>
-                    <input type="number" id="props-location-id" min="0" step="1">
-                </div>
-                <button class="props-unplace-btn" id="props-unplace" style="margin-top:8px;font-size:11px;padding:4px 8px;background:var(--bg-surface);color:var(--text-secondary);border:1px solid var(--border-color);border-radius:3px;cursor:pointer;width:100%;">配置を解除</button>
-                <button class="props-delete-btn" id="props-delete">このステーションを削除</button>
-            </div>
+            <div id="props-fields" style="display:none;"></div>
         </div>
     </div>
 
