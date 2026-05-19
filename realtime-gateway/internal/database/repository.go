@@ -19,6 +19,7 @@ type Factory struct {
 	FactoryDBName *string   `json:"factoryDbName,omitempty"`
 	FactoryDBUser *string   `json:"factoryDbUser,omitempty"`
 	FactoryDBPass *string   `json:"factoryDbPassword,omitempty"`
+	StationCount  int       `json:"stationCount"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
@@ -63,8 +64,10 @@ type FactoryConnection struct {
 
 func (r *Repository) ListFactories() ([]Factory, error) {
 	rows, err := r.db.Conn().Query(
-		`SELECT id, name, description, factory_db_host, factory_db_port, factory_db_name, factory_db_user, factory_db_password, created_at, updated_at
-		 FROM factories ORDER BY created_at DESC`)
+		`SELECT f.id, f.name, f.description, f.factory_db_host, f.factory_db_port, f.factory_db_name, f.factory_db_user, f.factory_db_password, COUNT(fs.id) AS station_count, f.created_at, f.updated_at
+		 FROM factories f LEFT JOIN factory_stations fs ON fs.factory_id = f.id
+		 GROUP BY f.id, f.name, f.description, f.factory_db_host, f.factory_db_port, f.factory_db_name, f.factory_db_user, f.factory_db_password, f.created_at, f.updated_at
+		 ORDER BY f.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +76,7 @@ func (r *Repository) ListFactories() ([]Factory, error) {
 	for rows.Next() {
 		var f Factory
 		if err := rows.Scan(&f.ID, &f.Name, &f.Description, &f.FactoryDBHost, &f.FactoryDBPort,
-			&f.FactoryDBName, &f.FactoryDBUser, &f.FactoryDBPass, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			&f.FactoryDBName, &f.FactoryDBUser, &f.FactoryDBPass, &f.StationCount, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, f)

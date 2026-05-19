@@ -18,7 +18,7 @@ async function loadFactories() {
                 <a href="factory.html?id=${f.id}" class="factory-card-link">
                     <div class="factory-card-name">${escapeHtml(f.name)}</div>
                     <div class="factory-card-meta">${escapeHtml(f.description || '')}${f.description ? '<br>' : ''}
-                        <span style="font-size:12px">${f.station_count || 0} stations</span>
+                        <span style="font-size:12px">${f.stationCount || 0} stations</span>
                     </div>
                 </a>
                 <button class="btn btn-danger btn-sm factory-card-delete" data-factory-id="${escapeHtml(f.id)}" onclick="deleteFactory(this.dataset.factoryId)">Delete</button>
