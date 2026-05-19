@@ -201,8 +201,10 @@ export class Scene3D {
     loadFactory(stations, connections) {
         this._clearAll();
 
-        const machines = stations.filter(s => s.stationType === 'machine');
-        const internals = stations.filter(s => s.stationType !== 'machine');
+        // 未配置（positionX == null）の設備は 3D シーンに表示しない
+        const machines = stations.filter(s => s.stationType === 'machine' && s.positionX != null);
+        const placedMachineIds = new Set(machines.map(m => m.stationId));
+        const internals = stations.filter(s => s.stationType !== 'machine' && s.parentId != null && placedMachineIds.has(s.parentId));
 
         // Group machines by equipment name (strip .NNN suffix) and render shells
         const groups = this._groupByEquipment(machines);
