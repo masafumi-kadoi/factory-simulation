@@ -40,36 +40,47 @@ type WriteInput struct {
 	StationStatusLogs []simulation.StationStatusLog
 }
 
+// Write persists all simulation results in a single transaction so partial
+// failures never leave the DB in a corrupt state.
 func (w *DirectWriter) Write(input WriteInput) error {
-	if err := w.writeLocationMaster(input.Scenario); err != nil {
+	tx, err := w.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := w.writeLocationMaster(tx, input.Scenario); err != nil {
 		return fmt.Errorf("location_master: %w", err)
 	}
-	if err := w.writeConnectionMaster(input.Scenario); err != nil {
+	if err := w.writeConnectionMaster(tx, input.Scenario); err != nil {
 		return fmt.Errorf("connection_master: %w", err)
 	}
-	if err := w.writeMachineMaster(input.Scenario); err != nil {
+	if err := w.writeMachineMaster(tx, input.Scenario); err != nil {
 		return fmt.Errorf("machine_master: %w", err)
 	}
-	if err := w.writeItemMaster(input.WorkEvents); err != nil {
+	if err := w.writeItemMaster(tx, input.WorkEvents); err != nil {
 		return fmt.Errorf("item_master: %w", err)
 	}
-	if err := w.writeItemMovement(input.WorkEvents); err != nil {
+	if err := w.writeItemMovement(tx, input.WorkEvents); err != nil {
 		return fmt.Errorf("item_movement: %w", err)
 	}
-	if err := w.writeItemLineage(input.LineageLogs); err != nil {
+	if err := w.writeItemLineage(tx, input.LineageLogs); err != nil {
 		return fmt.Errorf("item_lineage: %w", err)
 	}
-	if err := w.writeItemStatus(input.WorkEvents); err != nil {
+	if err := w.writeItemStatus(tx, input.WorkEvents); err != nil {
 		return fmt.Errorf("item_status: %w", err)
 	}
-	if err := w.writeMachineSignal(input.StationStatusLogs); err != nil {
+	if err := w.writeMachineSignal(tx, input.StationStatusLogs); err != nil {
 		return fmt.Errorf("machine_signal: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
 	}
 	log.Printf("[DirectWriter] completed for data_source_id=%s", w.dataSourceID)
 	return nil
 }
 
-func (w *DirectWriter) writeLocationMaster(scenario *domain.Scenario) error {
+func (w *DirectWriter) writeLocationMaster(tx *sql.Tx, scenario *domain.Scenario) error {
 	for _, station := range scenario.Stations {
 		var maxCapacity int64 = 1
 		if v, ok := station.Config["bufferCapacity"]; ok {
@@ -110,7 +121,7 @@ func (w *DirectWriter) writeLocationMaster(scenario *domain.Scenario) error {
 			}
 		}
 		var id int64
-		err := w.db.QueryRow(
+		err := tx.QueryRow(
 			`INSERT INTO location_master (data_source_id, name, station_type, parent_location_id, pos_x, pos_y, pos_z, max_capacity, processing_time, merge_count, split_count)
 			 VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10) RETURNING id`,
 			w.dataSourceID, station.ID, string(station.Type), parentLocationID,
@@ -125,7 +136,7 @@ func (w *DirectWriter) writeLocationMaster(scenario *domain.Scenario) error {
 	return nil
 }
 
-func (w *DirectWriter) writeConnectionMaster(scenario *domain.Scenario) error {
+func (w *DirectWriter) writeConnectionMaster(tx *sql.Tx, scenario *domain.Scenario) error {
 	for _, conn := range scenario.Connections {
 		fromLocID, fromOk := w.locationMap[conn.From]
 		toLocID, toOk := w.locationMap[conn.To]
@@ -146,7 +157,7 @@ func (w *DirectWriter) writeConnectionMaster(scenario *domain.Scenario) error {
 			c := string(conn.Condition)
 			cond = &c
 		}
-		_, err := w.db.Exec(
+		_, err := tx.Exec(
 			`INSERT INTO connection_master (data_source_id, from_location_id, to_location_id, from_port_index, to_port_index, condition)
 			 VALUES ($1,$2,$3,$4,$5,$6)`,
 			w.dataSourceID, fromLocID, toLocID, fromPort, toPort, cond,
@@ -158,7 +169,7 @@ func (w *DirectWriter) writeConnectionMaster(scenario *domain.Scenario) error {
 	return nil
 }
 
-func (w *DirectWriter) writeMachineMaster(scenario *domain.Scenario) error {
+func (w *DirectWriter) writeMachineMaster(tx *sql.Tx, scenario *domain.Scenario) error {
 	for _, station := range scenario.Stations {
 		if station.Type == domain.StationTypeSource || station.Type == domain.StationTypeDrain {
 			continue
@@ -181,7 +192,7 @@ func (w *DirectWriter) writeMachineMaster(scenario *domain.Scenario) error {
 				cycleTime = &f
 			}
 		}
-		_, err := w.db.Exec(
+		_, err := tx.Exec(
 			`INSERT INTO machine_master (id, data_source_id, name, location_id, cycle_time) VALUES ($1,$2,$3,$4,$5)`,
 			machineID, w.dataSourceID, name, locID, cycleTime,
 		)
@@ -192,7 +203,7 @@ func (w *DirectWriter) writeMachineMaster(scenario *domain.Scenario) error {
 	return nil
 }
 
-func (w *DirectWriter) writeItemMaster(events []simulation.WorkEventLog) error {
+func (w *DirectWriter) writeItemMaster(tx *sql.Tx, events []simulation.WorkEventLog) error {
 	seen := make(map[string]bool)
 	for _, ev := range events {
 		if ev.EventType != "WorkCreated" || seen[ev.WorkID] {
@@ -203,7 +214,7 @@ func (w *DirectWriter) writeItemMaster(events []simulation.WorkEventLog) error {
 		if itemType == "" {
 			itemType = "work"
 		}
-		_, err := w.db.Exec(
+		_, err := tx.Exec(
 			`INSERT INTO item_master (id, data_source_id, item_type) VALUES ($1,$2,$3)`,
 			ev.WorkID, w.dataSourceID, itemType,
 		)
@@ -214,7 +225,7 @@ func (w *DirectWriter) writeItemMaster(events []simulation.WorkEventLog) error {
 	return nil
 }
 
-func (w *DirectWriter) writeItemMovement(events []simulation.WorkEventLog) error {
+func (w *DirectWriter) writeItemMovement(tx *sql.Tx, events []simulation.WorkEventLog) error {
 	type hist struct {
 		ts        float64
 		stationID string
@@ -229,11 +240,6 @@ func (w *DirectWriter) writeItemMovement(events []simulation.WorkEventLog) error
 		}
 	}
 
-	tx, err := w.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	stmt, err := tx.Prepare(
 		`INSERT INTO item_movement (event_time, data_source_id, item_id, from_location_id, to_location_id, movement_type, port_index)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7)`)
@@ -254,6 +260,7 @@ func (w *DirectWriter) writeItemMovement(events []simulation.WorkEventLog) error
 			v := int16(ev.PortIndex)
 			portIndex = &v
 		}
+		var execErr error
 		if ev.EventType == "WorkArrived" {
 			var fromLocID *int64
 			for i := len(history) - 1; i >= 0; i-- {
@@ -265,7 +272,7 @@ func (w *DirectWriter) writeItemMovement(events []simulation.WorkEventLog) error
 					break
 				}
 			}
-			_, err = stmt.Exec(ts, w.dataSourceID, ev.WorkID, fromLocID, locID, "arrived", portIndex)
+			_, execErr = stmt.Exec(ts, w.dataSourceID, ev.WorkID, fromLocID, locID, "arrived", portIndex)
 		} else {
 			var toLocID *int64
 			for _, h := range history {
@@ -276,23 +283,23 @@ func (w *DirectWriter) writeItemMovement(events []simulation.WorkEventLog) error
 					break
 				}
 			}
-			_, err = stmt.Exec(ts, w.dataSourceID, ev.WorkID, locID, toLocID, "departed", portIndex)
+			_, execErr = stmt.Exec(ts, w.dataSourceID, ev.WorkID, locID, toLocID, "departed", portIndex)
 		}
-		if err != nil {
-			return fmt.Errorf("insert item_movement: %w", err)
+		if execErr != nil {
+			return fmt.Errorf("insert item_movement: %w", execErr)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
-func (w *DirectWriter) writeItemLineage(logs []simulation.WorkLineageLog) error {
+func (w *DirectWriter) writeItemLineage(tx *sql.Tx, logs []simulation.WorkLineageLog) error {
 	for _, l := range logs {
 		locID, ok := w.locationMap[l.StationID]
 		if !ok {
 			continue
 		}
 		ts := w.simTimeToTimestamp(l.Timestamp)
-		_, err := w.db.Exec(
+		_, err := tx.Exec(
 			`INSERT INTO item_lineage (event_time, data_source_id, input_item_id, output_item_id, location_id)
 			 VALUES ($1,$2,$3,$4,$5)`,
 			ts, w.dataSourceID, l.ParentWorkID, l.ChildWorkID, locID,
@@ -304,7 +311,7 @@ func (w *DirectWriter) writeItemLineage(logs []simulation.WorkLineageLog) error 
 	return nil
 }
 
-func (w *DirectWriter) writeItemStatus(events []simulation.WorkEventLog) error {
+func (w *DirectWriter) writeItemStatus(tx *sql.Tx, events []simulation.WorkEventLog) error {
 	for _, ev := range events {
 		if ev.EventType != "ProcessingCompleted" || ev.QualityStatus == "" || ev.QualityStatus == "未判定" {
 			continue
@@ -323,7 +330,7 @@ func (w *DirectWriter) writeItemStatus(events []simulation.WorkEventLog) error {
 		default:
 			status = 99
 		}
-		_, err := w.db.Exec(
+		_, err := tx.Exec(
 			`INSERT INTO item_status (event_time, data_source_id, item_id, location_id, status)
 			 VALUES ($1,$2,$3,$4,$5)`,
 			ts, w.dataSourceID, ev.WorkID, locID, status,
@@ -335,12 +342,7 @@ func (w *DirectWriter) writeItemStatus(events []simulation.WorkEventLog) error {
 	return nil
 }
 
-func (w *DirectWriter) writeMachineSignal(logs []simulation.StationStatusLog) error {
-	tx, err := w.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
+func (w *DirectWriter) writeMachineSignal(tx *sql.Tx, logs []simulation.StationStatusLog) error {
 	stmt, err := tx.Prepare(
 		`INSERT INTO machine_signal (event_time, data_source_id, machine_id, signal_name, value, old_value, rule_id)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7)`)
@@ -366,5 +368,5 @@ func (w *DirectWriter) writeMachineSignal(logs []simulation.StationStatusLog) er
 			return fmt.Errorf("insert machine_signal: %w", err)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
