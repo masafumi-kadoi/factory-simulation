@@ -151,7 +151,8 @@ function initUI() {
     setExecutionListClickHandler(async (execId, dsId) => {
         if (!dsId) return;
         state.liveDataSourceId = dsId;
-        subscribeWebSocket(dsId);
+        // await ensures locationMap is populated before replaying events
+        await subscribeWebSocket(dsId);
         setStatus('実行履歴を再生中', 'status-running');
         document.getElementById('btn-stop-sim').disabled = false;
         const vizBtn = document.getElementById('btn-open-visualizer');
@@ -168,6 +169,25 @@ function initUI() {
         } catch (e) {
             console.warn('[execHistory] failed to fetch execution for timeline', e);
         }
+
+        // Replay historical events so the 3D view shows the simulation final state
+        try {
+            const events = await API.fetchDataSourceEvents(
+                dsId,
+                new Date(0).toISOString(),
+                new Date('2100-01-01').toISOString()
+            );
+            if (Array.isArray(events)) {
+                if (scene3d) scene3d.clearWorks();
+                state.activeWorks.clear();
+                for (const ev of events) {
+                    handleWsEvent(ev);
+                }
+            }
+        } catch (e) {
+            console.warn('[execHistory] failed to replay historical events', e);
+        }
+        timeline.seekToEnd();
     });
 
     // Factory selector

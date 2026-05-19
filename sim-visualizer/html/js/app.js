@@ -1461,7 +1461,13 @@ class App {
         if (!ev) return;
 
         if (ev.EventType) {
-            this.logs.workEvents.push(ev);
+            // Insert in timestamp order so _binarySearchUpperBound remains valid.
+            const insertIdx = this._binarySearchUpperBound(this.logs.workEvents, ev.Timestamp);
+            this.logs.workEvents.splice(insertIdx, 0, ev);
+            // Shift the departure map index and rebuild from the insertion point.
+            if (insertIdx < this._depMapBuiltUpTo) {
+                this._depMapBuiltUpTo = insertIdx;
+            }
             this._extendDepartureMap();
         } else if (ev.StatusType) {
             this.logs.stationStatusLogs.push(ev);
