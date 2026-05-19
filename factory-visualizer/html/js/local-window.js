@@ -15,7 +15,7 @@ let childStations = [];
 let childConnections = [];
 
 // ---- 3D Model tab state ----
-const METER_SCALE = 10; // 1m = 10 Three.js units
+const METER_SCALE = 1; // 1m = 1 Three.js unit (GLTF standard)
 const _grid = {
     gridSize: 0.5,   // meters per cell
     height: 1.5,     // meters tall
@@ -412,10 +412,10 @@ function init3DPreview() {
 
     _3dScene = new THREE.Scene();
     _3dScene.background = new THREE.Color(0x0f1629);
-    _3dScene.fog = new THREE.Fog(0x0f1629, 800, 2000);
+    _3dScene.fog = new THREE.Fog(0x0f1629, 80, 200);
 
-    _3dCamera = new THREE.PerspectiveCamera(45, w / h, 1, 3000);
-    _3dCamera.position.set(0, 120, 200);
+    _3dCamera = new THREE.PerspectiveCamera(45, w / h, 0.1, 300);
+    _3dCamera.position.set(0, 12, 20);
     _3dCamera.lookAt(0, 0, 0);
 
     _3dRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -425,11 +425,11 @@ function init3DPreview() {
 
     _3dScene.add(new THREE.AmbientLight(0xffffff, 0.45));
     const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(100, 200, 100);
+    dir.position.set(10, 20, 10);
     dir.castShadow = true;
     _3dScene.add(dir);
 
-    const grid = new THREE.GridHelper(600, 20, 0x1a2744, 0x1a2744);
+    const grid = new THREE.GridHelper(60, 20, 0x1a2744, 0x1a2744);
     _3dScene.add(grid);
 
     _3dControls = new OrbitControls(_3dCamera, canvas);
@@ -519,7 +519,7 @@ function _loadGlbPreview(arrayBuffer) {
         const size = new THREE.Vector3();
         box.getSize(size);
         const maxDim = Math.max(size.x, size.y, size.z);
-        if (maxDim > 0) model.scale.setScalar(100 / maxDim);
+        if (maxDim > 0) model.scale.setScalar(10 / maxDim);
         // Place bottom at y=0
         box.setFromObject(model);
         model.position.y = -box.min.y;
@@ -589,29 +589,29 @@ function _initLogicProjection() {
         const halfWcam = Math.max(halfModelW, halfModelH * aspect);
         const halfHcam = halfWcam / aspect;
 
-        // ワールド座標のビュー範囲をメートル単位で記録（Three.js単位 ÷ METER_SCALE）
+        // ワールド座標のビュー範囲を記録（METER_SCALE=1のためThree.js単位=メートル）
         _logicWorldBounds = {
-            left:   (cx - halfWcam) / METER_SCALE,
-            right:  (cx + halfWcam) / METER_SCALE,
-            top:    (cz - halfHcam) / METER_SCALE,   // 画面上端 = 小さいZ
-            bottom: (cz + halfHcam) / METER_SCALE,   // 画面下端 = 大きいZ
+            left:   cx - halfWcam,
+            right:  cx + halfWcam,
+            top:    cz - halfHcam,   // 画面上端 = 小さいZ
+            bottom: cz + halfHcam,   // 画面下端 = 大きいZ
         };
 
         // OrthographicCamera: 真上(-Y方向)から見下ろす
         const cam = new THREE.OrthographicCamera(
             -halfWcam, halfWcam,   // left, right（カメラローカル = ワールドX）
              halfHcam, -halfHcam,  // top, bottom（カメラローカルY+ = ワールドZ-）
-            0.1, 10000
+            0.1, 1000
         );
-        cam.position.set(cx, 1000, cz);
+        cam.position.set(cx, 100, cz);
         cam.lookAt(cx, 0, cz);
         cam.up.set(0, 0, -1); // Z-方向が画面上端
 
-        // グローバルに保持。CX/CZはメートル単位で保存（viewBoxと合わせる）
+        // グローバルに保持（ズーム/パン時に再レンダリング可能にする）
         _logicProjectionCamera = cam;
         _logicProjectionScene = scene;
-        _logicProjectionCX = cx / METER_SCALE;
-        _logicProjectionCZ = cz / METER_SCALE;
+        _logicProjectionCX = cx;
+        _logicProjectionCZ = cz;
 
         renderer.render(scene, cam);
 
@@ -656,11 +656,10 @@ function _rerenderLogicProjection() {
     if (!_logicProjectionRenderer || !_logicProjectionCamera || !_logicProjectionScene) return;
     const { x: vx, y: vy, w: vw, h: vh } = _logicViewBox;
     const cam = _logicProjectionCamera;
-    // viewBoxはメートル単位、カメラはThree.js単位なのでMETER_SCALEを掛けて変換
-    cam.left   = (vx - _logicProjectionCX) * METER_SCALE;
-    cam.right  = ((vx + vw) - _logicProjectionCX) * METER_SCALE;
-    cam.top    = (_logicProjectionCZ - vy) * METER_SCALE;
-    cam.bottom = (_logicProjectionCZ - (vy + vh)) * METER_SCALE;
+    cam.left   = vx - _logicProjectionCX;
+    cam.right  = (vx + vw) - _logicProjectionCX;
+    cam.top    = _logicProjectionCZ - vy;
+    cam.bottom = _logicProjectionCZ - (vy + vh);
     cam.updateProjectionMatrix();
     const canvas = document.getElementById('logic-projection-canvas');
     const area = canvas?.parentElement;
