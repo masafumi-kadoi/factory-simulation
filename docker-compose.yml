@@ -148,6 +148,52 @@ services:
     networks:
       - factory-network
 
+  sim-executor:
+    build:
+      context: ./sim-executor
+      dockerfile: Dockerfile
+    container_name: factory-sim-executor
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - factory-network
+
+  sim-executor-backend:
+    build:
+      context: ./sim-executor
+      dockerfile: Dockerfile.backend
+    container_name: factory-sim-executor-backend
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: factory_simulation
+      PORT: 8084
+      SIMULATION_CORE_URL: http://simulation-core:8080
+      REALTIME_GATEWAY_URL: http://realtime-gateway:8090
+    expose:
+      - "8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      simulation-core:
+        condition: service_healthy
+      realtime-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8084/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - factory-network
+
   sim-portal:
     build:
       context: ./sim-portal
@@ -163,6 +209,8 @@ services:
       factory-visualizer:
         condition: service_healthy
       sim-factory-manager:
+        condition: service_healthy
+      sim-executor:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
@@ -190,6 +238,10 @@ services:
       factory-visualizer:
         condition: service_healthy
       sim-factory-manager:
+        condition: service_healthy
+      sim-executor:
+        condition: service_healthy
+      sim-executor-backend:
         condition: service_healthy
       realtime-gateway:
         condition: service_healthy
