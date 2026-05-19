@@ -83,7 +83,7 @@ function initScene() {
     scene3d.setOnEquipmentMove((equipName, data) => {
         _movedEquipment.set(equipName, data);
         const posEl = document.getElementById(`gf-pos-${equipName}`);
-        if (posEl) posEl.textContent = `X: ${Math.round(data.centroid.x)}, Y: ${Math.round(data.centroid.z)}`;
+        if (posEl) posEl.textContent = `X: ${data.centroid.x.toFixed(1)}m, Y: ${data.centroid.z.toFixed(1)}m`;
         const saveBtn = document.getElementById('gf-save-placement');
         if (saveBtn) { saveBtn.textContent = '保存して確定 *'; saveBtn.disabled = false; }
     });
@@ -911,18 +911,20 @@ function openG3DFloating(groupId, title) {
                 const cz = moved ? moved.centroid.z : members.reduce((acc, m) => acc + (m.positionY || 0), 0) / members.length;
                 rows.push(`<div class="gf-equip-row">
                     <span class="gf-equip-name">${esc(equipName)}</span>
-                    <span class="gf-equip-pos" id="gf-pos-${esc(equipName)}">X: ${Math.round(cx)}, Y: ${Math.round(cz)}</span>
+                    <span class="gf-equip-pos" id="gf-pos-${esc(equipName)}">X: ${cx.toFixed(1)}m, Y: ${cz.toFixed(1)}m</span>
                 </div>`);
             });
 
             body.innerHTML = `
                 <button class="btn-primary" id="gf-save-placement" style="width:100%;padding:6px;margin-bottom:4px;">保存して確定</button>
                 <button class="btn-secondary" id="gf-exit-placement" style="width:100%;padding:5px;margin-bottom:4px;">保存せず終了</button>
+                <button class="toolbar-btn" id="gf-refresh-placement" style="width:100%;padding:4px;margin-bottom:6px;font-size:11px;">↺ 表示を更新</button>
                 <div style="font-size:11px;color:var(--text-muted);">設備をドラッグして移動。確定で SimDB に保存されます。</div>
                 <div style="max-height:200px;overflow-y:auto;">${rows.join('') || '<div style="color:var(--text-muted);font-size:11px">設備がありません</div>'}</div>
             `;
             body.querySelector('#gf-exit-placement').addEventListener('click', closeG3DFloating);
             body.querySelector('#gf-save-placement').addEventListener('click', saveEquipPlacement);
+            body.querySelector('#gf-refresh-placement').addEventListener('click', () => openG3DFloating('placement'));
             break;
         }
         case 'global':
@@ -1042,7 +1044,7 @@ async function saveEquipPlacement() {
         const promises = [];
         _movedEquipment.forEach(({ machines }) => {
             machines.forEach(({ stationId, positionX, positionY }) => {
-                promises.push(API.updateStation(state.currentFactory, stationId, { positionX, positionY }));
+                promises.push(API.updateStation(state.currentFactory, stationId, { posX: positionX, posY: positionY }));
             });
         });
         await Promise.all(promises);
