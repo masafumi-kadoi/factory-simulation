@@ -179,6 +179,9 @@ function initUI() {
     document.getElementById('btn-run').addEventListener('click', () => openRunDialog());
     document.getElementById('btn-stop-sim').addEventListener('click', () => stopLive());
     document.getElementById('btn-fit').addEventListener('click', () => scene3d && scene3d.fitView());
+    document.getElementById('btn-refresh').addEventListener('click', async () => {
+        if (state.currentFactory) await selectFactory(state.currentFactory);
+    });
     const btnTop = document.getElementById('btn-top');
     let _topViewActive = false;
     btnTop.addEventListener('click', () => {
@@ -1082,10 +1085,6 @@ function initGlobalLogicEditTab() {
             gleUpdateHint();
             gleUpdateNodeStyles();
         });
-    });
-
-    document.getElementById('btn-gle-refresh').addEventListener('click', async () => {
-        if (state.currentFactory) await selectFactory(state.currentFactory);
     });
 
     // New machine button
