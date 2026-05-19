@@ -97,12 +97,8 @@ function initTabs() {
         const logicTab = document.querySelector('.tab[data-tab="logic"]');
         if (logicTab) { logicTab.classList.add('active'); document.getElementById('tab-logic').classList.add('active'); }
         else { document.querySelector('.tab[data-tab="info"]').classList.add('active'); document.getElementById('tab-info').classList.add('active'); }
-    } else if (_IS_MASTER && _SUFFIX_MATCH) {
-        // 設備マスター (.000): 3Dモデルのみ、ロジックタブを非表示
-        const logicTab = document.querySelector('.tab[data-tab="logic"]');
-        if (logicTab) logicTab.style.display = 'none';
     }
-    // サフィックスなし (スタンドアロン): 全タブ表示
+    // サフィックスなし / .000 マスター: 全タブ表示
 
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
