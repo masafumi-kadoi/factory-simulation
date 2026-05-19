@@ -34,6 +34,14 @@ const TOOLS = [
         status: 'online'
     },
     {
+        name: 'sim-executor',
+        icon: '\u25B6',
+        title: 'Sim Executor',
+        desc: 'Execute simulations from scenarios with SimDB initial conditions.',
+        url: SERVICE_URLS['sim-executor'],
+        status: 'online'
+    },
+    {
         name: 'sim-explorer',
         icon: '\uD83D\uDD0D',
         title: 'Parameter Explorer',

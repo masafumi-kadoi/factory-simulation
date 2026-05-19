@@ -8,6 +8,7 @@ const SERVICE_URLS = {
     'factory-visualizer': '/factory-visualizer',
     'sim-visualizer': '/visualizer',
     'sim-factory-manager': '/factory',
+    'sim-executor': '/executor',
 };
 
 const HEALTH_CHECK_TIMEOUT = 3000;
@@ -55,6 +56,7 @@ const PortalAPI = {
             { name: 'sim-editor', url: '/editor/', port: null },
             { name: 'factory-visualizer', url: '/factory-visualizer/', port: null },
             { name: 'sim-visualizer', url: '/visualizer/', port: null },
+            { name: 'sim-executor', url: '/executor/', port: null },
         ];
 
         const results = await Promise.all(
