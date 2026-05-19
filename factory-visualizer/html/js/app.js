@@ -1247,38 +1247,92 @@ function gleAutoLayout(machines) {
 function renderGlobalLogicGraph() {
     gleLoadPositions();
     const machines = state.stations.filter(s => s.stationType === 'machine');
-    gleAutoLayout(machines);
+    // gleAutoLayout は自動呼び出しせず、配置済み（_gleNodePositions に位置あり）のみ描画
 
-    // Update sidebar list
-    const listEl = document.getElementById('gle-machine-list');
-    if (!state.currentFactory) {
-        listEl.innerHTML = '<div class="empty-hint">工場を選択してください</div>';
-    } else {
-        listEl.innerHTML = machines.map(m =>
-            `<div class="gle-machine-item" data-sid="${esc(m.stationId)}">${esc(m.name || m.stationId)}</div>`
-        ).join('') || '<div class="empty-hint">設備がありません</div>';
-        listEl.querySelectorAll('.gle-machine-item').forEach(item => {
-            item.addEventListener('click', () => {
-                // Pan to node
-                const sid = item.dataset.sid;
-                gleScrollToNode(sid);
-            });
-        });
-    }
+    // サイドバー: 未配置設備グループを表示
+    renderGleUnplacedList(machines);
 
-    // Build SVG
+    // SVG 再描画
     const connLayer = document.getElementById('gle-conn-layer');
     const nodeLayer = document.getElementById('gle-node-layer');
     connLayer.innerHTML = '';
     nodeLayer.innerHTML = '';
 
-    // Draw connections
+    // 配置済みノード間の接続のみ描画
     const machineIds = new Set(machines.map(m => m.stationId));
-    state.connections.filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation))
+    state.connections
+        .filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation)
+                  && _gleNodePositions[c.fromStation] && _gleNodePositions[c.toStation])
         .forEach(c => gleDrawConnection(c, connLayer));
 
-    // Draw nodes
-    machines.forEach(m => gleDrawNode(m, nodeLayer));
+    // 配置済みノードのみ描画
+    machines.filter(m => _gleNodePositions[m.stationId])
+            .forEach(m => gleDrawNode(m, nodeLayer));
+}
+
+function renderGleUnplacedList(machines) {
+    const listEl = document.getElementById('gle-machine-list');
+    if (!listEl) return;
+
+    if (!state.currentFactory) {
+        listEl.innerHTML = '<div class="empty-hint">工場を選択してください</div>';
+        return;
+    }
+
+    // 設備グループ単位で集計
+    const equipMap = new Map();
+    machines.forEach(s => {
+        const equip = _equipNameOf(s.stationId);
+        if (!equipMap.has(equip)) equipMap.set(equip, []);
+        equipMap.get(equip).push(s);
+    });
+
+    // 未配置 = グループのメンバー全員が _gleNodePositions に存在しない
+    const unplaced = [];
+    equipMap.forEach((members, equipName) => {
+        if (members.every(s => !_gleNodePositions[s.stationId])) {
+            unplaced.push({ equipName, members });
+        }
+    });
+
+    listEl.innerHTML = '';
+    if (unplaced.length === 0) {
+        const msg = document.createElement('div');
+        msg.className = 'empty-hint';
+        msg.style.fontSize = '11px';
+        msg.style.padding = '6px 12px';
+        msg.textContent = machines.length === 0 ? '設備がありません' : '全て配置済み';
+        listEl.appendChild(msg);
+        return;
+    }
+
+    unplaced.forEach(({ equipName, members }) => {
+        const item = document.createElement('div');
+        item.className = 'gle-machine-item';
+        item.textContent = equipName;
+        item.title = `${equipName} (${members.length}台)  クリックで配置`;
+        item.addEventListener('click', () => gleAddEquipmentToCanvas(equipName, members));
+        listEl.appendChild(item);
+    });
+}
+
+function gleAddEquipmentToCanvas(equipName, members) {
+    const existing = Object.values(_gleNodePositions);
+    const SPACING_X = GLE_NODE_W + 60;
+    const SPACING_Y = GLE_NODE_H + 60;
+
+    let startX = 60;
+    let startY = 60;
+    if (existing.length > 0) {
+        startY = Math.max(...existing.map(p => p.y)) + SPACING_Y;
+    }
+
+    members.forEach((s, i) => {
+        _gleNodePositions[s.stationId] = { x: startX + i * SPACING_X, y: startY };
+    });
+
+    gleSavePositions();
+    renderGlobalLogicGraph();
 }
 
 function gleDrawNode(machine, layer) {
@@ -1412,13 +1466,13 @@ function gleAttachNodeEvents(g, machine) {
         openLocalWindow(sid);
     });
 
-    g.querySelector('rect').addEventListener('mouseenter', () => {
-        g.querySelector('rect').setAttribute('stroke', 'var(--accent-blue)');
-    });
-    g.querySelector('rect').addEventListener('mouseleave', () => {
-        if (_gleSelectedNode !== sid)
-            g.querySelector('rect').setAttribute('stroke', 'var(--border-light)');
-    });
+    const shape = g.querySelector('circle') || g.querySelector('rect');
+    if (shape) {
+        shape.addEventListener('mouseenter', () => shape.setAttribute('stroke', 'var(--accent-blue)'));
+        shape.addEventListener('mouseleave', () => {
+            if (_gleSelectedNode !== sid) shape.setAttribute('stroke', 'var(--border-light)');
+        });
+    }
 }
 
 function gleRedrawConnections() {
@@ -1428,7 +1482,8 @@ function gleRedrawConnections() {
         state.stations.filter(s => s.stationType === 'machine').map(m => m.stationId)
     );
     state.connections
-        .filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation))
+        .filter(c => machineIds.has(c.fromStation) && machineIds.has(c.toStation)
+                  && _gleNodePositions[c.fromStation] && _gleNodePositions[c.toStation])
         .forEach(c => gleDrawConnection(c, connLayer));
 }
 
