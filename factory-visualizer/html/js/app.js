@@ -1361,17 +1361,31 @@ function _gleCalcPortPositions(equips, stationToEquip) {
     const cy = GLE_NODE_H / 2;
 
     equips.forEach(equip => {
-        const { equipName, exitPorts, entryPorts } = equip;
+        const { equipName, exitPorts, entryPorts, members } = equip;
         const pos = _gleNodePositions[equipName];
         if (!pos) return;
         const absCx = pos.x + cx;
         const absCy = pos.y + cy;
+        const memberIds = new Set(members.map(m => m.stationId));
 
-        const calcAngle = (portSid, defaultAngle) => {
-            const conn = state.connections.find(c => c.fromStation === portSid || c.toStation === portSid);
+        // ポート stationId で接続を探し、なければメンバー機器IDでフォールバック
+        const calcAngle = (portSid, portType, defaultAngle) => {
+            // 1st: ポートIDで直接検索（ポートIDで接続が作られた場合）
+            let conn = state.connections.find(c => c.fromStation === portSid || c.toStation === portSid);
+
+            // 2nd: メンバー機器IDで検索（機器IDで接続が作られた場合）
+            if (!conn) {
+                if (portType === 'exit') {
+                    conn = state.connections.find(c => memberIds.has(c.fromStation) && !memberIds.has(c.toStation));
+                } else {
+                    conn = state.connections.find(c => !memberIds.has(c.fromStation) && memberIds.has(c.toStation));
+                }
+            }
+
             if (conn) {
-                const otherSid = conn.fromStation === portSid ? conn.toStation : conn.fromStation;
-                const otherEquip = stationToEquip.get(otherSid);
+                const fromEquip = stationToEquip.get(conn.fromStation);
+                const toEquip   = stationToEquip.get(conn.toStation);
+                const otherEquip = fromEquip === equipName ? toEquip : fromEquip;
                 const otherPos = otherEquip && _gleNodePositions[otherEquip];
                 if (otherPos) {
                     return Math.atan2((otherPos.y + cy) - absCy, (otherPos.x + cx) - absCx);
@@ -1385,7 +1399,7 @@ function _gleCalcPortPositions(equips, stationToEquip) {
             const base = 0; // 右側
             const def = exitPorts.length === 1 ? base
                 : base + (i / (exitPorts.length - 1) - 0.5) * spread;
-            const angle = calcAngle(port.stationId, def);
+            const angle = calcAngle(port.stationId, 'exit', def);
             portPos.set(port.stationId, {
                 relX: cx + GLE_NODE_R * Math.cos(angle),
                 relY: cy + GLE_NODE_R * Math.sin(angle),
@@ -1398,7 +1412,7 @@ function _gleCalcPortPositions(equips, stationToEquip) {
             const base = Math.PI; // 左側
             const def = entryPorts.length === 1 ? base
                 : base + (i / (entryPorts.length - 1) - 0.5) * spread;
-            const angle = calcAngle(port.stationId, def);
+            const angle = calcAngle(port.stationId, 'entry', def);
             portPos.set(port.stationId, {
                 relX: cx + GLE_NODE_R * Math.cos(angle),
                 relY: cy + GLE_NODE_R * Math.sin(angle),
