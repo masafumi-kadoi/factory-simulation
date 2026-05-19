@@ -15,15 +15,17 @@ import (
 
 // Handler handles HTTP requests for sim-executor
 type Handler struct {
-	repo              *database.Repository
-	simulationCoreURL string
+	repo               *database.Repository
+	simulationCoreURL  string
+	realtimeGatewayURL string
 }
 
 // NewHandler creates a new handler
-func NewHandler(repo *database.Repository, simulationCoreURL string) *Handler {
+func NewHandler(repo *database.Repository, simulationCoreURL, realtimeGatewayURL string) *Handler {
 	return &Handler{
-		repo:              repo,
-		simulationCoreURL: simulationCoreURL,
+		repo:               repo,
+		simulationCoreURL:  simulationCoreURL,
+		realtimeGatewayURL: realtimeGatewayURL,
 	}
 }
 
@@ -90,7 +92,7 @@ type EndCondition struct {
 // ExecuteResponse represents the response after execution
 type ExecuteResponse struct {
 	ExecutionID  string  `json:"executionId"`
-	SimulationID string  `json:"simulationId"`
+	DataSourceID string  `json:"dataSourceId,omitempty"`
 	Status       string  `json:"status"`
 	EndTime      float64 `json:"endTime,omitempty"`
 	EndReason    string  `json:"endReason,omitempty"`
@@ -264,7 +266,7 @@ func (h *Handler) HandleExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create execution record
+	// Create execution record (status: running)
 	executionID := uuid.New().String()
 	now := time.Now()
 	exec := &database.ExecutionConfig{
@@ -284,80 +286,77 @@ func (h *Handler) HandleExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build simulation-core request
-	simReq := map[string]interface{}{
+	// Call realtime-gateway POST /api/executions (creates data_source + runs /run on simulation-core)
+	gatewayReq := map[string]interface{}{
 		"scenarioId":        req.ScenarioID,
+		"startDatetime":     req.StartTime,
 		"simulationTime":    simulationTime,
+		"endConditionType":  req.EndCondition.Type,
+		"endConditionValue": req.EndCondition.Value,
 		"initialConditions": req.InitialConditions,
 	}
-
-	simReqJSON, err := json.Marshal(simReq)
+	gatewayReqJSON, err := json.Marshal(gatewayReq)
 	if err != nil {
-		h.updateExecutionError(executionID, "Failed to build simulation request")
-		respondError(w, http.StatusInternalServerError, "Failed to build simulation request", "INTERNAL_ERROR")
+		h.updateExecutionError(executionID, "Failed to build gateway request")
+		respondError(w, http.StatusInternalServerError, "Failed to build gateway request", "INTERNAL_ERROR")
 		return
 	}
 
-	// Call simulation-core API (long-running — use 30-minute timeout)
-	simClient := &http.Client{Timeout: 30 * time.Minute}
-	resp, err := simClient.Post(
-		h.simulationCoreURL+"/api/simulations",
+	// Use a long timeout for simulation execution
+	gwClient := &http.Client{Timeout: 30 * time.Minute}
+	gwResp, err := gwClient.Post(
+		h.realtimeGatewayURL+"/api/executions",
 		"application/json",
-		bytes.NewReader(simReqJSON),
+		bytes.NewReader(gatewayReqJSON),
 	)
 	if err != nil {
-		h.updateExecutionError(executionID, fmt.Sprintf("Failed to call simulation-core: %v", err))
-		respondError(w, http.StatusBadGateway, fmt.Sprintf("Failed to call simulation-core: %v", err), "SIMULATION_ERROR")
+		h.updateExecutionError(executionID, fmt.Sprintf("Failed to call realtime-gateway: %v", err))
+		respondError(w, http.StatusBadGateway, fmt.Sprintf("Failed to call realtime-gateway: %v", err), "SIMULATION_ERROR")
 		return
 	}
-	defer resp.Body.Close()
+	defer gwResp.Body.Close()
 
-	// Parse simulation response
-	var simResp map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&simResp); err != nil {
-		h.updateExecutionError(executionID, "Failed to parse simulation response")
-		respondError(w, http.StatusInternalServerError, "Failed to parse simulation response", "SIMULATION_ERROR")
+	var gwRespBody map[string]interface{}
+	if err := json.NewDecoder(gwResp.Body).Decode(&gwRespBody); err != nil {
+		h.updateExecutionError(executionID, "Failed to parse gateway response")
+		respondError(w, http.StatusInternalServerError, "Failed to parse gateway response", "SIMULATION_ERROR")
 		return
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if gwResp.StatusCode != http.StatusOK && gwResp.StatusCode != http.StatusAccepted {
 		errMsg := "Simulation failed"
-		if msg, ok := simResp["message"].(string); ok {
-			errMsg = msg
+		if e, ok := gwRespBody["error"].(string); ok {
+			errMsg = e
 		}
 		h.updateExecutionError(executionID, errMsg)
-		respondError(w, resp.StatusCode, errMsg, "SIMULATION_ERROR")
+		respondError(w, gwResp.StatusCode, errMsg, "SIMULATION_ERROR")
 		return
 	}
 
-	// Update execution with simulation result
-	simulationID := ""
-	if sid, ok := simResp["simulationId"].(string); ok {
-		simulationID = sid
+	// Extract dataSourceId from gateway response
+	dataSourceID := ""
+	if dsid, ok := gwRespBody["dataSourceId"].(string); ok {
+		dataSourceID = dsid
 	}
 	status := "completed"
-	if s, ok := simResp["status"].(string); ok {
+	if s, ok := gwRespBody["status"].(string); ok {
 		status = s
 	}
 
-	if err := h.repo.UpdateExecutionStatus(executionID, status, &simulationID, nil); err != nil {
+	var dsPtr *string
+	if dataSourceID != "" {
+		dsPtr = &dataSourceID
+	}
+	if err := h.repo.UpdateExecutionStatus(executionID, status, dsPtr, nil); err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to update execution status", "DB_ERROR")
 		return
 	}
 
-	execResp := ExecuteResponse{
+	respondJSON(w, http.StatusOK, ExecuteResponse{
 		ExecutionID:  executionID,
-		SimulationID: simulationID,
+		DataSourceID: dataSourceID,
 		Status:       status,
-	}
-	if et, ok := simResp["endTime"].(float64); ok {
-		execResp.EndTime = et
-	}
-	if er, ok := simResp["endReason"].(string); ok {
-		execResp.EndReason = er
-	}
-
-	respondJSON(w, http.StatusOK, execResp)
+	})
 }
 
 // HandleGetExecutions handles GET /api/executor/executions

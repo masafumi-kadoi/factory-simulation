@@ -20,8 +20,9 @@ func main() {
 	dbPassword := getEnv("DB_PASSWORD", "postgres")
 	dbName := getEnv("DB_NAME", "factory_simulation")
 
-	// simulation-core URL
+	// Service URLs
 	simulationCoreURL := getEnv("SIMULATION_CORE_URL", "http://localhost:8080")
+	realtimeGatewayURL := getEnv("REALTIME_GATEWAY_URL", "http://localhost:8090")
 
 	// Connect to database
 	log.Println("Connecting to database...")
@@ -34,7 +35,7 @@ func main() {
 
 	// Create repository and handler
 	repo := database.NewRepository(db)
-	handler := api.NewHandler(repo, simulationCoreURL)
+	handler := api.NewHandler(repo, simulationCoreURL, realtimeGatewayURL)
 
 	// Setup routes
 	mux := http.NewServeMux()
