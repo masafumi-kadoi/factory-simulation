@@ -29,7 +29,8 @@ let scene3d = null;
 let timeline = null;
 let infoPanel = null;
 const _movedEquipment = new Map(); // equipName → { centroid, machines[] }
-let _dragEquipData = null;         // ドラッグ中の設備データ { equipName, members }
+let _dragEquipData = null;         // ドラッグ中の設備データ { equipName, members }（3D編集用）
+let _dragGleData   = null;         // ドラッグ中の設備データ { equipName, members }（ロジック編集用）
 
 // ---- Boot ----
 
@@ -1262,6 +1263,8 @@ function initGlobalLogicEditTab() {
     document.getElementById('new-machine-sid').addEventListener('keydown', e => {
         if (e.key === 'Enter') gleAddMachine();
     });
+
+    setupGleDragDrop();
 }
 
 function gleUpdateHint() {
@@ -1366,12 +1369,25 @@ function renderGleUnplacedList(machines) {
         const displayName = members.length === 1 && members[0].name ? members[0].name : equipName;
         const typeLabel = members[0] ? (members[0].stationType || 'machine') : 'machine';
         item.textContent = displayName;
-        item.title = `${displayName} [${typeLabel}]  クリックで配置`;
+        item.title = `${displayName} [${typeLabel}]  ドラッグまたはクリックで配置`;
+        item.draggable = true;
         item.addEventListener('click', () => gleAddEquipmentToCanvas(equipName, members));
+        item.addEventListener('dragstart', e => {
+            _dragGleData = { equipName, members };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', equipName);
+            item.classList.add('dragging');
+        });
+        item.addEventListener('dragend', () => {
+            _dragGleData = null;
+            item.classList.remove('dragging');
+            document.getElementById('gle-canvas-wrap')?.classList.remove('drop-target');
+        });
         listEl.appendChild(item);
     });
 }
 
+// クリック配置: 既存ノードの下に自動配置
 function gleAddEquipmentToCanvas(equipName, members) {
     const existing = Object.values(_gleNodePositions);
     const SPACING_X = GLE_NODE_W + 60;
@@ -1389,6 +1405,52 @@ function gleAddEquipmentToCanvas(equipName, members) {
 
     gleSavePositions();
     renderGlobalLogicGraph();
+}
+
+// ドロップ配置: 指定 SVG 座標に配置
+function gleAddEquipmentAtPosition(equipName, members, svgX, svgY) {
+    const SPACING_X = GLE_NODE_W + 20;
+    const cx = svgX - GLE_NODE_W / 2;
+    const cy = svgY - GLE_NODE_H / 2;
+    members.forEach((s, i) => {
+        _gleNodePositions[s.stationId] = { x: Math.max(0, cx + i * SPACING_X), y: Math.max(0, cy) };
+    });
+    gleSavePositions();
+    renderGlobalLogicGraph();
+}
+
+function setupGleDragDrop() {
+    const wrap = document.getElementById('gle-canvas-wrap');
+    if (!wrap) return;
+
+    wrap.addEventListener('dragover', e => {
+        if (!_dragGleData) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        wrap.classList.add('drop-target');
+    });
+
+    wrap.addEventListener('dragleave', e => {
+        if (!wrap.contains(e.relatedTarget)) {
+            wrap.classList.remove('drop-target');
+        }
+    });
+
+    wrap.addEventListener('drop', e => {
+        e.preventDefault();
+        wrap.classList.remove('drop-target');
+        if (!_dragGleData) return;
+
+        const { equipName, members } = _dragGleData;
+        _dragGleData = null;
+
+        // ドロップ座標をSVG座標に変換（スクロールオフセット考慮）
+        const wrapRect = wrap.getBoundingClientRect();
+        const svgX = e.clientX - wrapRect.left + wrap.scrollLeft;
+        const svgY = e.clientY - wrapRect.top  + wrap.scrollTop;
+
+        gleAddEquipmentAtPosition(equipName, members, svgX, svgY);
+    });
 }
 
 function gleDrawNode(machine, layer) {

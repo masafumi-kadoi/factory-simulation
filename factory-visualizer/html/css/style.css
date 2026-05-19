@@ -999,14 +999,21 @@ input[type="range"] {
 .gle-machine-item {
     padding: 6px 12px;
     font-size: 12px;
-    cursor: pointer;
+    cursor: grab;
     color: var(--text-secondary);
     transition: background 0.1s;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    user-select: none;
 }
 .gle-machine-item:hover { background: var(--bg-surface); color: var(--text-primary); }
+.gle-machine-item.dragging { opacity: 0.45; }
+.gle-canvas-wrap.drop-target {
+    outline: 2px dashed var(--accent-blue);
+    outline-offset: -2px;
+    background: rgba(74,158,255,0.05);
+}
 
 .gle-main {
     flex: 1;
