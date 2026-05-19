@@ -25,6 +25,8 @@ services:
       - ./database/migrations/013_datasource_factory_link.sql:/docker-entrypoint-initdb.d/013_datasource_factory_link.sql
       - ./database/migrations/014_recreate_simulation_tables.sql:/docker-entrypoint-initdb.d/014_recreate_simulation_tables.sql
       - ./database/migrations/015_unified_factory_schema.sql:/docker-entrypoint-initdb.d/015_unified_factory_schema.sql
+      - ./database/migrations/016_execution_simulation_time.sql:/docker-entrypoint-initdb.d/016_execution_simulation_time.sql
+      - ./database/migrations/017_recreate_scenarios.sql:/docker-entrypoint-initdb.d/017_recreate_scenarios.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
