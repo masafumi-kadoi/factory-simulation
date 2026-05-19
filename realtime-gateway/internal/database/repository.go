@@ -721,10 +721,10 @@ func (r *Repository) GetExecution(id string) (*ExecutionConfig, error) {
 func (r *Repository) CreateExecution(e *ExecutionConfig) error {
 	_, err := r.db.Conn().Exec(
 		`INSERT INTO execution_configs
-		 (id, scenario_id, factory_id, start_time, simulation_time, end_condition_type, end_condition_value, initial_conditions, status, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		 (id, scenario_id, factory_id, start_time, simulation_time, end_condition_type, end_condition_value, initial_conditions, status, data_source_id, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		e.ID, e.ScenarioID, e.FactoryID, e.StartTime, e.SimulationTime, e.EndConditionType, e.EndConditionValue,
-		e.InitialConditions, e.Status, e.CreatedAt, e.UpdatedAt,
+		e.InitialConditions, e.Status, e.DataSourceID, e.CreatedAt, e.UpdatedAt,
 	)
 	return err
 }
@@ -733,6 +733,17 @@ func (r *Repository) UpdateExecutionStatus(id, status string, dataSourceID *stri
 	_, err := r.db.Conn().Exec(
 		`UPDATE execution_configs SET status=$2, data_source_id=$3, error_message=$4, updated_at=NOW() WHERE id=$1`,
 		id, status, dataSourceID, errMsg,
+	)
+	return err
+}
+
+// ResetPendingExecutions marks any executions stuck in "pending" as "error".
+// Call at startup to clean up rows left pending by a previous crashed gateway.
+func (r *Repository) ResetPendingExecutions() error {
+	_, err := r.db.Conn().Exec(
+		`UPDATE execution_configs
+		 SET status='error', error_message='gateway restarted while pending', updated_at=NOW()
+		 WHERE status='pending'`,
 	)
 	return err
 }

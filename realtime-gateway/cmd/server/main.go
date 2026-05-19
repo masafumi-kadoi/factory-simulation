@@ -37,6 +37,9 @@ func main() {
 	log.Println("notify hub started")
 
 	repo := database.NewRepository(db)
+	if err := repo.ResetPendingExecutions(); err != nil {
+		log.Printf("warning: failed to reset pending executions: %v", err)
+	}
 	h := api.NewHandler(repo, hub, simCoreURL)
 
 	srv := &http.Server{

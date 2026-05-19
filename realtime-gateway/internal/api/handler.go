@@ -914,6 +914,7 @@ func (h *Handler) handleExecutions(w http.ResponseWriter, r *http.Request) {
 			EndConditionValue: body.EndConditionValue,
 			InitialConditions: ic,
 			Status:            "pending",
+			DataSourceID:      &ds.ID,
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		}
