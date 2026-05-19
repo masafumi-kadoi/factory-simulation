@@ -158,6 +158,7 @@ export function wdhEventToInternal(event, locationMap, startTime) {
                 Timestamp: ts,
                 EventType: 'WorkArrived',
                 PortIndex: event.port_index != null ? event.port_index : -1,
+                WorkType: event.item_type || '',
             };
         } else if (event.movement_type === 'departed') {
             if (!fromStation) return null;
@@ -167,6 +168,7 @@ export function wdhEventToInternal(event, locationMap, startTime) {
                 Timestamp: ts,
                 EventType: 'WorkDeparted',
                 PortIndex: event.port_index != null ? event.port_index : -1,
+                WorkType: event.item_type || '',
             };
         }
     } else if (event.table === 'machine_signal') {

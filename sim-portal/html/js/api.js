@@ -22,10 +22,21 @@ const PortalAPI = {
         return response.json();
     },
 
+    // --- Scenario APIs ---
+
+    async getScenarios() {
+        const response = await fetch(`${SIMULATION_CORE_URL}/scenarios`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    },
+
     // --- Execution APIs ---
 
-    async getExecutions() {
-        const response = await fetch(`${SIMULATION_CORE_URL}/executions`);
+    async getExecutions(scenarioId) {
+        const url = scenarioId
+            ? `${SIMULATION_CORE_URL}/executions?scenarioId=${encodeURIComponent(scenarioId)}`
+            : `${SIMULATION_CORE_URL}/executions`;
+        const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
     },

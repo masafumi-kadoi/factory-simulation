@@ -503,6 +503,7 @@ type EventRecord struct {
 	ToLocationID   *int64    `json:"to_location_id,omitempty"`
 	MovementType   *string   `json:"movement_type,omitempty"`
 	PortIndex      *int16    `json:"port_index,omitempty"`
+	ItemType       *string   `json:"item_type,omitempty"`
 	MachineID      *string   `json:"machine_id,omitempty"`
 	SignalName     *string   `json:"signal_name,omitempty"`
 	Value          *bool     `json:"value,omitempty"`
@@ -513,8 +514,10 @@ func (r *Repository) GetEvents(dataSourceID string, from, to time.Time) ([]Event
 	sigEvents := make([]EventRecord, 0)
 
 	movRows, err := r.db.Conn().Query(
-		`SELECT event_time, item_id, from_location_id, to_location_id, movement_type, port_index
-		 FROM item_movement WHERE data_source_id=$1 AND event_time BETWEEN $2 AND $3 ORDER BY event_time`,
+		`SELECT m.event_time, m.item_id, m.from_location_id, m.to_location_id, m.movement_type, m.port_index, im.item_type
+		 FROM item_movement m
+		 LEFT JOIN item_master im ON im.id = m.item_id AND im.data_source_id = m.data_source_id
+		 WHERE m.data_source_id=$1 AND m.event_time BETWEEN $2 AND $3 ORDER BY m.event_time`,
 		dataSourceID, from, to)
 	if err != nil {
 		return nil, err
@@ -523,7 +526,7 @@ func (r *Repository) GetEvents(dataSourceID string, from, to time.Time) ([]Event
 	for movRows.Next() {
 		var e EventRecord
 		e.Table = "item_movement"
-		if err := movRows.Scan(&e.EventTime, &e.ItemID, &e.FromLocationID, &e.ToLocationID, &e.MovementType, &e.PortIndex); err != nil {
+		if err := movRows.Scan(&e.EventTime, &e.ItemID, &e.FromLocationID, &e.ToLocationID, &e.MovementType, &e.PortIndex, &e.ItemType); err != nil {
 			return nil, err
 		}
 		movEvents = append(movEvents, e)

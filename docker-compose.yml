@@ -245,6 +245,8 @@ services:
         condition: service_healthy
       realtime-gateway:
         condition: service_healthy
+      simulation-core:
+        condition: service_healthy
     networks:
       - factory-network
 
