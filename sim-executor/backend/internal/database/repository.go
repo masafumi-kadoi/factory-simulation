@@ -15,7 +15,7 @@ type ExecutionConfig struct {
 	EndConditionValue string          `json:"endConditionValue"`
 	InitialConditions json.RawMessage `json:"initialConditions"`
 	Status            string          `json:"status"`
-	SimulationID      *string         `json:"simulationId,omitempty"`
+	DataSourceID      *string         `json:"dataSourceId,omitempty"`
 	ErrorMessage      *string         `json:"errorMessage,omitempty"`
 	CreatedAt         time.Time       `json:"createdAt"`
 	UpdatedAt         time.Time       `json:"updatedAt"`
@@ -39,7 +39,7 @@ func (r *Repository) GetDB() *DB {
 // SaveExecution inserts a new execution config
 func (r *Repository) SaveExecution(exec *ExecutionConfig) error {
 	query := `
-		INSERT INTO execution_configs (id, scenario_id, start_time, end_condition_type, end_condition_value, initial_conditions, status, simulation_id, error_message, created_at, updated_at)
+		INSERT INTO execution_configs (id, scenario_id, start_time, end_condition_type, end_condition_value, initial_conditions, status, data_source_id, error_message, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
@@ -51,7 +51,7 @@ func (r *Repository) SaveExecution(exec *ExecutionConfig) error {
 		exec.EndConditionValue,
 		exec.InitialConditions,
 		exec.Status,
-		exec.SimulationID,
+		exec.DataSourceID,
 		exec.ErrorMessage,
 		exec.CreatedAt,
 		exec.UpdatedAt,
@@ -66,7 +66,7 @@ func (r *Repository) SaveExecution(exec *ExecutionConfig) error {
 // GetExecutionsByScenarioID retrieves executions for a scenario
 func (r *Repository) GetExecutionsByScenarioID(scenarioID string) ([]ExecutionConfig, error) {
 	query := `
-		SELECT id, scenario_id, start_time, end_condition_type, end_condition_value, initial_conditions, status, simulation_id, error_message, created_at, updated_at
+		SELECT id, scenario_id, start_time, end_condition_type, end_condition_value, initial_conditions, status, data_source_id, error_message, created_at, updated_at
 		FROM execution_configs
 		WHERE scenario_id = $1
 		ORDER BY created_at DESC
@@ -89,7 +89,7 @@ func (r *Repository) GetExecutionsByScenarioID(scenarioID string) ([]ExecutionCo
 			&exec.EndConditionValue,
 			&exec.InitialConditions,
 			&exec.Status,
-			&exec.SimulationID,
+			&exec.DataSourceID,
 			&exec.ErrorMessage,
 			&exec.CreatedAt,
 			&exec.UpdatedAt,
@@ -110,7 +110,7 @@ func (r *Repository) GetExecutionsByScenarioID(scenarioID string) ([]ExecutionCo
 func (r *Repository) UpdateExecutionStatus(id string, status string, simulationID *string, errorMessage *string) error {
 	query := `
 		UPDATE execution_configs
-		SET status = $2, simulation_id = $3, error_message = $4, updated_at = $5
+		SET status = $2, data_source_id = $3, error_message = $4, updated_at = $5
 		WHERE id = $1
 	`
 
