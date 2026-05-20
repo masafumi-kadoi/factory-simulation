@@ -184,11 +184,10 @@ function initUI() {
                     updateHeightSliders(scene3d.getLabelHeightDisplayValues());
                     saveHeightSettings();
                     break;
-                case 'height_equipLabel':    scene3d.setEquipLabelY(value);    saveHeightSettings(); break;
                 case 'height_machineLabel':  scene3d.setMachineLabelY(value);  saveHeightSettings(); break;
-                case 'height_internalLabel': scene3d.setInternalLabelY(value); saveHeightSettings(); break;
+                case 'height_stationLabel':  scene3d.setStationLabelY(value);  saveHeightSettings(); break;
                 case 'height_workMachine':   scene3d.setWorkMachineY(value);   saveHeightSettings(); break;
-                case 'height_workInternal':  scene3d.setWorkInternalY(value);  saveHeightSettings(); break;
+                case 'height_workStation':   scene3d.setWorkStationY(value);   saveHeightSettings(); break;
             }
         },
     });
@@ -1408,12 +1407,10 @@ function saveHeightSettings() {
     const data = {
         mode: vals.mode,
         heights: {
-            equipLabel:    vals.equipLabel,
-            machineLabel:  vals.machineLabel,
-            internalLabel: vals.internalLabel,
-            nodeLabel:     vals.nodeLabel,
-            workMachine:   vals.workMachine,
-            workInternal:  vals.workInternal,
+            machineLabel: vals.machineLabel,
+            stationLabel: vals.stationLabel,
+            workMachine:  vals.workMachine,
+            workStation:  vals.workStation,
         },
     };
     try { localStorage.setItem('fv_height_settings', JSON.stringify(data)); } catch {}

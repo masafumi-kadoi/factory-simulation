@@ -40,10 +40,9 @@ const TETRIS_H    = 1.8;
 
 // Model top heights used for relative↔absolute label height conversion
 export const MODEL_TOP = {
-    equip:    11,   // equipment shell height (H)
-    machine:   8,   // default machine mesh height
-    internal: TETRIS_H, // 1.8
-    node:      8,   // source/drain cylinder height (HEIGHT)
+    machine: 11,      // machine shell height (H)
+    station: TETRIS_H, // 1.8
+    node:     8,       // source/drain cylinder height (HEIGHT)
 };
 
 const STATION_SHAPES = {
@@ -76,13 +75,12 @@ export class Scene3D {
         this._showWorks = true;
         this._showInterlocks = false;
         // Label / work height settings (stored as absolute Y from ground)
-        this._labelHeightMode = 'relative'; // 'relative' | 'absolute'
-        this._equipLabelAbsY    = MODEL_TOP.equip    + 1.8; // 12.8m
-        this._machineLabelAbsY  = MODEL_TOP.machine  + 0.5; // 8.5m
-        this._internalLabelAbsY = MODEL_TOP.internal + 0.8; // 2.6m
-        this._nodeLabelAbsY     = MODEL_TOP.node     + 2.0; // 10.0m
-        this._workMachineAbsY   = MODEL_TOP.equip    + 2.0; // 13.0m
-        this._workInternalAbsY  = MODEL_TOP.internal + 2.0; // 3.8m
+        this._labelHeightMode  = 'relative'; // 'relative' | 'absolute'
+        this._machineLabelAbsY = MODEL_TOP.machine  + 1.8; // 12.8m
+        this._stationLabelAbsY = MODEL_TOP.station  + 0.8; // 2.6m
+        this._nodeLabelAbsY    = MODEL_TOP.node     + 2.0; // 10.0m
+        this._workMachineAbsY  = MODEL_TOP.machine  + 2.0; // 13.0m
+        this._workStationAbsY  = MODEL_TOP.station  + 2.0; // 3.8m
         this._onMachineDoubleClick = null;
         this._onMachineClick = null;
         this._onWorkClick = null;
@@ -327,8 +325,8 @@ export class Scene3D {
         edgeMesh.position.copy(shellMesh.position);
         shellGroup.add(edgeMesh);
 
-        // Equipment name label above shell
-        const label = this._createLabel(equipName, cx, this._equipLabelAbsY, cz);
+        // Machine name label above shell
+        const label = this._createLabel(equipName, cx, this._machineLabelAbsY, cz);
         shellGroup.add(label);
 
         // 1設備 = 1モデル: .000 ステーションが設備レベルのモデルを保持する設計
@@ -459,13 +457,6 @@ export class Scene3D {
         }
         mesh.userData.stationId = station.stationId;
         group.add(mesh);
-
-        if (this._showStationNames) {
-            const localY = this._machineLabelAbsY - (station.positionZ || 0);
-            const label = this._createLabel(station.name || station.stationId, 0, localY, 0);
-            group.add(label);
-            group.userData.labelMesh = label;
-        }
 
         group.position.set(px, py, pz);
         this.scene.add(group);
@@ -609,7 +600,7 @@ export class Scene3D {
 
         let internalLabel = null;
         if (this._showStationNames) {
-            internalLabel = this._createLabel(station.name || station.stationId, 0, this._internalLabelAbsY, 0);
+            internalLabel = this._createLabel(station.name || station.stationId, 0, this._stationLabelAbsY, 0);
             group.add(internalLabel);
             group.userData.labelMesh = internalLabel;
         }
@@ -969,7 +960,7 @@ export class Scene3D {
         if (!stEntry) return;
 
         const px = stEntry.station.positionX || 0;
-        const absY = isMachine ? this._workMachineAbsY : this._workInternalAbsY;
+        const absY = isMachine ? this._workMachineAbsY : this._workStationAbsY;
         const py = (stEntry.station.positionZ || 0) + absY;
         const pz = stEntry.station.positionY || 0;
 
@@ -1137,7 +1128,7 @@ export class Scene3D {
                 });
             });
         };
-        toggle(this._machines);
+        toggle(this._equipmentGroups);
         toggle(this._internalStations);
     }
 
@@ -1152,12 +1143,11 @@ export class Scene3D {
     getLabelHeightDisplayValues() {
         const rel = this._labelHeightMode === 'relative';
         return {
-            mode:          this._labelHeightMode,
-            equipLabel:    rel ? this._equipLabelAbsY    - MODEL_TOP.equip    : this._equipLabelAbsY,
-            machineLabel:  rel ? this._machineLabelAbsY  - MODEL_TOP.machine  : this._machineLabelAbsY,
-            internalLabel: rel ? this._internalLabelAbsY - MODEL_TOP.internal : this._internalLabelAbsY,
-            workMachine:   rel ? this._workMachineAbsY   - MODEL_TOP.equip    : this._workMachineAbsY,
-            workInternal:  rel ? this._workInternalAbsY  - MODEL_TOP.internal : this._workInternalAbsY,
+            mode:         this._labelHeightMode,
+            machineLabel: rel ? this._machineLabelAbsY - MODEL_TOP.machine  : this._machineLabelAbsY,
+            stationLabel: rel ? this._stationLabelAbsY - MODEL_TOP.station  : this._stationLabelAbsY,
+            workMachine:  rel ? this._workMachineAbsY  - MODEL_TOP.machine  : this._workMachineAbsY,
+            workStation:  rel ? this._workStationAbsY  - MODEL_TOP.station  : this._workStationAbsY,
         };
     }
 
@@ -1169,32 +1159,24 @@ export class Scene3D {
         return this._labelHeightMode === 'relative' ? modelTop + value : value;
     }
 
-    setEquipLabelY(value) {
-        this._equipLabelAbsY = this._absY(value, MODEL_TOP.equip);
-        this._nodeLabelAbsY  = this._absY(value, MODEL_TOP.node);
-        this._equipmentGroups.forEach(({ labelMesh, isNode }) => {
-            if (!labelMesh) return;
-            labelMesh.position.y = isNode ? this._nodeLabelAbsY : this._equipLabelAbsY;
-        });
-    }
-
     setMachineLabelY(value) {
         this._machineLabelAbsY = this._absY(value, MODEL_TOP.machine);
-        this._machines.forEach(({ group, station }) => {
-            const label = group.userData.labelMesh;
-            if (label) label.position.y = this._machineLabelAbsY - (station.positionZ || 0);
+        this._nodeLabelAbsY    = this._absY(value, MODEL_TOP.node);
+        this._equipmentGroups.forEach(({ labelMesh, isNode }) => {
+            if (!labelMesh) return;
+            labelMesh.position.y = isNode ? this._nodeLabelAbsY : this._machineLabelAbsY;
         });
     }
 
-    setInternalLabelY(value) {
-        this._internalLabelAbsY = this._absY(value, MODEL_TOP.internal);
+    setStationLabelY(value) {
+        this._stationLabelAbsY = this._absY(value, MODEL_TOP.station);
         this._internalStations.forEach(({ labelMesh }) => {
-            if (labelMesh) labelMesh.position.y = this._internalLabelAbsY;
+            if (labelMesh) labelMesh.position.y = this._stationLabelAbsY;
         });
     }
 
     setWorkMachineY(value) {
-        this._workMachineAbsY = this._absY(value, MODEL_TOP.equip);
+        this._workMachineAbsY = this._absY(value, MODEL_TOP.machine);
         this._works.forEach((entry) => {
             const isMachine = this._machines.has(entry.stationId);
             if (!isMachine) return;
@@ -1205,14 +1187,14 @@ export class Scene3D {
         });
     }
 
-    setWorkInternalY(value) {
-        this._workInternalAbsY = this._absY(value, MODEL_TOP.internal);
+    setWorkStationY(value) {
+        this._workStationAbsY = this._absY(value, MODEL_TOP.station);
         this._works.forEach((entry) => {
             const isInternal = this._internalStations.has(entry.stationId);
             if (!isInternal) return;
             const stEntry = this._internalStations.get(entry.stationId);
             if (!stEntry || entry._anim) return;
-            const py = (stEntry.station.positionZ || 0) + this._workInternalAbsY;
+            const py = (stEntry.station.positionZ || 0) + this._workStationAbsY;
             entry.mesh.position.y = py;
         });
     }

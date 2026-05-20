@@ -67,11 +67,10 @@ export function initLeftPanel({ onFilterChange, onSettingChange }) {
 // ---- Height settings ----
 
 const HEIGHT_ITEMS = [
-    { key: 'equipLabel',    sliderId: 'h-equip-label',    numId: 'h-equip-label-num' },
     { key: 'machineLabel',  sliderId: 'h-machine-label',  numId: 'h-machine-label-num' },
-    { key: 'internalLabel', sliderId: 'h-internal-label', numId: 'h-internal-label-num' },
+    { key: 'stationLabel',  sliderId: 'h-station-label',  numId: 'h-station-label-num' },
     { key: 'workMachine',   sliderId: 'h-work-machine',   numId: 'h-work-machine-num' },
-    { key: 'workInternal',  sliderId: 'h-work-internal',  numId: 'h-work-internal-num' },
+    { key: 'workStation',   sliderId: 'h-work-station',   numId: 'h-work-station-num' },
 ];
 
 const HEIGHT_RANGES = {
@@ -80,7 +79,7 @@ const HEIGHT_RANGES = {
 };
 
 export function updateHeightSliders(displayVals) {
-    const { mode, equipLabel, machineLabel, internalLabel, nodeLabel, workMachine, workInternal } = displayVals;
+    const { mode, machineLabel, stationLabel, workMachine, workStation } = displayVals;
     const range = HEIGHT_RANGES[mode];
 
     document.querySelectorAll('#label-height-mode .seg-btn').forEach(b => {
@@ -91,7 +90,7 @@ export function updateHeightSliders(displayVals) {
         ? 'モデル上端からのオフセット (m)'
         : '地面からの絶対高さ (m)';
 
-    const vals = { equipLabel, machineLabel, internalLabel, nodeLabel, workMachine, workInternal };
+    const vals = { machineLabel, stationLabel, workMachine, workStation };
     HEIGHT_ITEMS.forEach(({ key, sliderId, numId }) => {
         const v = vals[key];
         if (v == null) return;
