@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initFactoryInfoTab();
     initGlobal3DEditTab();
     initGlobalLogicEditTab();
+    initPanelResizer();
 
     try {
         await loadFactories();
@@ -2202,4 +2203,53 @@ async function gleAddMachine() {
     } catch (err) {
         setStatus('設備追加失敗: ' + err.message, 'status-error');
     }
+}
+
+
+// ---- Left panel resizer ----
+
+function initPanelResizer() {
+    const resizer = document.getElementById('left-panel-resizer');
+    const panel   = document.getElementById('left-panel');
+    if (!resizer || !panel) return;
+
+    const MIN_W = 160;
+    const MAX_W = 480;
+    const STORAGE_KEY = 'fv_panel_width';
+
+    // Restore saved width
+    const saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+    if (saved >= MIN_W && saved <= MAX_W) {
+        document.documentElement.style.setProperty('--panel-w', saved + 'px');
+    }
+
+    let dragging = false;
+    let startX = 0;
+    let startW = 0;
+
+    resizer.addEventListener('mousedown', e => {
+        dragging = true;
+        startX = e.clientX;
+        startW = panel.getBoundingClientRect().width;
+        resizer.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const w = Math.min(MAX_W, Math.max(MIN_W, startW + (e.clientX - startX)));
+        document.documentElement.style.setProperty('--panel-w', w + 'px');
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        resizer.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--panel-w'), 10);
+        localStorage.setItem(STORAGE_KEY, w);
+    });
 }

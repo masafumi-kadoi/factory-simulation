@@ -191,6 +191,19 @@ body {
 #left-panel::-webkit-scrollbar { width: 4px; }
 #left-panel::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
+#left-panel-resizer {
+    width: 5px;
+    cursor: col-resize;
+    flex-shrink: 0;
+    background: transparent;
+    transition: background 0.15s;
+    z-index: 10;
+}
+#left-panel-resizer:hover,
+#left-panel-resizer.dragging {
+    background: var(--accent-color, #4a9eff);
+}
+
 .panel-section { border-bottom: 1px solid var(--border-color); }
 .section-header {
     display: flex;
