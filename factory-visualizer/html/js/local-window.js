@@ -1152,7 +1152,7 @@ function initToolPalette() {
     };
     document.getElementById('btn-add-station')?.addEventListener('click', _doAddStation);
     document.getElementById('add-station-name')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); _doAddStation(); }
+        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); _doAddStation(); }
     });
 
     // ドロップゾーン設定
