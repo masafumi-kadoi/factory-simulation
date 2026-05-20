@@ -868,8 +868,21 @@ export class Scene3D {
 
     setWorkPosition(workId, stationId, workType, animate = true) {
         if (!this._showWorks) return;
-        const isMachine = this._machines.has(stationId);
-        const stEntry = isMachine ? this._machines.get(stationId) : this._internalStations.get(stationId);
+
+        // When internal view is OFF, map internal stations to their parent machine hub.
+        const isInternal = this._internalStations.has(stationId);
+        let displayStationId = stationId;
+        let isMachine = this._machines.has(stationId);
+        if (isInternal && !this._showInternal) {
+            const internalEntry = this._internalStations.get(stationId);
+            const parentId = internalEntry.station.parentId;
+            if (parentId && this._machines.has(parentId)) {
+                displayStationId = parentId;
+                isMachine = true;
+            }
+        }
+
+        const stEntry = isMachine ? this._machines.get(displayStationId) : this._internalStations.get(displayStationId);
         if (!stEntry) return;
 
         const px = stEntry.station.positionX || 0;
@@ -910,6 +923,16 @@ export class Scene3D {
         // Already at target — skip (prevents re-triggering on every play tick)
         if (entry.stationId === stationId && !entry._anim) return;
 
+        // Suppress arc animation for within-same-equipment moves when internal view is ON.
+        if (animate && isInternal && this._showInternal) {
+            const prevInternalEntry = this._internalStations.get(entry.stationId);
+            if (prevInternalEntry) {
+                const prevParent = prevInternalEntry.station.parentId;
+                const newParent = this._internalStations.get(stationId)?.station?.parentId;
+                if (prevParent && prevParent === newParent) animate = false;
+            }
+        }
+
         entry.stationId = stationId;
 
         if (!animate) {
@@ -918,10 +941,16 @@ export class Scene3D {
             return;
         }
 
-        // Arc animation: lerp x/z with easeInOut, parabola on y
+        // Arc animation: lerp x/z with easeInOut, parabola on y.
+        // Skip arc if display positions are effectively the same (e.g. both internal→same hub).
         const from = entry.mesh.position.clone();
         const to = new THREE.Vector3(px, py, pz);
         const hDist = Math.sqrt((to.x - from.x) ** 2 + (to.z - from.z) ** 2);
+        if (hDist < 1) {
+            entry._anim = null;
+            entry.mesh.position.set(px, py, pz);
+            return;
+        }
         entry._anim = {
             from,
             to,

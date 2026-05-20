@@ -167,7 +167,15 @@ function initUI() {
                     break;
                 case 'shellOpacity': scene3d.setShellOpacity(value); break;
                 case 'internalRadius': scene3d.setInternalRadius(value); break;
-                case 'showInternal': scene3d.setShowInternal(value); break;
+                case 'showInternal':
+                    scene3d.setShowInternal(value);
+                    // Force works to re-render at new positions (internal vs hub)
+                    scene3d.clearWorks();
+                    state.activeWorks.clear();
+                    if (timeline && timeline.getCurrentTime() !== null) {
+                        applyHistoryAtTime(timeline.getCurrentTime(), false);
+                    }
+                    break;
                 case 'showStationNames': scene3d.setShowStationNames(value); break;
                 case 'showWorks': scene3d.setShowWorks(value); break;
                 case 'showInterlocks': scene3d.setShowInterlocks(value); break;
@@ -858,17 +866,31 @@ function renderGFIBasic(container) {
     });
 }
 
+const INTERNAL_STATION_TYPES = ['processing', 'merge', 'split', 'switch'];
+
 function renderGFIStations(container) {
-    const rows = state.stations.map(s => `
-        <tr>
+    // Build a set of machine hub IDs (have at least one child station)
+    const hubIds = new Set(
+        state.stations.filter(s => s.parentId).map(s => s.parentId)
+    );
+    const rows = state.stations.map(s => {
+        const isInternal = s.parentId && INTERNAL_STATION_TYPES.includes(s.stationType);
+        const isHub = s.stationType === 'machine' && hubIds.has(s.stationId);
+        const typeCell = isInternal
+            ? `<select class="gfi-type-select gfi-table-input" data-sid="${esc(s.stationId)}" data-field="stationType">
+                ${INTERNAL_STATION_TYPES.map(t => `<option value="${t}" ${s.stationType === t ? 'selected' : ''}>${t}</option>`).join('')}
+               </select>`
+            : `<span style="color:var(--text-muted)">${esc(s.stationType || '')}</span>${isHub ? ' <span style="font-size:10px;color:var(--status-normal);">[hub]</span>' : ''}`;
+        return `<tr>
             <td style="font-family:monospace;font-size:11px;">${esc(s.stationId)}</td>
             <td><input type="text" value="${esc(s.name || '')}" class="gfi-table-input"
                 data-sid="${esc(s.stationId)}" data-field="name"></td>
-            <td>${esc(s.stationType || '')}</td>
+            <td>${typeCell}</td>
             <td style="text-align:center;">
                 <button class="gfi-action-btn" data-action="del-st" data-sid="${esc(s.stationId)}">削除</button>
             </td>
-        </tr>`).join('');
+        </tr>`;
+    }).join('');
     container.innerHTML = `
         <div class="gfi-table-wrap">
             <table class="gfi-table">
@@ -880,10 +902,15 @@ function renderGFIStations(container) {
         input.addEventListener('change', async e => {
             const sid = e.target.dataset.sid;
             const field = e.target.dataset.field;
+            const value = e.target.value;
             try {
-                await API.updateStation(state.currentFactory, sid, { [field]: e.target.value });
+                await API.updateStation(state.currentFactory, sid, { [field]: value });
                 const st = state.stations.find(s => s.stationId === sid);
-                if (st) st[field] = e.target.value;
+                if (st) st[field] = value;
+                // Reload 3D scene so tetris block shapes update
+                if (field === 'stationType' && scene3d) {
+                    scene3d.loadFactory(state.stations, state.connections);
+                }
             } catch (err) {
                 setStatus('更新失敗: ' + err.message, 'status-error');
                 e.target.value = state.stations.find(s => s.stationId === sid)?.[field] || '';
@@ -907,13 +934,30 @@ function renderGFIStations(container) {
 }
 
 function renderGFIConnections(container) {
+    // Build hub set and parent lookup for role annotation
+    const hubIds = new Set(state.stations.filter(s => s.parentId).map(s => s.parentId));
+    const parentOf = new Map(state.stations.filter(s => s.parentId).map(s => [s.stationId, s.parentId]));
+    const connRole = (c) => {
+        const fromIsHub = hubIds.has(c.fromStation);
+        const toIsHub = hubIds.has(c.toStation);
+        if (fromIsHub && parentOf.get(c.toStation) === c.fromStation) return 'Entry';
+        if (toIsHub && parentOf.get(c.fromStation) === c.toStation) return 'Exit';
+        if (!fromIsHub && !toIsHub && parentOf.has(c.fromStation) && parentOf.has(c.toStation)
+            && parentOf.get(c.fromStation) === parentOf.get(c.toStation)) return '内部';
+        return '';
+    };
     const rows = state.connections.map(c => {
         const cid = c.id || c.connectionId || '';
+        const role = connRole(c);
+        const roleHtml = role
+            ? `<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:${role==='Entry'?'rgba(46,125,50,0.25)':role==='Exit'?'rgba(230,81,0,0.25)':'rgba(74,158,255,0.15)'};">${role}</span>`
+            : '';
         return `<tr>
             <td style="font-family:monospace;font-size:11px;">${esc(String(cid))}</td>
-            <td>${esc(c.fromStation)}</td>
+            <td style="font-family:monospace;">${esc(c.fromStation)}</td>
             <td style="color:var(--text-muted)">→</td>
-            <td>${esc(c.toStation)}</td>
+            <td style="font-family:monospace;">${esc(c.toStation)}</td>
+            <td>${roleHtml}</td>
             <td>${esc(c.condition || 'default')}</td>
             <td style="text-align:center;">
                 <button class="gfi-action-btn" data-action="del-conn" data-cid="${esc(String(cid))}">削除</button>
@@ -923,8 +967,8 @@ function renderGFIConnections(container) {
     container.innerHTML = `
         <div class="gfi-table-wrap">
             <table class="gfi-table">
-                <thead><tr><th>ID</th><th>From</th><th></th><th>To</th><th>条件</th><th>操作</th></tr></thead>
-                <tbody>${rows || '<tr><td colspan="6" style="color:var(--text-muted);padding:10px;">接続がありません</td></tr>'}</tbody>
+                <thead><tr><th>ID</th><th>From</th><th></th><th>To</th><th>役割</th><th>条件</th><th>操作</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="7" style="color:var(--text-muted);padding:10px;">接続がありません</td></tr>'}</tbody>
             </table>
         </div>`;
     container.querySelectorAll('[data-action="del-conn"]').forEach(btn => {

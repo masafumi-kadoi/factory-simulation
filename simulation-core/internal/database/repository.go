@@ -785,7 +785,25 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		stationSet[rs.id] = true
 	}
 
-	// Load connections — filter to those where both endpoints exist in the station set
+	// Build sets needed for two-level routing expansion.
+	// machineHubs: machine stations that have children (equipment containers).
+	// stationParent: child station ID → parent hub station ID.
+	machineHubs := make(map[string]bool)
+	stationParent := make(map[string]string)
+	for _, rs := range rawStations {
+		if rs.stype == "machine" && childrenOf[rs.id] {
+			machineHubs[rs.id] = true
+		}
+		if rs.parentID != nil && *rs.parentID != "" {
+			stationParent[rs.id] = *rs.parentID
+		}
+	}
+
+	// Load all raw connections for two-pass expansion.
+	type rawConn struct {
+		from, to, condition string
+		fromPort, toPort    int
+	}
 	connRows, err := r.db.GetConnection().Query(`
 		SELECT from_station, to_station, condition, COALESCE(from_port_index, -1), COALESCE(to_port_index, -1)
 		FROM factory_connections
@@ -797,32 +815,93 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 	}
 	defer connRows.Close()
 
-	seen := make(map[string]bool) // deduplicate connections
-	var connections []domain.Connection
+	var rawConns []rawConn
 	for connRows.Next() {
-		var from, to, condition string
-		var fromPort, toPort int
-		if err := connRows.Scan(&from, &to, &condition, &fromPort, &toPort); err != nil {
+		var rc rawConn
+		if err := connRows.Scan(&rc.from, &rc.to, &rc.condition, &rc.fromPort, &rc.toPort); err != nil {
 			return nil, fmt.Errorf("failed to scan factory connection: %w", err)
 		}
-		if !stationSet[from] || !stationSet[to] {
-			continue // skip connections to stations not in simulation
-		}
-		key := fmt.Sprintf("%s->%s(%s)", from, to, condition)
-		if seen[key] {
-			continue // deduplicate
-		}
-		seen[key] = true
-		connections = append(connections, domain.Connection{
-			From:          from,
-			To:            to,
-			Condition:     domain.RoutingCondition(condition),
-			FromPortIndex: fromPort,
-			ToPortIndex:   toPort,
-		})
+		rawConns = append(rawConns, rc)
 	}
 	if err := connRows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate factory connections: %w", err)
+	}
+
+	// First pass: identify entry/exit stations for each machine hub.
+	// A connection hub→child defines child as an entry station.
+	// A connection child→hub defines child as an exit station.
+	hubEntries := make(map[string][]string) // hub ID → ordered entry station IDs
+	hubExits := make(map[string][]string)   // hub ID → ordered exit station IDs
+	seenEntry := make(map[string]bool)
+	seenExit := make(map[string]bool)
+	for _, rc := range rawConns {
+		if machineHubs[rc.from] && stationParent[rc.to] == rc.from {
+			k := rc.from + ":" + rc.to
+			if !seenEntry[k] {
+				seenEntry[k] = true
+				hubEntries[rc.from] = append(hubEntries[rc.from], rc.to)
+			}
+		}
+		if machineHubs[rc.to] && stationParent[rc.from] == rc.to {
+			k := rc.to + ":" + rc.from
+			if !seenExit[k] {
+				seenExit[k] = true
+				hubExits[rc.to] = append(hubExits[rc.to], rc.from)
+			}
+		}
+	}
+
+	// Second pass: expand connections through hub entry/exit stations.
+	seen := make(map[string]bool)
+	var connections []domain.Connection
+	addConn := func(from, to, condition string, fromPort, toPort int) {
+		key := fmt.Sprintf("%s->%s(%s)", from, to, condition)
+		if !seen[key] {
+			seen[key] = true
+			connections = append(connections, domain.Connection{
+				From:          from,
+				To:            to,
+				Condition:     domain.RoutingCondition(condition),
+				FromPortIndex: fromPort,
+				ToPortIndex:   toPort,
+			})
+		}
+	}
+	for _, rc := range rawConns {
+		fromIsHub := machineHubs[rc.from]
+		toIsHub := machineHubs[rc.to]
+		// Hub ↔ direct-child connections define topology only; skip simulation routing.
+		if fromIsHub && stationParent[rc.to] == rc.from {
+			continue
+		}
+		if toIsHub && stationParent[rc.from] == rc.to {
+			continue
+		}
+		if !fromIsHub && !toIsHub {
+			// Both endpoints are simulation stations — include directly.
+			if stationSet[rc.from] && stationSet[rc.to] {
+				addConn(rc.from, rc.to, rc.condition, rc.fromPort, rc.toPort)
+			}
+			continue
+		}
+		// At least one endpoint is a hub — expand through entry/exit stations.
+		var froms []string
+		if fromIsHub {
+			froms = hubExits[rc.from]
+		} else if stationSet[rc.from] {
+			froms = []string{rc.from}
+		}
+		var tos []string
+		if toIsHub {
+			tos = hubEntries[rc.to]
+		} else if stationSet[rc.to] {
+			tos = []string{rc.to}
+		}
+		for _, f := range froms {
+			for _, t := range tos {
+				addConn(f, t, rc.condition, rc.fromPort, rc.toPort)
+			}
+		}
 	}
 
 	scenario := domain.NewScenario(factoryID, factoryName, stations, connections)
