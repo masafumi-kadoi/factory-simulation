@@ -320,6 +320,7 @@ export class Scene3D {
         const hasCustomModel = !!(modelMachine?.config?.model3DGlb?.data ||
             (Array.isArray(modelMachine?.config?.model3DGrid?.cells) && modelMachine.config.model3DGrid.cells.length > 0));
 
+        let modelGroup = null;
         if (hasCustomModel) {
             // shellMesh は opacity=0 にして不可視化するが visible=true のまま保持
             // → 配置モードのレイキャスト（ドラッグ）対象として機能させるため
@@ -328,7 +329,7 @@ export class Scene3D {
             edgeMesh.visible = false;
 
             // モデルをセントロイド位置に配置（設備グループの一部として移動に追従）
-            const modelGroup = new THREE.Group();
+            modelGroup = new THREE.Group();
             modelGroup.position.set(cx, 0, cz);
             shellGroup.add(modelGroup);
 
@@ -345,6 +346,7 @@ export class Scene3D {
         this._equipmentGroups.set(equipName, {
             group: shellGroup,
             shellMesh,
+            modelGroup,
             hasCustomModel,
             machines,
             centroid: { x: cx, z: cz },
@@ -1011,16 +1013,22 @@ export class Scene3D {
 
     setShellOpacity(v) {
         this._shellOpacity = v;
-        // Update individual machine body meshes (cylinders / voxels)
+        const applyOpacity = child => {
+            if (child.isMesh && child.material) {
+                child.material.opacity = v;
+                child.material.transparent = v < 1;
+                child.material.needsUpdate = true;
+            }
+        };
+        // Case A: equipment WITH custom model → update the modelGroup meshes
+        this._equipmentGroups.forEach(({ modelGroup, hasCustomModel }) => {
+            if (!hasCustomModel || !modelGroup) return;
+            modelGroup.traverse(applyOpacity);
+        });
+        // Case B: equipment WITHOUT custom model → update cylinder/voxel in _machines
         this._machines.forEach(({ mesh }) => {
             if (!mesh) return;
-            mesh.traverse(child => {
-                if (child.isMesh && child.material) {
-                    child.material.opacity = v;
-                    child.material.transparent = v < 1;
-                    child.material.needsUpdate = true;
-                }
-            });
+            mesh.traverse(applyOpacity);
         });
     }
 
