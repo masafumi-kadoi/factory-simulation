@@ -282,15 +282,19 @@
             <div class="palette-section">未配置</div>
             <div id="unplaced-station-list"></div>
             <div class="palette-section">追加</div>
-            <div class="unplaced-add-row">
-                <select id="add-station-type">
-                    <option value="processing">Processing</option>
-                    <option value="merge">Merge</option>
-                    <option value="split">Split</option>
-                    <option value="entry">Entry</option>
-                    <option value="exit">Exit</option>
-                </select>
-                <button id="btn-add-station">+</button>
+            <div class="unplaced-add-row" style="flex-direction:column;gap:4px;">
+                <input id="add-station-name" type="text" placeholder="表示名（省略可）"
+                       style="width:100%;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--bg-input,#1a2234);border:1px solid var(--border-color,#2a3a5c);border-radius:3px;color:var(--text-primary,#c8d4e8);">
+                <div style="display:flex;gap:4px;">
+                    <select id="add-station-type" style="flex:1;">
+                        <option value="processing">Processing</option>
+                        <option value="merge">Merge</option>
+                        <option value="split">Split</option>
+                        <option value="entry">Entry</option>
+                        <option value="exit">Exit</option>
+                    </select>
+                    <button id="btn-add-station">+</button>
+                </div>
             </div>
         </div>
         <div class="logic-canvas-area">

@@ -1142,10 +1142,17 @@ function initToolPalette() {
     });
 
     // 新規ステーション追加ボタン
-    document.getElementById('btn-add-station')?.addEventListener('click', () => {
+    const _doAddStation = () => {
         const type = document.getElementById('add-station-type')?.value || 'processing';
-        addStation(type); // positionX/Y = null（未配置）
+        const nameInput = document.getElementById('add-station-name');
+        const name = nameInput?.value.trim() || '';
+        addStation(type, name || type);
+        if (nameInput) nameInput.value = '';
         renderUnplacedList();
+    };
+    document.getElementById('btn-add-station')?.addEventListener('click', _doAddStation);
+    document.getElementById('add-station-name')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); _doAddStation(); }
     });
 
     // ドロップゾーン設定
@@ -1296,7 +1303,11 @@ function _buildPropsHtml(s) {
 
     return `
         <div class="props-field">
-            <label>名前</label>
+            <label>ステーションID</label>
+            <span style="font-family:monospace;font-size:11px;color:var(--text-muted);word-break:break-all;display:block;padding:2px 0;">${_escapeHtml(s.stationId)}</span>
+        </div>
+        <div class="props-field">
+            <label>名前（表示名）</label>
             <input type="text" id="props-name" value="${_escapeHtml(s.name || '')}">
         </div>
         <div class="props-field">
@@ -1484,12 +1495,20 @@ function updateInfoBar(msg) {
 
 // ---- Data operations ----
 
-function addStation(type, x = null, y = null) {
-    const id = `${MACHINE_ID}_${type}_${Date.now()}`;
+function _nextStationId() {
+    const equipName = MACHINE_ID.replace(/\.\d{3}$/, '');
+    const usedIds = new Set(childStations.map(s => s.stationId));
+    let i = 1;
+    while (usedIds.has(`${equipName}.${String(i).padStart(3, '0')}`)) i++;
+    return `${equipName}.${String(i).padStart(3, '0')}`;
+}
+
+function addStation(type, name, x = null, y = null) {
+    const id = _nextStationId();
     childStations.push({
         stationId: id,
         stationType: type,
-        name: type,
+        name: name || type,
         parentId: MACHINE_ID,
         positionX: x,
         positionY: y,
@@ -1581,7 +1600,7 @@ function renderUnplacedList() {
         item.className = 'unplaced-item';
         item.draggable = true;
         item.dataset.stationId = s.stationId;
-        item.title = `${s.name} (${s.stationType})`;
+        item.title = `${s.name} [${s.stationId}] (${s.stationType})`;
         item.textContent = s.name || s.stationType;
         item.addEventListener('dragstart', e => {
             e.dataTransfer.setData('text/station-id', s.stationId);
