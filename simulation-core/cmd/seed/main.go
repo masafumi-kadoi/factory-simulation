@@ -97,14 +97,14 @@ func conn(from, to string, fp, tp int) Connection {
 }
 
 // moduler12 creates a Moduler with 12 internal stations (entry + 10 proc + exit)
-func moduler12(id string, procT float64) Station {
+func machine12(id string, procT float64) Station {
 	p := func(pid string) Station {
 		return Station{ID: pid, Type: "processing", Config: map[string]interface{}{
 			"arrivalTime": 0.3, "processingTime": procT, "departureTime": 0.3,
 		}}
 	}
 	return Station{
-		ID: id, Type: "moduler",
+		ID: id, Type: "machine",
 		Config:     map[string]interface{}{},
 		EntryCount: 1, ExitCount: 1,
 		SubScenario: &SubScenario{
@@ -143,19 +143,19 @@ func buildBaseScenario(name, typeA, typeB, typeC, typeD, typeE, typeAB, typeAll 
 		proc("pA1", 0.5, pt1, 0.5), proc("pA2", 0.5, pt1, 0.5), proc("pA3", 0.5, pt1, 0.5),
 		proc("pB1", 0.5, pt2, 0.5), proc("pB2", 0.5, pt2, 0.5), proc("pB3", 0.5, pt2, 0.5),
 		merge2("mergeAB", pt1, typeAB),
-		moduler12("mod1", pt1),
+		machine12("mod1", pt1),
 		proc("pC1", 0.5, pt2, 0.5), proc("pC2", 0.5, pt2, 0.5),
 		proc("pD1", 0.5, pt3, 0.5), proc("pD2", 0.5, pt3, 0.5),
-		moduler12("mod2", pt3),
+		machine12("mod2", pt3),
 		merge2("mergeAll", pt2, typeAll),
-		moduler12("mod3", pt2),
+		machine12("mod3", pt2),
 		split2("split1", pt1),
 		proc("pE1", 0.5, pt1, 0.5), proc("pE2", 0.5, pt2, 0.5), proc("pE3", 0.5, pt3, 0.5),
-		moduler12("mod4", pt3),
+		machine12("mod4", pt3),
 		proc("pF1", 0.5, pt1, 0.5), proc("pF2", 0.5, pt2, 0.5),
 		drain("drain1"),
 		proc("pG1", 0.5, pt2, 0.5), proc("pG2", 0.5, pt3, 0.5), proc("pG3", 0.5, pt1, 0.5),
-		moduler12("mod5", pt1),
+		machine12("mod5", pt1),
 		proc("pH1", 0.5, pt3, 0.5), proc("pH2", 0.5, pt1, 0.5),
 		drain("drain2"),
 		proc("pI1", 0.5, pt1, 0.5), proc("pI2", 0.5, pt2, 0.5), proc("pI3", 0.5, pt3, 0.5),
@@ -239,19 +239,19 @@ func buildScenario10() ScenarioRequest {
 		proc("px1", 0.5, 1.0, 0.5), proc("px2", 0.5, 1.2, 0.5),
 		proc("py1", 0.5, 0.8, 0.5), proc("py2", 0.5, 1.0, 0.5),
 		merge2("mergeX", 1.5, "type-xy"),
-		moduler12("modX1", 1.0),
+		machine12("modX1", 1.0),
 		proc("px3", 0.5, 1.2, 0.5), proc("px4", 0.5, 1.0, 0.5),
 		proc("pz1", 0.5, 2.0, 0.5), proc("pz2", 0.5, 1.5, 0.5),
-		moduler12("modZ0", 1.5),
+		machine12("modZ0", 1.5),
 		merge2("mergeXY", 1.5, "type-xyz"),
-		moduler12("modZ1", 1.2),
+		machine12("modZ1", 1.2),
 		split2("splitZ", 1.0),
 		proc("pOut1", 0.5, 1.0, 0.5), proc("pOut2", 0.5, 0.8, 0.5), proc("pOut3", 0.5, 1.2, 0.5),
-		moduler12("modOut1", 0.8),
+		machine12("modOut1", 0.8),
 		proc("pOut4", 0.5, 1.0, 0.5), proc("pOut5", 0.5, 0.8, 0.5),
 		drain("drain-a"),
 		proc("pQa1", 0.5, 1.5, 0.5), proc("pQa2", 0.5, 1.0, 0.5), proc("pQa3", 0.5, 0.8, 0.5),
-		moduler12("modOut2", 1.0),
+		machine12("modOut2", 1.0),
 		proc("pQa4", 0.5, 1.2, 0.5), proc("pQa5", 0.5, 1.0, 0.5),
 		drain("drain-b"),
 		// Group AB
@@ -259,15 +259,15 @@ func buildScenario10() ScenarioRequest {
 		proc("pa1", 0.5, 1.0, 0.5), proc("pa2", 0.5, 1.2, 0.5), proc("pa3", 0.5, 0.8, 0.5),
 		proc("pb1", 0.5, 0.9, 0.5), proc("pb2", 0.5, 1.1, 0.5), proc("pb3", 0.5, 1.3, 0.5),
 		merge2("mergeA", 1.5, "type-ab"),
-		moduler12("modA1", 1.0),
+		machine12("modA1", 1.0),
 		proc("pa4", 0.5, 1.0, 0.5), proc("pa5", 0.5, 1.2, 0.5), proc("pa6", 0.5, 0.8, 0.5),
 		split2("splitA", 1.0),
 		proc("pad1", 0.5, 1.0, 0.5), proc("pad2", 0.5, 0.8, 0.5),
-		moduler12("modA2", 1.0),
+		machine12("modA2", 1.0),
 		proc("pad3", 0.5, 1.2, 0.5), proc("pad4", 0.5, 1.0, 0.5),
 		drain("drain-c"),
 		proc("pbe1", 0.5, 1.0, 0.5), proc("pbe2", 0.5, 1.2, 0.5),
-		moduler12("modA3", 1.0),
+		machine12("modA3", 1.0),
 		proc("pbe3", 0.5, 0.8, 0.5), proc("pbe4", 0.5, 1.0, 0.5),
 		drain("drain-d"),
 		// Independent

@@ -109,7 +109,7 @@ func GetDefaultInterlockConfig(stationType StationType) *InterlockConfig {
 		return getEntryDefaultConfig()
 	case StationTypeExit:
 		return getExitDefaultConfig()
-	case StationTypeModuler:
+	case StationTypeMachine:
 		return getModulerDefaultConfig()
 	default:
 		return getProcessingDefaultConfig()

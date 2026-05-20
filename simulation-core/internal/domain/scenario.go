@@ -41,7 +41,7 @@ type Scenario struct {
 	UpdatedAt   *time.Time
 
 	stationIndex      map[string]int    // station ID -> index in Stations slice
-	StationModulerMap map[string]string // station ID -> parent Moduler station ID
+	StationMachineMap map[string]string // station ID -> parent Moduler station ID
 	connectionsFrom   map[string][]int  // station ID -> indices into Connections slice (outgoing)
 	connectionsTo     map[string][]int  // station ID -> indices into Connections slice (incoming)
 }

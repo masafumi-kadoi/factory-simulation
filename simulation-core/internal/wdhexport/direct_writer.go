@@ -113,8 +113,8 @@ func (w *DirectWriter) writeLocationMaster(tx *sql.Tx, scenario *domain.Scenario
 			}
 		}
 		var parentLocationID *int64
-		if scenario.StationModulerMap != nil {
-			if parentID, ok := scenario.StationModulerMap[station.ID]; ok && parentID != "" {
+		if scenario.StationMachineMap != nil {
+			if parentID, ok := scenario.StationMachineMap[station.ID]; ok && parentID != "" {
 				if pid, ok := w.locationMap[parentID]; ok {
 					parentLocationID = &pid
 				}

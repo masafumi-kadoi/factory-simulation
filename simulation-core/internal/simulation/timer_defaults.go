@@ -51,7 +51,7 @@ func (e *Engine) initStationStayTime(station *domain.Station) {
 		// Set a negative value to disable the timer
 		stayTime = -1
 
-	case domain.StationTypeModuler:
+	case domain.StationTypeMachine:
 		// Moduler stayTime depends on internal stations; skip auto-calculation
 		stayTime = -1
 
@@ -91,7 +91,7 @@ func (e *Engine) initStationNoWorkTimeout(station *domain.Station) {
 			noWorkTimeout = -1 // No upstream found, disable
 		}
 
-	case domain.StationTypeModuler:
+	case domain.StationTypeMachine:
 		noWorkTimeout = -1
 
 	default:

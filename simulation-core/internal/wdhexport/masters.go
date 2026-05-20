@@ -43,8 +43,8 @@ func (e *Exporter) exportLocationMaster(scenario *domain.Scenario) (int, error) 
 		}
 
 		var parentLocationID *int64
-		if scenario.StationModulerMap != nil {
-			if parentID, ok := scenario.StationModulerMap[station.ID]; ok && parentID != "" {
+		if scenario.StationMachineMap != nil {
+			if parentID, ok := scenario.StationMachineMap[station.ID]; ok && parentID != "" {
 				if pid, ok := e.locationMap[parentID]; ok {
 					parentLocationID = &pid
 				}

@@ -106,7 +106,7 @@
       },
       {
         "id": "mod-final-process",
-        "type": "moduler",
+        "type": "machine",
         "entryCount": 1,
         "exitCount": 1,
         "config": {},

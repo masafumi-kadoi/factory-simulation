@@ -5,13 +5,13 @@ import (
 	"strings"
 )
 
-// deriveModulerSignals derives a Moduler station's result signals from its internal stations.
+// deriveMachineSignals derives a Moduler station's result signals from its internal stations.
 // inputWorkPresent: any inputMonitorStation has work
 // processingWorkPresent: any non-monitor internal station has work
 // outputWorkPresent: any outputMonitorStation has work
 // running: any internal station has running=ON
-func deriveModulerSignals(moduler *domain.Station, scenario *domain.Scenario) {
-	if moduler.Type != domain.StationTypeModuler || len(moduler.InternalStationIDs) == 0 {
+func deriveMachineSignals(moduler *domain.Station, scenario *domain.Scenario) {
+	if moduler.Type != domain.StationTypeMachine || len(moduler.InternalStationIDs) == 0 {
 		return
 	}
 
@@ -56,30 +56,30 @@ func deriveModulerSignals(moduler *domain.Station, scenario *domain.Scenario) {
 	moduler.SetSignal(domain.SignalRunning, anyRunning)
 }
 
-// triggerModulerDerivation finds the parent Moduler station for a given station
+// triggerMachineDerivation finds the parent Moduler station for a given station
 // and re-derives its signals. Called after processing an internal station's events.
-func (e *Engine) triggerModulerDerivation(station *domain.Station) error {
-	moduler := e.findParentModuler(station.ID)
+func (e *Engine) triggerMachineDerivation(station *domain.Station) error {
+	moduler := e.findParentMachine(station.ID)
 	if moduler == nil {
 		return nil
 	}
 
-	deriveModulerSignals(moduler, e.scenario)
+	deriveMachineSignals(moduler, e.scenario)
 	return e.evaluateAndLogSignals(moduler)
 }
 
-// findParentModuler finds the Moduler station that contains the given station ID.
-func (e *Engine) findParentModuler(stationID string) *domain.Station {
-	if e.stationModulerMap != nil {
-		if parentID, ok := e.stationModulerMap[stationID]; ok {
+// findParentMachine finds the Moduler station that contains the given station ID.
+func (e *Engine) findParentMachine(stationID string) *domain.Station {
+	if e.stationMachineMap != nil {
+		if parentID, ok := e.stationMachineMap[stationID]; ok {
 			return e.scenario.GetStation(parentID)
 		}
 		return nil
 	}
-	// Fallback for cases where stationModulerMap is not built
+	// Fallback for cases where stationMachineMap is not built
 	for i := range e.scenario.Stations {
 		st := &e.scenario.Stations[i]
-		if st.Type != domain.StationTypeModuler {
+		if st.Type != domain.StationTypeMachine {
 			continue
 		}
 		for _, internalID := range st.InternalStationIDs {
@@ -120,10 +120,10 @@ func toSet(items []string) map[string]bool {
 }
 
 // isInternalStation checks if a station ID belongs to any Moduler's internal stations.
-// Uses the stationModulerMap for O(1) lookup when available, falls back to dot-check.
+// Uses the stationMachineMap for O(1) lookup when available, falls back to dot-check.
 func (e *Engine) isInternalStation(stationID string) bool {
-	if e.stationModulerMap != nil {
-		_, ok := e.stationModulerMap[stationID]
+	if e.stationMachineMap != nil {
+		_, ok := e.stationMachineMap[stationID]
 		return ok
 	}
 	return strings.Contains(stationID, ".")

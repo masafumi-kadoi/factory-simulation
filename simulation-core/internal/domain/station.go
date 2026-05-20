@@ -12,7 +12,7 @@ const (
 	StationTypeMerge      StationType = "merge"
 	StationTypeSplit      StationType = "split"
 	StationTypeSwitch     StationType = "switch"
-	StationTypeModuler    StationType = "moduler"
+	StationTypeMachine    StationType = "machine"
 	StationTypeEntry      StationType = "entry"
 	StationTypeExit       StationType = "exit"
 )
@@ -254,7 +254,7 @@ func (s *Station) GetSignal(name string) bool {
 
 // CanAcceptWork checks if the station can accept a new work
 func (s *Station) CanAcceptWork() bool {
-	if s.Type == StationTypeSource || s.Type == StationTypeModuler {
+	if s.Type == StationTypeSource || s.Type == StationTypeMachine {
 		return false
 	}
 	return s.IsInputReady()
@@ -734,7 +734,7 @@ func (s *Station) CanStartProcessing() bool {
 	if s.Type == StationTypeMerge {
 		return false
 	}
-	if s.Type == StationTypeEntry || s.Type == StationTypeExit || s.Type == StationTypeModuler {
+	if s.Type == StationTypeEntry || s.Type == StationTypeExit || s.Type == StationTypeMachine {
 		return false
 	}
 	if s.Type == StationTypeSwitch {

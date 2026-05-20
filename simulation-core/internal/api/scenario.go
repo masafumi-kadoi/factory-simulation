@@ -162,13 +162,13 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if st.Type == "moduler" {
+		if st.Type == "machine" || st.Type == "moduler" /* backward compat */ {
 			if st.EntryCount < 1 {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: entryCount must be >= 1", st.ID))
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Machine station %s: entryCount must be >= 1", st.ID))
 				return
 			}
 			if st.ExitCount < 1 {
-				respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: exitCount must be >= 1", st.ID))
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Machine station %s: exitCount must be >= 1", st.ID))
 				return
 			}
 			if st.SubScenario != nil {
@@ -178,7 +178,7 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 				subIDs := make(map[string]bool)
 				for _, sub := range st.SubScenario.Stations {
 					if subIDs[sub.ID] {
-						respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: duplicate station ID '%s' in subScenario", st.ID, sub.ID))
+						respondError(w, http.StatusBadRequest, fmt.Sprintf("Machine station %s: duplicate station ID '%s' in subScenario", st.ID, sub.ID))
 						return
 					}
 					subIDs[sub.ID] = true
@@ -190,11 +190,11 @@ func (h *Handler) HandleCreateScenario(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				if entryCount != st.EntryCount {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: subScenario has %d entry stations but entryCount is %d", st.ID, entryCount, st.EntryCount))
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Machine station %s: subScenario has %d entry stations but entryCount is %d", st.ID, entryCount, st.EntryCount))
 					return
 				}
 				if exitCount != st.ExitCount {
-					respondError(w, http.StatusBadRequest, fmt.Sprintf("Moduler station %s: subScenario has %d exit stations but exitCount is %d", st.ID, exitCount, st.ExitCount))
+					respondError(w, http.StatusBadRequest, fmt.Sprintf("Machine station %s: subScenario has %d exit stations but exitCount is %d", st.ID, exitCount, st.ExitCount))
 					return
 				}
 			}
@@ -507,7 +507,11 @@ func (h *Handler) HandleGetScenario(w http.ResponseWriter, r *http.Request) {
 func convertStationRequests(reqs []StationRequest) []domain.Station {
 	stations := make([]domain.Station, len(reqs))
 	for i, st := range reqs {
-		stationType := domain.StationType(st.Type)
+		rawType := st.Type
+		if rawType == "moduler" {
+			rawType = "machine" // backward compat
+		}
+		stationType := domain.StationType(rawType)
 		stations[i] = *domain.NewStation(st.ID, stationType, st.Config)
 		stations[i].Name = st.Name
 		stations[i].ParentID = st.ParentID

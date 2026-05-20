@@ -22,7 +22,7 @@ type StationStatusLog struct {
 	SignalName string
 	OldValue   bool
 	RuleID     string
-	ModulerID  string // Parent Moduler station ID (empty for top-level stations)
+	MachineID  string // Parent Moduler station ID (empty for top-level stations)
 }
 
 // WorkEventLog represents a log entry for work events
@@ -34,7 +34,7 @@ type WorkEventLog struct {
 	EventType        string
 	WorkType         string // Work type (e.g. "partA", "partB")
 	PortIndex      int    // Port slot index (-1 = no port)
-	ModulerID      string // Parent Moduler station ID (empty for top-level stations)
+	MachineID      string // Parent Moduler station ID (empty for top-level stations)
 	QualityStatus  string // Quality status at event time (OK, NG, etc.)
 }
 
@@ -68,7 +68,7 @@ type Engine struct {
 	mergeInProgress    map[string]bool         // Tracks merge stations currently processing (stationID -> in progress)
 	initialWorks       map[string]InitialWorkCondition // Initial work conditions by station ID
 	pendingTimers      map[string]float64     // Timer tracking: key="stationID:timerType" → scheduledTime
-	stationModulerMap  map[string]string       // station ID -> parent Moduler station ID (empty for top-level stations)
+	stationMachineMap  map[string]string       // station ID -> parent Moduler station ID (empty for top-level stations)
 	switchStates       map[string]*SwitchState // Switch station round-robin/sequence state (stationID -> state)
 	switchDivertTarget map[string]string       // Switch divert selected target (stationID -> targetStationID)
 }
@@ -124,7 +124,7 @@ func (e *Engine) Run(simulationID, friendlyName string, timeLimit float64) (*dom
 	// Step 0: Flatten ModulerStations (recursive expansion)
 	e.scenario = FlattenScenario(e.scenario)
 	e.scenario.BuildStationIndex()
-	e.stationModulerMap = e.scenario.StationModulerMap
+	e.stationMachineMap = e.scenario.StationMachineMap
 
 	// Step 0.5a: Auto-assign port indices for Switch connections (merge→ToPortIndex, divert→FromPortIndex)
 	e.assignSwitchPortIndices()
@@ -249,7 +249,7 @@ func (e *Engine) processEvent(event *Event, simulation *domain.Simulation) error
 
 	// After processing an internal station's event, re-derive parent Moduler signals
 	if e.isInternalStation(station.ID) {
-		if err := e.triggerModulerDerivation(station); err != nil {
+		if err := e.triggerMachineDerivation(station); err != nil {
 			return err
 		}
 	}
@@ -1181,7 +1181,7 @@ func (e *Engine) logWorkEvent(workID, workFriendlyName, stationID string, timest
 		EventType:        eventType,
 		WorkType:         workType,
 		PortIndex:      portIndex,
-		ModulerID:      e.stationModulerMap[stationID],
+		MachineID:      e.stationMachineMap[stationID],
 	})
 }
 
@@ -1302,7 +1302,7 @@ func (e *Engine) logStationStatus(station *domain.Station, statusType string) {
 		Timestamp:  e.currentTime,
 		StatusType: statusType,
 		Value:      value,
-		ModulerID:  e.stationModulerMap[station.ID],
+		MachineID:  e.stationMachineMap[station.ID],
 	})
 }
 
@@ -1316,7 +1316,7 @@ func (e *Engine) logSignalChange(station *domain.Station, signalName string, old
 		SignalName: signalName,
 		OldValue:   oldValue,
 		RuleID:     ruleID,
-		ModulerID:  e.stationModulerMap[station.ID],
+		MachineID:  e.stationMachineMap[station.ID],
 	})
 }
 
@@ -1348,7 +1348,7 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 					SignalName: name,
 					OldValue:   oldVal,
 					RuleID:     "derived",
-					ModulerID:  e.stationModulerMap[station.ID],
+					MachineID:  e.stationMachineMap[station.ID],
 				})
 			}
 		}
@@ -1369,7 +1369,7 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 			SignalName: change.SignalName,
 			OldValue:   change.OldValue,
 			RuleID:     change.RuleID,
-			ModulerID:  e.stationModulerMap[change.StationID],
+			MachineID:  e.stationMachineMap[change.StationID],
 		})
 	}
 

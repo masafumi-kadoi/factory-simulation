@@ -10,11 +10,11 @@ import (
 // The original ModulerStation is kept in the result (for signal evaluation) but its SubScenario
 // internal stations are extracted with prefixed IDs (e.g., "moduler-1.entry-0").
 // External connections to/from ModulerStations are rewritten to point directly at Entry/Exit stations.
-// Also builds StationModulerMap: a mapping from each internal station ID to its parent Moduler ID.
+// Also builds StationMachineMap: a mapping from each internal station ID to its parent Moduler ID.
 func FlattenScenario(scenario *domain.Scenario) *domain.Scenario {
 	flatStations, flatConnections := flattenStationsAndConnections(scenario.Stations, scenario.Connections, "")
 
-	modulerMap := buildStationModulerMap(flatStations)
+	modulerMap := buildStationMachineMap(flatStations)
 
 	return &domain.Scenario{
 		ID:                scenario.ID,
@@ -24,16 +24,16 @@ func FlattenScenario(scenario *domain.Scenario) *domain.Scenario {
 		Connections:       flatConnections,
 		CreatedAt:         scenario.CreatedAt,
 		UpdatedAt:         scenario.UpdatedAt,
-		StationModulerMap: modulerMap,
+		StationMachineMap: modulerMap,
 	}
 }
 
-// buildStationModulerMap builds a mapping from internal station IDs to their parent Moduler station ID.
-func buildStationModulerMap(stations []domain.Station) map[string]string {
+// buildStationMachineMap builds a mapping from internal station IDs to their parent Moduler station ID.
+func buildStationMachineMap(stations []domain.Station) map[string]string {
 	m := make(map[string]string)
 	for i := range stations {
 		st := &stations[i]
-		if st.Type != domain.StationTypeModuler {
+		if st.Type != domain.StationTypeMachine {
 			continue
 		}
 		for _, internalID := range st.InternalStationIDs {
@@ -51,19 +51,19 @@ func flattenStationsAndConnections(stations []domain.Station, connections []doma
 	var flatConnections []domain.Connection
 
 	// Collect moduler station IDs for connection rewriting
-	modulerStationIDs := make(map[string]*domain.Station)
+	machineStationIDs := make(map[string]*domain.Station)
 
 	for i := range stations {
 		st := stations[i]
-		if st.Type == domain.StationTypeModuler {
-			modulerStationIDs[st.ID] = &stations[i]
+		if st.Type == domain.StationTypeMachine {
+			machineStationIDs[st.ID] = &stations[i]
 		}
 	}
 
 	// Process each station
 	for i := range stations {
 		st := stations[i]
-		if st.Type != domain.StationTypeModuler {
+		if st.Type != domain.StationTypeMachine {
 			// Non-moduler station: add as-is
 			flatStations = append(flatStations, st)
 			continue
@@ -123,7 +123,7 @@ func flattenStationsAndConnections(stations []domain.Station, connections []doma
 
 	// Rewrite external connections
 	for _, conn := range connections {
-		rewritten := rewriteConnection(conn, modulerStationIDs)
+		rewritten := rewriteConnection(conn, machineStationIDs)
 		flatConnections = append(flatConnections, rewritten...)
 	}
 
