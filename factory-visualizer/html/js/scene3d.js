@@ -866,13 +866,15 @@ export class Scene3D {
         return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.62).getHex();
     }
 
-    setWorkPosition(workId, stationId, workType) {
+    setWorkPosition(workId, stationId, workType, animate = true) {
         if (!this._showWorks) return;
-        const stEntry = this._machines.get(stationId) || this._internalStations.get(stationId);
+        const isMachine = this._machines.has(stationId);
+        const stEntry = isMachine ? this._machines.get(stationId) : this._internalStations.get(stationId);
         if (!stEntry) return;
 
         const px = stEntry.station.positionX || 0;
-        const py = (stEntry.station.positionZ || 0) + TETRIS_H + 20;
+        const baseH = isMachine ? 110 : TETRIS_H;
+        const py = (stEntry.station.positionZ || 0) + baseH + 20;
         const pz = stEntry.station.positionY || 0;
 
         let entry = this._works.get(workId);
@@ -899,11 +901,34 @@ export class Scene3D {
             group.userData.workId = workId;
             this.scene.add(group);
 
-            entry = { mesh: group, stationId };
+            entry = { mesh: group, stationId, _anim: null };
+            entry.mesh.position.set(px, py, pz);
             this._works.set(workId, entry);
+            return;
         }
-        entry.mesh.position.set(px, py, pz);
+
+        // Already at target — skip (prevents re-triggering on every play tick)
+        if (entry.stationId === stationId && !entry._anim) return;
+
         entry.stationId = stationId;
+
+        if (!animate) {
+            entry._anim = null;
+            entry.mesh.position.set(px, py, pz);
+            return;
+        }
+
+        // Arc animation: lerp x/z with easeInOut, parabola on y
+        const from = entry.mesh.position.clone();
+        const to = new THREE.Vector3(px, py, pz);
+        const hDist = Math.sqrt((to.x - from.x) ** 2 + (to.z - from.z) ** 2);
+        entry._anim = {
+            from,
+            to,
+            arcH: Math.max(20, Math.min(80, hDist * 0.35)),
+            startTime: Date.now(),
+            duration: 350,
+        };
     }
 
     removeWork(workId) {
@@ -1093,10 +1118,26 @@ export class Scene3D {
         this._raf = requestAnimationFrame(() => this._animate());
         this.controls && this.controls.update();
 
-        const t = Date.now() * 0.001;
-        this._works.forEach(({ mesh }) => {
-            mesh.rotation.x = t * 0.5;
-            mesh.rotation.y = t * 0.8;
+        const now = Date.now();
+        const t = now * 0.001;
+        this._works.forEach((entry) => {
+            const a = entry._anim;
+            if (a) {
+                const progress = Math.min(1, (now - a.startTime) / a.duration);
+                // ease-in-out quadratic
+                const e = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+                if (progress >= 1) {
+                    entry.mesh.position.copy(a.to);
+                    entry._anim = null;
+                } else {
+                    entry.mesh.position.x = a.from.x + (a.to.x - a.from.x) * e;
+                    entry.mesh.position.z = a.from.z + (a.to.z - a.from.z) * e;
+                    entry.mesh.position.y = a.from.y + (a.to.y - a.from.y) * e
+                        + a.arcH * 4 * progress * (1 - progress);
+                }
+            }
+            entry.mesh.rotation.x = t * 0.5;
+            entry.mesh.rotation.y = t * 0.8;
         });
 
         const cam = this._useOrtho ? this._orthoCamera : this.camera;

@@ -40,14 +40,14 @@ export class Timeline {
         this._currentTime = startMs;
         this._events = events.map(e => new Date(e.event_time || e.eventTime).getTime()).filter(t => !isNaN(t));
         this._draw();
-        this._emitTime();
+        this._emitTime(true);
     }
 
-    setCurrentTime(ms) {
+    setCurrentTime(ms, seeking = false) {
         if (this._startTime === null) return;
         this._currentTime = Math.max(this._startTime, Math.min(this._endTime, ms));
         this._draw();
-        this._emitTime();
+        this._emitTime(seeking);
     }
 
     getCurrentTime() { return this._currentTime; }
@@ -75,11 +75,11 @@ export class Timeline {
     }
 
     seekToStart() {
-        this.setCurrentTime(this._startTime || 0);
+        this.setCurrentTime(this._startTime || 0, true);
     }
 
     seekToEnd() {
-        this.setCurrentTime(this._endTime || 0);
+        this.setCurrentTime(this._endTime || 0, true);
     }
 
     get isPlaying() { return this._isPlaying; }
@@ -89,7 +89,7 @@ export class Timeline {
         const now = performance.now();
         const realDelta = now - this._lastRealTime;
         this._lastRealTime = now;
-        const simDelta = realDelta * this._speed * 1000; // ms of sim time per 50ms real
+        const simDelta = realDelta * this._speed; // ms of sim time per real ms (_speed is direct multiplier)
         const next = this._currentTime + simDelta;
         if (next >= this._endTime) {
             this.setCurrentTime(this._endTime);
@@ -99,9 +99,9 @@ export class Timeline {
         }
     }
 
-    _emitTime() {
+    _emitTime(seeking = false) {
         if (this._onSeek && this._currentTime !== null) {
-            this._onSeek(this._currentTime);
+            this._onSeek(this._currentTime, seeking);
         }
     }
 
@@ -112,7 +112,7 @@ export class Timeline {
         const ratio = Math.max(0, Math.min(1, (x - this._trackPad) / (this._trackWidth)));
         const ms = this._startTime + ratio * (this._endTime - this._startTime);
         this.pause();
-        this.setCurrentTime(ms);
+        this.setCurrentTime(ms, true);
     }
 
     _resize() {

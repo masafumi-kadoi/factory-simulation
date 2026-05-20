@@ -44,6 +44,7 @@
                 <button class="toolbar-btn" id="btn-fit" title="全体表示">⊡ フィット</button>
                 <button class="toolbar-btn" id="btn-top" title="2Dトップビューに切り替え">↧ 2D</button>
                 <button class="toolbar-btn" id="btn-refresh" title="最新データに更新">↺ 更新</button>
+                <button class="toolbar-btn" id="btn-multi-panel" title="複数ウインドウモード：オンにすると設備を選択するたびに新しいウインドウを追加します">⧉ 複数</button>
             </div>
             <div class="toolbar-tabs">
                 <button class="toolbar-tab active" data-gvtab="gv-view-display">ビュー表示</button>
@@ -136,6 +137,37 @@
                         </div>
                     </div>
 
+                    <div class="panel-section" id="section-cameras">
+                        <div class="section-header" data-toggle="cameras">
+                            <span>📷 カメラ</span>
+                            <span class="toggle-icon">▾</span>
+                        </div>
+                        <div class="section-body" id="cameras-body">
+                            <div id="camera-list" class="camera-list">
+                                <div class="camera-item" data-cam-id="cam-01" data-cam-name="CAM-01 エントリー" data-cam-location="搬入口">
+                                    <span class="cam-dot live"></span>
+                                    <span class="cam-name">CAM-01 エントリー</span>
+                                    <span class="cam-badge">LIVE</span>
+                                </div>
+                                <div class="camera-item" data-cam-id="cam-02" data-cam-name="CAM-02 組立エリア A" data-cam-location="組立ライン A">
+                                    <span class="cam-dot live"></span>
+                                    <span class="cam-name">CAM-02 組立エリア A</span>
+                                    <span class="cam-badge">LIVE</span>
+                                </div>
+                                <div class="camera-item" data-cam-id="cam-03" data-cam-name="CAM-03 組立エリア B" data-cam-location="組立ライン B">
+                                    <span class="cam-dot live"></span>
+                                    <span class="cam-name">CAM-03 組立エリア B</span>
+                                    <span class="cam-badge">LIVE</span>
+                                </div>
+                                <div class="camera-item" data-cam-id="cam-04" data-cam-name="CAM-04 出口ゾーン" data-cam-location="搬出口">
+                                    <span class="cam-dot offline"></span>
+                                    <span class="cam-name">CAM-04 出口ゾーン</span>
+                                    <span class="cam-badge offline">OFF</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="panel-section" id="section-sim">
                         <div class="section-header" data-toggle="sim">
                             <span>シミュレーション</span>
@@ -187,11 +219,11 @@
                     <button class="tl-btn" id="tl-play" title="再生">▶</button>
                     <button class="tl-btn" id="tl-ffwd" title="末尾へ">⏭</button>
                     <select id="tl-speed" title="再生速度">
-                        <option value="0.5">0.5x</option>
-                        <option value="1" selected>1x</option>
-                        <option value="2">2x</option>
-                        <option value="5">5x</option>
                         <option value="10">10x</option>
+                        <option value="60">60x</option>
+                        <option value="300" selected>300x</option>
+                        <option value="600">600x</option>
+                        <option value="3600">3600x</option>
                     </select>
                     <span id="tl-time" class="tl-time">--:--:--</span>
                 </div>

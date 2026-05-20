@@ -1,7 +1,7 @@
 // Factory Visualizer — Main Application
 import { Scene3D } from './scene3d.js';
 import { Timeline } from './timeline.js';
-import { initAIPanel, FloatingInfoPanel } from './panels.js';
+import { initAIPanel, FloatingInfoPanel, FloatingCameraPanel } from './panels.js';
 import { initLeftPanel, applyDocTheme, renderObjectList, setObjectListClickHandler, setStatus, setICStatus, setTimeDisplay, renderExecutionList, setExecutionListClickHandler } from './ui.js';
 import * as API from './api.js';
 
@@ -23,11 +23,15 @@ const state = {
     ws: null,
     wsRetryTimer: null,
     wsRetryDelay: 1000,
+    historyEvents: [],          // sorted item_movement events for timeline replay
 };
 
 let scene3d = null;
 let timeline = null;
 let infoPanel = null;
+let infoPanels = [];       // multi-window mode で開いたパネル一覧
+let multiWindowMode = false;
+let cameraPanels = [];     // カメラウインドウ一覧（常に複数表示）
 const _movedEquipment = new Map(); // equipName → { centroid, machines[] }
 let _dragEquipData = null;         // ドラッグ中の設備データ { equipName, members }（3D編集用）
 let _dragGleData   = null;         // ドラッグ中の設備データ { equipName, members }（ロジック編集用）
@@ -91,12 +95,47 @@ function initScene() {
     });
 }
 
+function applyHistoryAtTime(ms, animate = true) {
+    if (!scene3d || !state.historyEvents.length) return;
+    const workLocations = new Map(); // workId → locationId
+    for (const ev of state.historyEvents) {
+        if (new Date(ev.event_time).getTime() > ms) break;
+        if (ev.movement_type === 'arrived') {
+            workLocations.set(ev.item_id, ev.to_location_id);
+        } else if (ev.movement_type === 'departed') {
+            workLocations.delete(ev.item_id);
+        }
+    }
+
+    // Remove works no longer present at this time
+    state.activeWorks.forEach((_, workId) => {
+        if (!workLocations.has(workId)) {
+            scene3d.removeWork(workId);
+            state.activeWorks.delete(workId);
+        }
+    });
+
+    // Add or move works that changed station
+    workLocations.forEach((locationId, workId) => {
+        const stationId = state.locationMap.get(Number(locationId));
+        if (!stationId) return;
+        const prevStation = state.activeWorks.get(workId);
+        if (prevStation !== stationId) {
+            state.activeWorks.set(workId, stationId);
+            scene3d.setWorkPosition(workId, stationId, undefined, animate);
+        }
+    });
+
+    renderObjectList(state.stations, state.activeWorks, state.activeFilters);
+}
+
 function initTimeline() {
     const canvas = document.getElementById('timeline-canvas');
     timeline = new Timeline({
         canvas,
-        onSeek: ms => {
+        onSeek: (ms, seeking) => {
             setTimeDisplay(ms);
+            applyHistoryAtTime(ms, !seeking);
         },
         onPlayStateChange: playing => {
             document.getElementById('tl-play').textContent = playing ? '⏸' : '▶';
@@ -106,7 +145,9 @@ function initTimeline() {
     document.getElementById('tl-play').addEventListener('click', () => timeline.togglePlay());
     document.getElementById('tl-rewind').addEventListener('click', () => timeline.seekToStart());
     document.getElementById('tl-ffwd').addEventListener('click', () => timeline.seekToEnd());
-    document.getElementById('tl-speed').addEventListener('change', e => {
+    const speedSel = document.getElementById('tl-speed');
+    timeline.setSpeed(parseFloat(speedSel.value));
+    speedSel.addEventListener('change', e => {
         timeline.setSpeed(parseFloat(e.target.value));
     });
 }
@@ -148,6 +189,14 @@ function initUI() {
         if (st) openInfoPanel(st, type);
     });
 
+    // カメラリストのクリックハンドラー
+    document.getElementById('camera-list').addEventListener('click', e => {
+        const item = e.target.closest('.camera-item');
+        if (!item) return;
+        if (item.querySelector('.cam-dot.offline')) return; // オフライン中は無効
+        openCameraPanel(item.dataset.camId, item.dataset.camName, item.dataset.camLocation);
+    });
+
     setExecutionListClickHandler(async (execId, dsId) => {
         if (!dsId) return;
         state.liveDataSourceId = dsId;
@@ -178,6 +227,22 @@ function initUI() {
                 new Date('2100-01-01').toISOString()
             );
             if (Array.isArray(events)) {
+                // Store sorted item_movement events for timeline-driven replay
+                state.historyEvents = events
+                    .filter(ev => ev.table === 'item_movement')
+                    .sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
+
+                // Recalibrate timeline to actual event timestamps (exec.startTime is server
+                // creation time and may differ from the simulation's startDatetime base).
+                if (state.historyEvents.length > 0) {
+                    const firstMs = new Date(state.historyEvents[0].event_time).getTime();
+                    const lastMs = new Date(state.historyEvents[state.historyEvents.length - 1].event_time).getTime();
+                    timeline.setExecution({
+                        startDatetime: new Date(firstMs).toISOString(),
+                        simulationTime: Math.max(Math.ceil((lastMs - firstMs) / 1000), 60),
+                    });
+                }
+
                 if (scene3d) scene3d.clearWorks();
                 state.activeWorks.clear();
                 for (const ev of events) {
@@ -220,6 +285,14 @@ function initUI() {
             btnTop.title = '3Dパースビューに切り替え';
         }
         _topViewActive = !_topViewActive;
+    });
+    const btnMultiPanel = document.getElementById('btn-multi-panel');
+    btnMultiPanel.addEventListener('click', () => {
+        multiWindowMode = !multiWindowMode;
+        btnMultiPanel.classList.toggle('active', multiWindowMode);
+        btnMultiPanel.title = multiWindowMode
+            ? '複数ウインドウモード：オン（クリックで無効化）'
+            : '複数ウインドウモード：オフ（クリックで有効化）';
     });
     document.getElementById('btn-open-visualizer').addEventListener('click', () => {
         const dsId = state.liveDataSourceId;
@@ -265,6 +338,7 @@ async function selectFactory(factoryId) {
         state.stations = Array.isArray(stations) ? stations : [];
         state.connections = Array.isArray(connections) ? connections : [];
         state.activeWorks = new Map();
+        state.historyEvents = [];
 
         buildLocationMap();
 
@@ -420,6 +494,21 @@ async function loadExecutionResult(execId, dataSourceId, startDatetime, simulati
                 new Date('2100-01-01').toISOString()
             );
             if (Array.isArray(events)) {
+                state.historyEvents = events
+                    .filter(ev => ev.table === 'item_movement')
+                    .sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
+
+                // Recalibrate timeline to actual event timestamps in case the passed
+                // startDatetime differs from the simulation base time in the DB.
+                if (state.historyEvents.length > 0) {
+                    const firstMs = new Date(state.historyEvents[0].event_time).getTime();
+                    const lastMs = new Date(state.historyEvents[state.historyEvents.length - 1].event_time).getTime();
+                    timeline.setExecution({
+                        startDatetime: new Date(firstMs).toISOString(),
+                        simulationTime: Math.max(Math.ceil((lastMs - firstMs) / 1000), 60),
+                    });
+                }
+
                 for (const ev of events) {
                     handleWsEvent(ev);
                 }
@@ -539,19 +628,61 @@ function handleWsEvent(event) {
 
 // ---- Info panels ----
 
-function openInfoPanel(station, type) {
-    if (infoPanel) { infoPanel.close(); infoPanel = null; }
+function openCameraPanel(camId, title, location) {
+    // 同じカメラが既に開いていれば前面に出すだけ
+    const existing = cameraPanels.find(p => p._camId === camId);
+    if (existing) {
+        existing._el.style.zIndex = ++_camZCounter;
+        return;
+    }
+    const rect = document.getElementById('scene-container').getBoundingClientRect();
+    const offset = cameraPanels.length * 28;
+    const panel = new FloatingCameraPanel({
+        camId,
+        title,
+        location,
+        x: rect.left + 20 + offset,
+        y: rect.top  + 20 + offset,
+        onClose: () => {
+            const idx = cameraPanels.indexOf(panel);
+            if (idx >= 0) cameraPanels.splice(idx, 1);
+        },
+    });
+    panel._el.style.zIndex = ++_camZCounter;
+    panel._el.addEventListener('mousedown', () => {
+        panel._el.style.zIndex = ++_camZCounter;
+    });
+    cameraPanels.push(panel);
+}
+let _camZCounter = 110;
 
+function openInfoPanel(station, type) {
     const rows = buildInfoRows(station, type);
     const rect = document.getElementById('scene-container').getBoundingClientRect();
 
-    infoPanel = new FloatingInfoPanel({
-        title: station.name || station.stationId || 'Info',
-        rows,
-        x: rect.right - 300,
-        y: rect.top + 60,
-        onClose: () => { infoPanel = null; },
-    });
+    if (multiWindowMode) {
+        const offset = infoPanels.length * 24;
+        const panel = new FloatingInfoPanel({
+            title: station.name || station.stationId || 'Info',
+            rows,
+            x: rect.right - 300 - offset,
+            y: rect.top + 60 + offset,
+            onClose: () => {
+                const idx = infoPanels.indexOf(panel);
+                if (idx >= 0) infoPanels.splice(idx, 1);
+            },
+        });
+        infoPanels.push(panel);
+    } else {
+        if (infoPanel) { infoPanel.close(); infoPanel = null; }
+        infoPanel = new FloatingInfoPanel({
+            title: station.name || station.stationId || 'Info',
+            rows,
+            x: rect.right - 300,
+            y: rect.top + 60,
+            onClose: () => { infoPanel = null; },
+        });
+    }
 }
 
 function buildInfoRows(station, type) {

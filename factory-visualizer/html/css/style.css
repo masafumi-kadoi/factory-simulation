@@ -147,6 +147,12 @@ body {
     color: #fff;
 }
 .toolbar-btn.primary:hover { background: var(--accent-hover); }
+.toolbar-btn.active {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
+}
+.toolbar-btn.active:hover { background: var(--accent-hover); }
 #factory-select {
     background: var(--bg-surface);
     color: var(--text-primary);
@@ -1094,4 +1100,167 @@ circle[data-port-id]:hover { r: 8; }
     stroke-width: 12;
     fill: none;
     cursor: pointer;
+}
+
+/* ---- Camera sidebar list ---- */
+.camera-list { display: flex; flex-direction: column; gap: 2px; }
+
+.camera-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.12s;
+    user-select: none;
+}
+.camera-item:hover { background: var(--bg-surface); }
+.camera-item:has(.cam-dot.offline) { opacity: 0.45; cursor: not-allowed; }
+
+.cam-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.cam-dot.live    { background: #22c55e; box-shadow: 0 0 4px #22c55e; }
+.cam-dot.offline { background: #6b7280; }
+
+.cam-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cam-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: #22c55e;
+    color: #fff;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+.cam-badge.offline { background: #6b7280; }
+
+/* ---- Floating camera panel ---- */
+.cam-panel {
+    position: absolute;
+    width: 340px;
+    background: #0d1117;
+    border: 1px solid #2a2f3a;
+    border-radius: 6px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    pointer-events: all;
+}
+
+.cam-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 10px;
+    background: #161b24;
+    cursor: move;
+    user-select: none;
+    border-bottom: 1px solid #2a2f3a;
+}
+
+.cam-panel-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 5px #22c55e;
+    animation: cam-pulse 2s infinite;
+    flex-shrink: 0;
+}
+@keyframes cam-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+
+.cam-panel-title {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    color: #e2e8f0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cam-panel-close {
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0 2px;
+    line-height: 1;
+}
+.cam-panel-close:hover { color: #e2e8f0; }
+
+.cam-panel-body { position: relative; }
+
+.cam-panel-screen {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    overflow: hidden;
+}
+.cam-panel-screen img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.cam-panel-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 6px 8px;
+    pointer-events: none;
+}
+
+.cam-overlay-live {
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(220, 38, 38, 0.85);
+    padding: 2px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+}
+
+.cam-overlay-ts {
+    font-size: 10px;
+    font-family: monospace;
+    color: #fff;
+    background: rgba(0,0,0,0.55);
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+
+.cam-panel-footer {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    background: #161b24;
+    border-top: 1px solid #2a2f3a;
+    font-size: 11px;
+    color: #6b7280;
+}
+.cam-footer-icon { flex-shrink: 0; }
+.cam-footer-location { flex: 1; }
+.cam-footer-id {
+    font-family: monospace;
+    font-size: 10px;
+    color: #4b5563;
 }

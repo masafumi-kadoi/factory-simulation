@@ -133,3 +133,92 @@ export class FloatingInfoPanel {
         };
     }
 }
+
+// ---- Floating Camera Panels ----
+
+export class FloatingCameraPanel {
+    constructor({ camId, title, location, x, y, onClose }) {
+        this._camId = camId;
+        this._el = this._create(title, location, x, y, onClose);
+        document.getElementById('floating-panels').appendChild(this._el);
+        this._initDrag();
+        this._startTimestamp();
+    }
+
+    close() {
+        clearInterval(this._tsInterval);
+        this._el.remove();
+    }
+
+    _create(title, location, x, y, onClose) {
+        const el = document.createElement('div');
+        el.className = 'cam-panel';
+        el.style.left = `${x}px`;
+        el.style.top  = `${y}px`;
+        el.innerHTML = `
+            <div class="cam-panel-header">
+                <span class="cam-panel-live-dot"></span>
+                <span class="cam-panel-title">${this._esc(title)}</span>
+                <button class="cam-panel-close">✕</button>
+            </div>
+            <div class="cam-panel-body">
+                <div class="cam-panel-screen">
+                    <img src="img/factory_cam.png" alt="${this._esc(title)}" draggable="false">
+                    <div class="cam-panel-overlay">
+                        <span class="cam-overlay-live">● LIVE</span>
+                        <span class="cam-overlay-ts" id="cam-ts-${this._esc(this._camId)}">--:--:--</span>
+                    </div>
+                </div>
+            </div>
+            <div class="cam-panel-footer">
+                <span class="cam-footer-icon">📍</span>
+                <span class="cam-footer-location">${this._esc(location || '—')}</span>
+                <span class="cam-footer-id">${this._esc(this._camId)}</span>
+            </div>
+        `;
+        el.querySelector('.cam-panel-close').addEventListener('click', () => {
+            this.close();
+            onClose && onClose();
+        });
+        return el;
+    }
+
+    _startTimestamp() {
+        const update = () => {
+            const el = document.getElementById(`cam-ts-${this._camId}`);
+            if (el) el.textContent = new Date().toLocaleTimeString('ja-JP');
+        };
+        update();
+        this._tsInterval = setInterval(update, 1000);
+    }
+
+    _initDrag() {
+        const header = this._el.querySelector('.cam-panel-header');
+        let dragging = false;
+        let sx = 0, sy = 0, ox = 0, oy = 0;
+
+        header.addEventListener('mousedown', e => {
+            if (e.target.classList.contains('cam-panel-close')) return;
+            dragging = true;
+            sx = e.clientX; sy = e.clientY;
+            ox = this._el.offsetLeft; oy = this._el.offsetTop;
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', up);
+        });
+
+        const move = e => {
+            if (!dragging) return;
+            this._el.style.left = Math.max(0, ox + e.clientX - sx) + 'px';
+            this._el.style.top  = Math.max(0, oy + e.clientY - sy) + 'px';
+        };
+        const up = () => {
+            dragging = false;
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+        };
+    }
+
+    _esc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+}

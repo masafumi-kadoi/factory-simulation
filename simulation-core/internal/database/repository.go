@@ -663,7 +663,8 @@ func (r *Repository) getScenario(id string, includePassword bool) (*domain.Scena
 }
 
 // GetScenarioFromFactory builds a domain.Scenario directly from factory_stations and factory_connections.
-// Machine-type stations are skipped (they are physical containers, not simulation nodes).
+// Machine-type stations that have no child stations are treated as processing nodes.
+// Machine-type stations with children are skipped (the children are the simulation nodes).
 // Entry/Exit stations are included and handled as transparent pass-through by the simulation engine.
 func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario, error) {
 	var factoryName string
@@ -674,11 +675,11 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		return nil, fmt.Errorf("factory not found: %s", factoryID)
 	}
 
-	// Load all non-machine stations (child stations that participate in simulation)
+	// Load ALL stations including machines (we'll decide per-station whether to include them)
 	stationRows, err := r.db.GetConnection().Query(`
 		SELECT station_id, station_type, parent_id, name, position_x, position_y, config
 		FROM factory_stations
-		WHERE factory_id = $1 AND station_type != 'machine'
+		WHERE factory_id = $1
 		ORDER BY station_id
 	`, factoryID)
 	if err != nil {
@@ -686,7 +687,17 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 	}
 	defer stationRows.Close()
 
-	var stations []domain.Station
+	type rawStation struct {
+		id         string
+		stype      string
+		parentID   *string
+		name       *string
+		posX, posY *float64
+		config     map[string]interface{}
+	}
+	var rawStations []rawStation
+	childrenOf := make(map[string]bool) // machine IDs that have child stations
+
 	for stationRows.Next() {
 		var stationID, stationType string
 		var parentID *string
@@ -705,9 +716,54 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 			}
 		}
 
-		// Extract locationId from config for SimDB mapping
+		if parentID != nil && *parentID != "" {
+			childrenOf[*parentID] = true
+		}
+
+		rawStations = append(rawStations, rawStation{
+			id: stationID, stype: stationType, parentID: parentID,
+			name: stationName, posX: posX, posY: posY, config: config,
+		})
+	}
+	if err := stationRows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate factory stations: %w", err)
+	}
+
+	stationSet := make(map[string]bool)
+	var stations []domain.Station
+
+	for _, rs := range rawStations {
+		effectiveType := rs.stype
+		if rs.stype == "machine" {
+			if childrenOf[rs.id] {
+				// Machine with children: skip — children are the simulation nodes
+				continue
+			}
+			// Machine without children: treat as processing node
+			effectiveType = "processing"
+			if _, ok := rs.config["processingTime"]; !ok {
+				rs.config["processingTime"] = float64(60)
+			}
+			if _, ok := rs.config["arrivalTime"]; !ok {
+				rs.config["arrivalTime"] = float64(0)
+			}
+			if _, ok := rs.config["departureTime"]; !ok {
+				rs.config["departureTime"] = float64(0)
+			}
+		}
+
+		// Set default workCount for source stations with no items configured
+		if effectiveType == "source" {
+			if wc, ok := rs.config["workCount"]; !ok || wc == float64(0) {
+				rs.config["workCount"] = float64(5)
+			}
+			if _, ok := rs.config["departureTime"]; !ok {
+				rs.config["departureTime"] = float64(0)
+			}
+		}
+
 		var locationID *int64
-		if lid, ok := config["locationId"]; ok {
+		if lid, ok := rs.config["locationId"]; ok {
 			switch v := lid.(type) {
 			case float64:
 				id := int64(v)
@@ -717,21 +773,19 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 			}
 		}
 
-		station := domain.NewStation(stationID, domain.StationType(stationType), config)
-		if stationName != nil {
-			station.Name = *stationName
+		station := domain.NewStation(rs.id, domain.StationType(effectiveType), rs.config)
+		if rs.name != nil {
+			station.Name = *rs.name
 		}
-		station.ParentID = parentID
+		station.ParentID = rs.parentID
 		station.LocationID = locationID
-		station.PositionX = posX
-		station.PositionY = posY
+		station.PositionX = rs.posX
+		station.PositionY = rs.posY
 		stations = append(stations, *station)
-	}
-	if err := stationRows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate factory stations: %w", err)
+		stationSet[rs.id] = true
 	}
 
-	// Load connections
+	// Load connections — filter to those where both endpoints exist in the station set
 	connRows, err := r.db.GetConnection().Query(`
 		SELECT from_station, to_station, condition, COALESCE(from_port_index, -1), COALESCE(to_port_index, -1)
 		FROM factory_connections
@@ -743,6 +797,7 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 	}
 	defer connRows.Close()
 
+	seen := make(map[string]bool) // deduplicate connections
 	var connections []domain.Connection
 	for connRows.Next() {
 		var from, to, condition string
@@ -750,6 +805,14 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		if err := connRows.Scan(&from, &to, &condition, &fromPort, &toPort); err != nil {
 			return nil, fmt.Errorf("failed to scan factory connection: %w", err)
 		}
+		if !stationSet[from] || !stationSet[to] {
+			continue // skip connections to stations not in simulation
+		}
+		key := fmt.Sprintf("%s->%s(%s)", from, to, condition)
+		if seen[key] {
+			continue // deduplicate
+		}
+		seen[key] = true
 		connections = append(connections, domain.Connection{
 			From:          from,
 			To:            to,
