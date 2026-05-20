@@ -1011,10 +1011,16 @@ export class Scene3D {
 
     setShellOpacity(v) {
         this._shellOpacity = v;
-        this._equipmentGroups.forEach(({ shellMesh, hasCustomModel }) => {
-            if (!shellMesh || hasCustomModel) return;
-            shellMesh.material.opacity = v;
-            shellMesh.material.transparent = v < 1;
+        // Update individual machine body meshes (cylinders / voxels)
+        this._machines.forEach(({ mesh }) => {
+            if (!mesh) return;
+            mesh.traverse(child => {
+                if (child.isMesh && child.material) {
+                    child.material.opacity = v;
+                    child.material.transparent = v < 1;
+                    child.material.needsUpdate = true;
+                }
+            });
         });
     }
 
