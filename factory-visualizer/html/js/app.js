@@ -1467,6 +1467,16 @@ function initGlobalLogicEditTab() {
     };
     document.getElementById('btn-gle-add-machine').addEventListener('click', _openNewMachineModal);
     document.getElementById('btn-g3d-add-machine').addEventListener('click', _openNewMachineModal);
+
+    // Auto-layout button: reset all positions and re-apply grid layout
+    document.getElementById('btn-gle-auto-layout').addEventListener('click', () => {
+        if (!state.currentFactory) return;
+        _gleNodePositions = {};
+        const equips = _gleEquips();
+        gleAutoLayout(equips);
+        gleSavePositions();
+        renderGlobalLogicGraph();
+    });
     document.getElementById('new-machine-modal-close').addEventListener('click', () =>
         document.getElementById('new-machine-modal').classList.add('hidden'));
     document.getElementById('new-machine-cancel').addEventListener('click', () =>
@@ -1656,6 +1666,14 @@ function gleAutoLayout(equips) {
 function renderGlobalLogicGraph() {
     gleLoadPositions();
     const equips = _gleEquips();
+
+    // Auto-layout on first render (no saved positions for this factory)
+    const hasAnyPlaced = equips.some(e => _gleNodePositions[e.equipName]);
+    if (!hasAnyPlaced && equips.length > 0) {
+        gleAutoLayout(equips);
+        gleSavePositions();
+    }
+
     renderGleUnplacedList(equips);
 
     const connLayer = document.getElementById('gle-conn-layer');
