@@ -71,6 +71,112 @@ const STATION_COLORS = {
     inspection: '#ffc107', discharge: '#dc3545', switch: '#17a2b8',
 };
 
+// ---- Interlock rule editor constants ----
+
+const INTERLOCK_DEFAULTS = {
+    processing: {
+        signals: [
+            {name:'inputWorkPresent',initial:false},{name:'processingWorkPresent',initial:false},
+            {name:'outputWorkPresent',initial:false},{name:'running',initial:false},
+            {name:'complete',initial:false},{name:'processReady',initial:false},
+            {name:'inputReady',initial:false},{name:'outputReady',initial:false},
+            {name:'workFull',initial:false},{name:'workEmpty',initial:false},
+        ],
+        rules: [
+            { id:'R1', description:'空きステーション → 搬入可ON',  target:'inputReady',   value:true,  conditions:[{signal:'inputWorkPresent',value:false}] },
+            { id:'R2', description:'ワーク受入済 → 搬入可OFF',     target:'inputReady',   value:false, conditions:[{signal:'inputWorkPresent',value:true}] },
+            { id:'R3', description:'ワーク到着 → 加工準備ON',      target:'processReady', value:true,  conditions:[{signal:'inputWorkPresent',value:true},{signal:'running',value:false},{signal:'complete',value:false}] },
+            { id:'R4', description:'加工中 → 加工準備OFF',         target:'processReady', value:false, conditions:[{signal:'running',value:true}] },
+            { id:'R5', description:'処理完了 → 搬出可ON',          target:'outputReady',  value:true,  conditions:[{signal:'complete',value:true},{signal:'outputWorkPresent',value:true}] },
+            { id:'R6', description:'ワーク搬出済 → 搬出可OFF',     target:'outputReady',  value:false, conditions:[{signal:'outputWorkPresent',value:false}] },
+        ],
+    },
+    merge: {
+        signals: [
+            {name:'inputWorkPresent',initial:false},{name:'processingWorkPresent',initial:false},
+            {name:'outputWorkPresent',initial:false},{name:'running',initial:false},
+            {name:'complete',initial:false},{name:'processReady',initial:false},
+            {name:'inputReady',initial:false},{name:'outputReady',initial:false},
+            {name:'workFull',initial:false},{name:'workEmpty',initial:false},
+            {name:'allPortsFull',initial:false},
+        ],
+        rules: [
+            { id:'R1', description:'全ポート満杯 → 加工準備ON',  target:'processReady', value:true,  conditions:[{signal:'allPortsFull',value:true},{signal:'running',value:false},{signal:'complete',value:false}] },
+            { id:'R2', description:'加工中 → 加工準備OFF',       target:'processReady', value:false, conditions:[{signal:'running',value:true}] },
+            { id:'R3', description:'結合処理完了 → 搬出可ON',    target:'outputReady',  value:true,  conditions:[{signal:'complete',value:true},{signal:'outputWorkPresent',value:true}] },
+            { id:'R4', description:'ワーク搬出済 → 搬出可OFF',   target:'outputReady',  value:false, conditions:[{signal:'outputWorkPresent',value:false}] },
+        ],
+    },
+    split: {
+        signals: [
+            {name:'inputWorkPresent',initial:false},{name:'processingWorkPresent',initial:false},
+            {name:'outputWorkPresent',initial:false},{name:'running',initial:false},
+            {name:'complete',initial:false},{name:'processReady',initial:false},
+            {name:'inputReady',initial:false},{name:'outputReady',initial:false},
+            {name:'workFull',initial:false},{name:'workEmpty',initial:true},
+            {name:'allPortsEmpty',initial:true},
+        ],
+        rules: [
+            { id:'R1', description:'全ポート空 → 搬入可ON',    target:'inputReady',   value:true,  conditions:[{signal:'allPortsEmpty',value:true},{signal:'inputWorkPresent',value:false},{signal:'running',value:false},{signal:'complete',value:false}] },
+            { id:'R2', description:'ワーク受入済 → 搬入可OFF', target:'inputReady',   value:false, conditions:[{signal:'inputWorkPresent',value:true}] },
+            { id:'R3', description:'ワーク到着 → 加工準備ON',  target:'processReady', value:true,  conditions:[{signal:'inputWorkPresent',value:true},{signal:'running',value:false},{signal:'complete',value:false}] },
+            { id:'R4', description:'加工中 → 加工準備OFF',     target:'processReady', value:false, conditions:[{signal:'running',value:true}] },
+        ],
+    },
+    switch: {
+        signals: [
+            {name:'inputWorkPresent',initial:false},{name:'processingWorkPresent',initial:false},
+            {name:'outputWorkPresent',initial:false},{name:'running',initial:false},
+            {name:'complete',initial:false},{name:'processReady',initial:false},
+            {name:'inputReady',initial:false},{name:'outputReady',initial:false},
+            {name:'workFull',initial:false},{name:'workEmpty',initial:false},
+        ],
+        rules: [
+            { id:'R1', description:'ワーク到着 → 搬出可ON',  target:'outputReady', value:true,  conditions:[{signal:'outputWorkPresent',value:true}] },
+            { id:'R2', description:'ワーク出発 → 搬出可OFF', target:'outputReady', value:false, conditions:[{signal:'outputWorkPresent',value:false}] },
+            { id:'R3', description:'空き → 搬入可ON',        target:'inputReady',  value:true,  conditions:[{signal:'inputWorkPresent',value:false}] },
+            { id:'R4', description:'ワーク有り → 搬入可OFF', target:'inputReady',  value:false, conditions:[{signal:'inputWorkPresent',value:true}] },
+        ],
+    },
+};
+
+const _INTERLOCK_SIGNALS_BASE = [
+    'inputWorkPresent', 'processingWorkPresent', 'outputWorkPresent',
+    'running', 'complete', 'processReady', 'inputReady', 'outputReady',
+    'workFull', 'workEmpty',
+];
+
+function _getInterlockSignals(type) {
+    if (type === 'merge')  return [..._INTERLOCK_SIGNALS_BASE, 'allPortsFull'];
+    if (type === 'split')  return [..._INTERLOCK_SIGNALS_BASE, 'allPortsEmpty'];
+    return _INTERLOCK_SIGNALS_BASE;
+}
+
+const _IL_SIGNAL_LABELS = {
+    inputReady:   '搬入可',
+    outputReady:  '搬出可',
+    processReady: '加工準備',
+    workFull:     '満杯',
+    workEmpty:    '空き',
+};
+
+const _IL_TARGET_TABS = {
+    processing: ['inputReady', 'processReady', 'outputReady'],
+    merge:      ['processReady', 'outputReady'],
+    split:      ['inputReady', 'processReady'],
+    switch:     ['inputReady', 'outputReady'],
+};
+
+function _getModalTabs(type, rules) {
+    const predefined = _IL_TARGET_TABS[type] || [];
+    const extra = [...new Set(rules.map(r => r.target))].filter(t => !predefined.includes(t));
+    return [...predefined, ...extra];
+}
+
+function _getSignalLabel(sig) {
+    return _IL_SIGNAL_LABELS[sig] ? `${_IL_SIGNAL_LABELS[sig]} (${sig})` : sig;
+}
+
 // ---- Boot ----
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -1292,7 +1398,27 @@ function _buildTypeConfigHtml(s) {
         <div id="props-split-ports">${_buildSplitPortsHtml(s)}</div>`;
     }
 
-    return fieldsHtml + extraHtml;
+    return fieldsHtml + extraHtml + _buildInterlockEditorHtml(s);
+}
+
+// --- Helper: interlock rule editor HTML (summary + modal open button) ---
+function _buildInterlockEditorHtml(s) {
+    const type = s.stationType;
+    if (!INTERLOCK_DEFAULTS[type]) return '';
+
+    const rules = s.config?.interlockRules?.rules ?? INTERLOCK_DEFAULTS[type].rules;
+    const isCustom = !!s.config?.interlockRules;
+
+    return `
+    <div id="props-interlock-section">
+        <div class="props-section-header il-section-header">
+            インターロックルール${isCustom ? ' <span class="il-custom-badge">カスタム</span>' : ''}
+        </div>
+        <div class="il-summary-row">
+            <span class="il-summary-text">${rules.length} ルール${isCustom ? '' : '（デフォルト）'}</span>
+            <button id="props-interlock-edit" class="il-edit-btn">編集</button>
+        </div>
+    </div>`;
 }
 
 // --- Helper: full props panel HTML ---
@@ -1451,6 +1577,260 @@ function _attachPropsListeners(s) {
 
     fields.querySelector('#props-delete')?.addEventListener('click', () => {
         if (_selectedStation) deleteStation(_selectedStation);
+    });
+
+    _attachInterlockListeners(s);
+}
+
+// --- Attach interlock editor button → opens modal ---
+function _attachInterlockListeners(s) {
+    const section = document.getElementById('props-interlock-section');
+    if (!section) return;
+    section.querySelector('#props-interlock-edit')?.addEventListener('click', () => {
+        _openInterlockModal(s);
+    });
+}
+
+// ---- Interlock modal ----
+
+function _openInterlockModal(s) {
+    document.getElementById('il-modal-overlay')?.remove();
+    const type = s.stationType;
+    const currentRules = s.config?.interlockRules?.rules ?? INTERLOCK_DEFAULTS[type].rules;
+    const modalRules = JSON.parse(JSON.stringify(currentRules));
+
+    const overlay = document.createElement('div');
+    overlay.id = 'il-modal-overlay';
+    overlay.className = 'il-modal-overlay';
+
+    const tabs = _getModalTabs(type, modalRules);
+    const activeTab = tabs[0] || '';
+    overlay.innerHTML = _buildInterlockModalHtml(s, modalRules, activeTab);
+    document.body.appendChild(overlay);
+    _attachInterlockModalListeners(s, modalRules, overlay);
+}
+
+function _buildFlowViewHtml(activeRules) {
+    if (!activeRules.length) {
+        return '<div class="il-flow-empty">このシグナルにルールはありません</div>';
+    }
+    return activeRules.map(r => {
+        const conds = r.conditions || [];
+        const targetClass = r.value ? 'il-chip-on' : 'il-chip-off';
+        const targetLabel = `${_escapeHtml(r.target)} = ${r.value ? 'ON' : 'OFF'}`;
+
+        let condHtml;
+        if (!conds.length) {
+            condHtml = '<span class="il-flow-cond-chip il-cond-empty">(条件なし)</span>';
+        } else if (conds.length === 1) {
+            condHtml = `<span class="il-flow-cond-chip">${_escapeHtml(conds[0].signal)} = ${conds[0].value ? 'ON' : 'OFF'}</span>`;
+        } else {
+            const chips = conds.map(c =>
+                `<span class="il-flow-cond-chip">${_escapeHtml(c.signal)} = ${c.value ? 'ON' : 'OFF'}</span>`
+            ).join('');
+            condHtml = `<div class="il-flow-conds-multi">${chips}</div><span class="il-flow-and">AND</span>`;
+        }
+
+        return `
+        <div class="il-flow-row">
+            <span class="il-flow-rid">${_escapeHtml(r.id || '')}</span>
+            <div class="il-flow-conditions">${condHtml}</div>
+            <span class="il-flow-arrow">──→</span>
+            <span class="il-flow-target-chip ${targetClass}">${targetLabel}</span>
+            <span class="il-flow-desc">${_escapeHtml(r.description || '')}</span>
+        </div>`;
+    }).join('');
+}
+
+function _buildInterlockModalHtml(s, rules, activeTab) {
+    const type = s.stationType;
+    const tabs = _getModalTabs(type, rules);
+    const signals = _getInterlockSignals(type);
+
+    const tabsHtml = tabs.map(tab => `
+        <button class="il-modal-tab${tab === activeTab ? ' active' : ''}" data-target="${_escapeHtml(tab)}">
+            ${_escapeHtml(_getSignalLabel(tab))}
+        </button>`).join('');
+
+    const activeRules = rules.map((r, i) => ({ ...r, _idx: i })).filter(r => r.target === activeTab);
+    const flowHtml = _buildFlowViewHtml(activeRules);
+
+    function sigOptions(selected) {
+        return signals.map(sig =>
+            `<option value="${_escapeHtml(sig)}"${sig === selected ? ' selected' : ''}>${_escapeHtml(sig)}</option>`
+        ).join('');
+    }
+
+    const detailHtml = activeRules.map(r => {
+        const ri = r._idx;
+        const condsHtml = (r.conditions || []).map((cond, ci) => `
+            <div class="il-detail-cond-row" data-rule-index="${ri}" data-cond-index="${ci}">
+                <select class="il-cond-sig">${sigOptions(cond.signal)}</select>
+                <span class="il-lbl">=</span>
+                <label class="il-val-label"><input type="checkbox" class="il-cond-val"${cond.value ? ' checked' : ''}> ON</label>
+                <button class="il-cond-del">−</button>
+            </div>`).join('');
+        return `
+        <div class="il-detail-rule" data-rule-index="${ri}">
+            <div class="il-detail-rule-header">
+                <span class="il-rule-id">${_escapeHtml(r.id || `R${ri + 1}`)}</span>
+                <input type="text" class="il-rule-desc" value="${_escapeHtml(r.description || '')}" placeholder="説明">
+                <label class="il-val-label" style="flex-shrink:0">
+                    <input type="checkbox" class="il-target-val"${r.value ? ' checked' : ''}> ON
+                </label>
+                <button class="il-rule-del">削除</button>
+            </div>
+            <div class="il-detail-conditions">
+                ${condsHtml}
+                <button class="il-cond-add" data-rule-index="${ri}">＋ 条件追加</button>
+            </div>
+        </div>`;
+    }).join('');
+
+    const stationLabel = `${_escapeHtml(s.name || s.stationId || '')} (${_escapeHtml(type)})`;
+    const isCustom = !!s.config?.interlockRules;
+
+    return `
+    <div class="il-modal" id="il-modal">
+        <div class="il-modal-header">
+            <span class="il-modal-title">インターロックルール — ${stationLabel}${isCustom ? ' <span class="il-custom-badge">カスタム</span>' : ''}</span>
+            <button class="il-modal-close" id="il-modal-close">×</button>
+        </div>
+        <div class="il-tab-bar">${tabsHtml}</div>
+        <div class="il-modal-body">
+            <div class="il-flow-section">
+                <div class="il-section-label">フロービュー</div>
+                <div class="il-flow-view" id="il-flow-view">${flowHtml}</div>
+            </div>
+            <div class="il-detail-section">
+                <div class="il-section-label">ルール詳細</div>
+                <div class="il-detail-editor" id="il-detail-editor">${detailHtml}</div>
+                <button class="il-add-btn" id="il-modal-add-rule">＋ ルール追加 (${_escapeHtml(activeTab)})</button>
+            </div>
+        </div>
+        <div class="il-modal-footer">
+            <button class="il-reset-btn" id="il-modal-reset">デフォルトに戻す</button>
+            <div style="display:flex;gap:8px;">
+                <button class="btn-secondary" id="il-modal-cancel">キャンセル</button>
+                <button class="btn-primary" id="il-modal-save">保存</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+function _attachInterlockModalListeners(s, modalRules, overlay) {
+    const type = s.stationType;
+    let activeTab = overlay.querySelector('.il-modal-tab.active')?.dataset.target
+        || _getModalTabs(type, modalRules)[0] || '';
+
+    function refresh() {
+        const tabs = _getModalTabs(type, modalRules);
+        if (!tabs.includes(activeTab)) activeTab = tabs[0] || '';
+        const modal = document.getElementById('il-modal');
+        if (modal) modal.outerHTML = _buildInterlockModalHtml(s, modalRules, activeTab);
+        _attachInterlockModalListeners(s, modalRules, overlay);
+    }
+
+    function refreshFlow() {
+        const fv = document.getElementById('il-flow-view');
+        if (!fv) return;
+        const active = modalRules.map((r, i) => ({ ...r, _idx: i })).filter(r => r.target === activeTab);
+        fv.innerHTML = _buildFlowViewHtml(active);
+    }
+
+    const modal = document.getElementById('il-modal');
+    if (!modal) return;
+
+    modal.querySelector('#il-modal-close')?.addEventListener('click', () => overlay.remove());
+    modal.querySelector('#il-modal-cancel')?.addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+    modal.querySelector('#il-modal-save')?.addEventListener('click', () => {
+        s.config = s.config || {};
+        const defaultRules = INTERLOCK_DEFAULTS[type]?.rules;
+        const matchesDefault = JSON.stringify(modalRules) === JSON.stringify(defaultRules);
+        if (matchesDefault) {
+            delete s.config.interlockRules;
+        } else {
+            s.config.interlockRules = {
+                signals: JSON.parse(JSON.stringify(INTERLOCK_DEFAULTS[type].signals)),
+                rules: modalRules,
+            };
+        }
+        const section = document.getElementById('props-interlock-section');
+        if (section) { section.outerHTML = _buildInterlockEditorHtml(s); _attachInterlockListeners(s); }
+        overlay.remove();
+    });
+
+    modal.querySelector('#il-modal-reset')?.addEventListener('click', () => {
+        const defaults = INTERLOCK_DEFAULTS[type]?.rules || [];
+        modalRules.splice(0, modalRules.length, ...JSON.parse(JSON.stringify(defaults)));
+        refresh();
+    });
+
+    modal.querySelectorAll('.il-modal-tab').forEach(tab => {
+        tab.addEventListener('click', () => { activeTab = tab.dataset.target; refresh(); });
+    });
+
+    modal.querySelector('#il-modal-add-rule')?.addEventListener('click', () => {
+        const sigs = _getInterlockSignals(type);
+        modalRules.push({
+            id: `R${modalRules.length + 1}`,
+            description: '',
+            target: activeTab,
+            value: true,
+            conditions: [{ signal: sigs[0], value: false }],
+        });
+        refresh();
+    });
+
+    modal.querySelectorAll('.il-detail-rule').forEach(ruleEl => {
+        const ri = parseInt(ruleEl.dataset.ruleIndex);
+
+        ruleEl.querySelector('.il-rule-del')?.addEventListener('click', () => {
+            modalRules.splice(ri, 1);
+            modalRules.forEach((r, i) => { r.id = `R${i + 1}`; });
+            refresh();
+        });
+
+        ruleEl.querySelector('.il-rule-desc')?.addEventListener('change', e => {
+            modalRules[ri].description = e.target.value;
+            refreshFlow();
+        });
+
+        ruleEl.querySelector('.il-target-val')?.addEventListener('change', e => {
+            modalRules[ri].value = e.target.checked;
+            refreshFlow();
+        });
+    });
+
+    modal.querySelectorAll('.il-cond-add').forEach(btn => {
+        const ri = parseInt(btn.dataset.ruleIndex);
+        btn.addEventListener('click', () => {
+            const sigs = _getInterlockSignals(type);
+            modalRules[ri].conditions.push({ signal: sigs[0], value: false });
+            refresh();
+        });
+    });
+
+    modal.querySelectorAll('.il-detail-cond-row').forEach(condEl => {
+        const ri = parseInt(condEl.dataset.ruleIndex);
+        const ci = parseInt(condEl.dataset.condIndex);
+
+        condEl.querySelector('.il-cond-del')?.addEventListener('click', () => {
+            modalRules[ri].conditions.splice(ci, 1);
+            refresh();
+        });
+
+        condEl.querySelector('.il-cond-sig')?.addEventListener('change', e => {
+            modalRules[ri].conditions[ci].signal = e.target.value;
+            refreshFlow();
+        });
+
+        condEl.querySelector('.il-cond-val')?.addEventListener('change', e => {
+            modalRules[ri].conditions[ci].value = e.target.checked;
+            refreshFlow();
+        });
     });
 }
 

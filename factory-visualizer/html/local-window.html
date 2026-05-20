@@ -194,6 +194,147 @@
             padding: 6px 14px; font-size: 12px; cursor: pointer;
         }
 
+        /* ---- Interlock rule editor (props panel) ---- */
+        #props-interlock-section { margin-top: 4px; }
+        .il-section-header { display: flex; justify-content: space-between; align-items: center; }
+        .il-custom-badge {
+            font-size: 9px; background: var(--status-warning, #e67e22); color: #fff;
+            border-radius: 3px; padding: 1px 4px; margin-left: 4px; vertical-align: middle;
+        }
+        .il-summary-row {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 4px;
+        }
+        .il-summary-text { font-size: 10px; color: var(--text-muted); }
+        .il-edit-btn {
+            font-size: 10px; padding: 3px 10px; cursor: pointer;
+            background: var(--accent, #4a9eff); color: #fff;
+            border: none; border-radius: 3px; white-space: nowrap;
+        }
+
+        /* ---- Interlock modal overlay ---- */
+        .il-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+            display: flex; align-items: center; justify-content: center; z-index: 2000;
+        }
+        .il-modal {
+            background: var(--bg-panel); border: 1px solid var(--border-color);
+            border-radius: 8px; width: min(940px, 95vw); max-height: 88vh;
+            display: flex; flex-direction: column;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+        }
+        .il-modal-header {
+            padding: 12px 16px; border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+        }
+        .il-modal-title { font-size: 13px; font-weight: 600; }
+        .il-modal-close {
+            background: none; border: none; color: var(--text-muted);
+            font-size: 18px; cursor: pointer; line-height: 1; padding: 0 4px;
+        }
+        .il-tab-bar {
+            display: flex; border-bottom: 1px solid var(--border-color);
+            padding: 0 16px; flex-shrink: 0; background: var(--bg-surface);
+        }
+        .il-modal-tab {
+            padding: 8px 14px; font-size: 11px; cursor: pointer;
+            background: none; border: none; border-bottom: 2px solid transparent;
+            color: var(--text-muted); margin-bottom: -1px; white-space: nowrap;
+        }
+        .il-modal-tab.active {
+            color: var(--text-primary); border-bottom-color: var(--accent, #4a9eff); font-weight: 600;
+        }
+        .il-modal-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+
+        /* Flow view */
+        .il-flow-section {
+            padding: 10px 16px; border-bottom: 1px solid var(--border-color);
+            background: var(--bg-surface); flex-shrink: 0;
+        }
+        .il-section-label {
+            font-size: 9px; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;
+        }
+        .il-flow-view { display: flex; flex-direction: column; gap: 5px; }
+        .il-flow-row {
+            display: flex; align-items: center; gap: 8px; font-size: 11px;
+            padding: 3px 0; border-bottom: 1px solid var(--border-color);
+        }
+        .il-flow-row:last-child { border-bottom: none; }
+        .il-flow-rid {
+            font-family: monospace; font-size: 10px; font-weight: 600;
+            color: var(--text-muted); min-width: 22px; flex-shrink: 0;
+        }
+        .il-flow-conditions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; }
+        .il-flow-conds-multi { display: flex; flex-direction: column; gap: 2px; }
+        .il-flow-cond-chip {
+            background: var(--bg-input); border: 1px solid var(--border-color);
+            border-radius: 3px; padding: 1px 5px; font-size: 10px; font-family: monospace; white-space: nowrap;
+        }
+        .il-cond-empty { color: var(--text-muted); border-style: dashed; }
+        .il-flow-and { font-size: 9px; font-weight: 700; color: var(--text-muted); padding: 0 3px; }
+        .il-flow-arrow { font-size: 13px; color: var(--text-muted); flex-shrink: 0; }
+        .il-flow-target-chip {
+            padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: monospace;
+            font-weight: 700; white-space: nowrap; flex-shrink: 0;
+        }
+        .il-chip-on  { background: rgba(40,167,69,0.15); border: 1px solid #28a745; color: #4caf50; }
+        .il-chip-off { background: rgba(220,53,69,0.15); border: 1px solid #dc3545; color: #e57373; }
+        .il-flow-desc { font-size: 10px; color: var(--text-muted); font-style: italic; flex-shrink: 0; }
+        .il-flow-empty { font-size: 11px; color: var(--text-muted); padding: 6px 0; }
+
+        /* Detail editor */
+        .il-detail-section { padding: 10px 16px; flex: 1; }
+        .il-detail-editor { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+        .il-detail-rule {
+            background: var(--bg-input); border: 1px solid var(--border-color);
+            border-radius: 4px; padding: 8px 10px;
+        }
+        .il-detail-rule-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+        .il-detail-rule-header input[type="text"] { flex: 1; font-size: 11px; min-width: 0; }
+        .il-rule-id {
+            font-family: monospace; font-size: 10px; font-weight: 700;
+            color: var(--text-muted); min-width: 22px; flex-shrink: 0;
+        }
+        .il-rule-desc { flex: 1; min-width: 0; }
+        .il-rule-del {
+            font-size: 9px; padding: 2px 6px; cursor: pointer; flex-shrink: 0;
+            background: var(--status-error, #dc3545); color: #fff; border: none; border-radius: 3px;
+        }
+        .il-detail-conditions { padding-left: 28px; display: flex; flex-direction: column; gap: 4px; }
+        .il-detail-cond-row { display: flex; align-items: center; gap: 4px; }
+        .il-detail-cond-row select { flex: 1; min-width: 0; }
+        .il-cond-del {
+            font-size: 9px; padding: 2px 5px; cursor: pointer; flex-shrink: 0;
+            background: var(--bg-surface); color: var(--status-error, #dc3545);
+            border: 1px solid var(--status-error, #dc3545); border-radius: 3px;
+        }
+        .il-cond-add {
+            font-size: 9px; padding: 2px 7px; cursor: pointer; align-self: flex-start; margin-top: 2px;
+            background: var(--bg-surface); color: var(--text-secondary);
+            border: 1px solid var(--border-color); border-radius: 3px;
+        }
+        .il-add-btn {
+            font-size: 11px; padding: 5px 10px; cursor: pointer; width: 100%;
+            background: var(--bg-surface); color: var(--text-secondary);
+            border: 1px solid var(--border-color); border-radius: 3px;
+        }
+        .il-lbl { font-size: 10px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+        .il-val-label {
+            display: flex; align-items: center; gap: 3px;
+            font-size: 10px; color: var(--text-muted); cursor: pointer; flex-shrink: 0;
+        }
+        .il-val-label input[type="checkbox"] { width: auto; margin: 0; }
+        .il-reset-btn {
+            font-size: 10px; padding: 4px 10px; cursor: pointer;
+            background: var(--bg-surface); color: var(--text-muted);
+            border: 1px solid var(--border-color); border-radius: 3px;
+        }
+        .il-modal-footer {
+            padding: 10px 16px; border-top: 1px solid var(--border-color);
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+        }
+
         /* ---- Modals ---- */
         .lw-modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.6);
