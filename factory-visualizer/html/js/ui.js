@@ -144,6 +144,7 @@ function initHeightSettings(onSettingChange) {
             });
         }
     } catch { /* ignore */ }
+}
 
 export function applyDocTheme(theme) {
     const root = document.documentElement;
