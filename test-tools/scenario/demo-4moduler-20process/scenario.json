@@ -21,7 +21,7 @@
     {
       "id": "mod-1",
       "name": "Moduler-1",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 20,
@@ -619,7 +619,7 @@
     {
       "id": "mod-2",
       "name": "Moduler-2",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 20,
@@ -1217,7 +1217,7 @@
     {
       "id": "mod-3",
       "name": "Moduler-3",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 20,
@@ -1815,7 +1815,7 @@
     {
       "id": "mod-4",
       "name": "Moduler-4",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 20,

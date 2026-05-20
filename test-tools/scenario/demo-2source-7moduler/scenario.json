@@ -37,7 +37,7 @@
     {
       "id": "mod-1",
       "name": "Moduler-1",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 10,
@@ -375,7 +375,7 @@
     {
       "id": "mod-2",
       "name": "Moduler-2",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 10,
@@ -713,7 +713,7 @@
     {
       "id": "mod-3",
       "name": "Moduler-3",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 10,
@@ -1051,7 +1051,7 @@
     {
       "id": "mod-4",
       "name": "Moduler-4",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 10,
@@ -1406,7 +1406,7 @@
     {
       "id": "mod-5",
       "name": "Moduler-5-Merge",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 10,
@@ -1618,7 +1618,7 @@
     {
       "id": "mod-6",
       "name": "Moduler-6",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 10,
@@ -1956,7 +1956,7 @@
     {
       "id": "mod-7",
       "name": "Moduler-7",
-      "type": "moduler",
+      "type": "machine",
       "parentId": null,
       "config": {
         "bufferSlots": 10,
