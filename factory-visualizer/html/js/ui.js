@@ -60,7 +60,90 @@ export function initLeftPanel({ onFilterChange, onSettingChange }) {
             });
         }
     });
+
+    initHeightSettings(onSettingChange);
 }
+
+// ---- Height settings ----
+
+const HEIGHT_ITEMS = [
+    { key: 'equipLabel',    sliderId: 'h-equip-label',    numId: 'h-equip-label-num' },
+    { key: 'machineLabel',  sliderId: 'h-machine-label',  numId: 'h-machine-label-num' },
+    { key: 'internalLabel', sliderId: 'h-internal-label', numId: 'h-internal-label-num' },
+    { key: 'nodeLabel',     sliderId: 'h-node-label',     numId: 'h-node-label-num' },
+    { key: 'workMachine',   sliderId: 'h-work-machine',   numId: 'h-work-machine-num' },
+    { key: 'workInternal',  sliderId: 'h-work-internal',  numId: 'h-work-internal-num' },
+];
+
+const HEIGHT_RANGES = {
+    relative: { min: 0, max: 5 },
+    absolute: { min: 0, max: 20 },
+};
+
+export function updateHeightSliders(displayVals) {
+    const { mode, equipLabel, machineLabel, internalLabel, nodeLabel, workMachine, workInternal } = displayVals;
+    const range = HEIGHT_RANGES[mode];
+
+    document.querySelectorAll('#label-height-mode .seg-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    const hint = document.getElementById('height-mode-hint');
+    if (hint) hint.textContent = mode === 'relative'
+        ? 'モデル上端からのオフセット (m)'
+        : '地面からの絶対高さ (m)';
+
+    const vals = { equipLabel, machineLabel, internalLabel, nodeLabel, workMachine, workInternal };
+    HEIGHT_ITEMS.forEach(({ key, sliderId, numId }) => {
+        const v = vals[key];
+        if (v == null) return;
+        const slider = document.getElementById(sliderId);
+        const num = document.getElementById(numId);
+        if (slider) { slider.min = range.min; slider.max = range.max; slider.value = v; }
+        if (num)    { num.min = range.min; num.max = range.max; num.value = v.toFixed(1); }
+    });
+}
+
+function initHeightSettings(onSettingChange) {
+    // Mode toggle
+    document.querySelectorAll('#label-height-mode .seg-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.classList.contains('active')) return;
+            onSettingChange && onSettingChange('labelHeightMode', btn.dataset.mode);
+        });
+    });
+
+    // Slider + number input pairs
+    HEIGHT_ITEMS.forEach(({ key, sliderId, numId }) => {
+        const slider = document.getElementById(sliderId);
+        const num = document.getElementById(numId);
+        if (!slider || !num) return;
+
+        slider.addEventListener('input', () => {
+            const v = Math.round(parseFloat(slider.value) * 10) / 10;
+            num.value = v.toFixed(1);
+            onSettingChange && onSettingChange('height_' + key, v);
+        });
+
+        num.addEventListener('change', () => {
+            const min = parseFloat(slider.min), max = parseFloat(slider.max);
+            let v = parseFloat(num.value);
+            v = Math.max(min, Math.min(max, isNaN(v) ? min : Math.round(v * 10) / 10));
+            num.value = v.toFixed(1);
+            slider.value = v;
+            onSettingChange && onSettingChange('height_' + key, v);
+        });
+    });
+
+    // Restore saved settings
+    try {
+        const saved = JSON.parse(localStorage.getItem('fv_height_settings') || 'null');
+        if (saved && saved.mode && saved.heights) {
+            onSettingChange && onSettingChange('labelHeightMode', saved.mode);
+            Object.entries(saved.heights).forEach(([key, val]) => {
+                onSettingChange && onSettingChange('height_' + key, val);
+            });
+        }
+    } catch { /* ignore */ }
 
 export function applyDocTheme(theme) {
     const root = document.documentElement;

@@ -2,7 +2,7 @@
 import { Scene3D } from './scene3d.js';
 import { Timeline } from './timeline.js';
 import { initAIPanel, FloatingInfoPanel, FloatingCameraPanel } from './panels.js';
-import { initLeftPanel, applyDocTheme, renderObjectList, setObjectListClickHandler, setStatus, setICStatus, setTimeDisplay, renderExecutionList, setExecutionListClickHandler } from './ui.js';
+import { initLeftPanel, applyDocTheme, renderObjectList, setObjectListClickHandler, setStatus, setICStatus, setTimeDisplay, renderExecutionList, setExecutionListClickHandler, updateHeightSliders } from './ui.js';
 import * as API from './api.js';
 
 // ---- State ----
@@ -179,6 +179,17 @@ function initUI() {
                 case 'showStationNames': scene3d.setShowStationNames(value); break;
                 case 'showWorks': scene3d.setShowWorks(value); break;
                 case 'showInterlocks': scene3d.setShowInterlocks(value); break;
+                case 'labelHeightMode':
+                    scene3d.setLabelHeightMode(value);
+                    updateHeightSliders(scene3d.getLabelHeightDisplayValues());
+                    saveHeightSettings();
+                    break;
+                case 'height_equipLabel':    scene3d.setEquipLabelY(value);    saveHeightSettings(); break;
+                case 'height_machineLabel':  scene3d.setMachineLabelY(value);  saveHeightSettings(); break;
+                case 'height_internalLabel': scene3d.setInternalLabelY(value); saveHeightSettings(); break;
+                case 'height_nodeLabel':     scene3d.setNodeLabelY(value);     saveHeightSettings(); break;
+                case 'height_workMachine':   scene3d.setWorkMachineY(value);   saveHeightSettings(); break;
+                case 'height_workInternal':  scene3d.setWorkInternalY(value);  saveHeightSettings(); break;
             }
         },
     });
@@ -1068,7 +1079,10 @@ function renderG3DUnplacedList() {
     if (!list) return;
 
     const equipMap = new Map();
-    (state.stations || []).filter(s => s.stationType === 'machine').forEach(s => {
+    (state.stations || []).filter(s =>
+        (s.stationType === 'machine' || s.stationType === 'source' || s.stationType === 'drain')
+        && s.parentId == null
+    ).forEach(s => {
         const equip = _equipNameOf(s.stationId);
         if (!equipMap.has(equip)) equipMap.set(equip, []);
         equipMap.get(equip).push(s);
@@ -1135,11 +1149,15 @@ function _placeEquipAtPosition(equipName, members, cx, cz) {
 // クリック配置: カメラ注視点付近の空き位置に自動配置
 function placeEquipmentFromSidebar(equipName, members) {
     const target = scene3d ? scene3d.controls.target : { x: 0, z: 0 };
-    const SPACING = 300;
+    const SPACING = 30;
 
     const occupiedCentroids = [];
     const existMap = new Map();
-    (state.stations || []).filter(s => s.stationType === 'machine' && s.positionX != null).forEach(s => {
+    (state.stations || []).filter(s =>
+        (s.stationType === 'machine' || s.stationType === 'source' || s.stationType === 'drain')
+        && s.parentId == null
+        && s.positionX != null
+    ).forEach(s => {
         const en = _equipNameOf(s.stationId);
         if (!existMap.has(en)) existMap.set(en, []);
         existMap.get(en).push(s);
@@ -1383,6 +1401,23 @@ function closeG3DFloating() {
     document.getElementById('g3d-float-footer').style.display = '';
     document.querySelectorAll('.g3d-sidebar-item').forEach(i => i.classList.remove('active'));
     scene3d && scene3d.setPlacementMode(false);
+}
+
+function saveHeightSettings() {
+    if (!scene3d) return;
+    const vals = scene3d.getLabelHeightDisplayValues();
+    const data = {
+        mode: vals.mode,
+        heights: {
+            equipLabel:    vals.equipLabel,
+            machineLabel:  vals.machineLabel,
+            internalLabel: vals.internalLabel,
+            nodeLabel:     vals.nodeLabel,
+            workMachine:   vals.workMachine,
+            workInternal:  vals.workInternal,
+        },
+    };
+    try { localStorage.setItem('fv_height_settings', JSON.stringify(data)); } catch {}
 }
 
 function saveG3DSettings() {

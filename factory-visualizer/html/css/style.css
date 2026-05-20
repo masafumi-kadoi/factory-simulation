@@ -304,6 +304,48 @@ input[type="range"] {
 }
 .slider-val { color: var(--text-muted); font-size: 11px; min-width: 28px; text-align: right; }
 
+/* Height settings */
+.segment-control { display: flex; gap: 2px; }
+.seg-btn {
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.seg-btn.active {
+    background: var(--accent-blue);
+    color: #fff;
+    border-color: var(--accent-blue);
+}
+.height-mode-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+.height-group-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 8px 0 4px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 6px;
+}
+.height-num {
+    width: 46px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 2px 4px;
+    font-size: 11px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
 /* Toggle switch */
 .toggle-switch { position: relative; width: 32px; height: 18px; display: inline-block; }
 .toggle-switch input { opacity: 0; width: 0; height: 0; }

@@ -6,14 +6,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const THEMES = {
     dark: {
         background: 0x0f1629,
-        fog: [0x0f1629, 500, 2000],
+        fog: [0x0f1629, 50, 200],
         ground: 0x101828,
         gridCenter: 0x2a4070,
         gridLines: 0x1a2744,
     },
     light: {
         background: 0xf0f4f8,
-        fog: [0xf0f4f8, 500, 2000],
+        fog: [0xf0f4f8, 50, 200],
         ground: 0xdde3ec,
         gridCenter: 0x9aacbf,
         gridLines: 0xc5d0dc,
@@ -34,9 +34,17 @@ const STATION_COLORS = {
 };
 
 // Tetris-block geometry constants (shared with sim-visualizer)
-const TETRIS_CELL = 14;
-const TETRIS_BOX  = 12;
-const TETRIS_H    = 18;
+const TETRIS_CELL = 1.4;
+const TETRIS_BOX  = 1.2;
+const TETRIS_H    = 1.8;
+
+// Model top heights used for relative↔absolute label height conversion
+export const MODEL_TOP = {
+    equip:    11,   // equipment shell height (H)
+    machine:   8,   // default machine mesh height
+    internal: TETRIS_H, // 1.8
+    node:      8,   // source/drain cylinder height (HEIGHT)
+};
 
 const STATION_SHAPES = {
     source:     [[0,0],[1,0],[2,0],[3,0]],
@@ -67,6 +75,14 @@ export class Scene3D {
         this._showStationNames = true;
         this._showWorks = true;
         this._showInterlocks = false;
+        // Label / work height settings (stored as absolute Y from ground)
+        this._labelHeightMode = 'relative'; // 'relative' | 'absolute'
+        this._equipLabelAbsY    = MODEL_TOP.equip    + 1.8; // 12.8m
+        this._machineLabelAbsY  = MODEL_TOP.machine  + 0.5; // 8.5m
+        this._internalLabelAbsY = MODEL_TOP.internal + 0.8; // 2.6m
+        this._nodeLabelAbsY     = MODEL_TOP.node     + 2.0; // 10.0m
+        this._workMachineAbsY   = MODEL_TOP.equip    + 2.0; // 13.0m
+        this._workInternalAbsY  = MODEL_TOP.internal + 2.0; // 3.8m
         this._onMachineDoubleClick = null;
         this._onMachineClick = null;
         this._onWorkClick = null;
@@ -94,8 +110,8 @@ export class Scene3D {
         const h = this.container.clientHeight;
 
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(50, w / (h || 1), 1, 5000);
-        this.camera.position.set(0, 600, 1000);
+        this.camera = new THREE.PerspectiveCamera(50, w / (h || 1), 0.1, 500);
+        this.camera.position.set(0, 60, 100);
         this.camera.lookAt(0, 0, 0);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -108,18 +124,18 @@ export class Scene3D {
         const ambient = new THREE.AmbientLight(0xffffff, 0.4);
         this.scene.add(ambient);
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(200, 400, 200);
+        dirLight.position.set(20, 40, 20);
         dirLight.castShadow = true;
         this.scene.add(dirLight);
 
-        this._createGround(2000);
+        this._createGround(200);
         this._applyThemeColors();
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
-        this.controls.minDistance = 50;
-        this.controls.maxDistance = 3000;
+        this.controls.minDistance = 5;
+        this.controls.maxDistance = 300;
         this.controls.maxPolarAngle = Math.PI / 2 - 0.05;
         this.controls.mouseButtons = {
             LEFT: THREE.MOUSE.PAN,
@@ -172,7 +188,7 @@ export class Scene3D {
     _createGround(gridSize) {
         this._groundSize = gridSize;
         // 地面は常に巨大な固定サイズ（フォグで端を隠す無限地面効果）
-        const geo = new THREE.PlaneGeometry(50000, 50000);
+        const geo = new THREE.PlaneGeometry(5000, 5000);
         const mat = new THREE.MeshStandardMaterial({
             color: THEMES[this._theme].ground,
             roughness: 0.9, metalness: 0.1, depthWrite: false,
@@ -186,7 +202,7 @@ export class Scene3D {
     }
 
     _recreateGrid(size, t) {
-        const divisions = Math.max(10, Math.round(size / 50));
+        const divisions = Math.max(10, Math.round(size / 5));
         this._grid = new THREE.GridHelper(size, divisions, t.gridCenter, t.gridLines);
         this._grid.position.y = 0.2;
         if (this._ground) {
@@ -203,12 +219,20 @@ export class Scene3D {
 
         // 未配置（positionX == null）の設備は 3D シーンに表示しない
         const machines = stations.filter(s => s.stationType === 'machine' && s.positionX != null);
+        const sourceDrainNodes = stations.filter(
+            s => (s.stationType === 'source' || s.stationType === 'drain')
+              && s.positionX != null
+              && s.parentId == null
+        );
         const placedMachineIds = new Set(machines.map(m => m.stationId));
         const internals = stations.filter(s => s.stationType !== 'machine' && s.parentId != null && placedMachineIds.has(s.parentId));
 
         // Group machines by equipment name (strip .NNN suffix) and render shells
         const groups = this._groupByEquipment(machines);
         groups.forEach((mList, equipName) => this._addEquipmentGroup(equipName, mList));
+
+        // Top-level source/drain nodes as standalone cylinders
+        sourceDrainNodes.forEach(s => this._addSourceDrainNode(s));
 
         // Internal stations: render at parent machine's global position + local offset
         internals.forEach(s => {
@@ -270,12 +294,12 @@ export class Scene3D {
             minZ = Math.min(minZ, pz); maxZ = Math.max(maxZ, pz);
         });
 
-        const PAD = 60;
+        const PAD = 6;
         const cx = (minX + maxX) / 2;
         const cz = (minZ + maxZ) / 2;
-        const W = Math.max(maxX - minX + PAD * 2, 140);
-        const D = Math.max(maxZ - minZ + PAD * 2, 140);
-        const H = 110;
+        const W = Math.max(maxX - minX + PAD * 2, 14);
+        const D = Math.max(maxZ - minZ + PAD * 2, 14);
+        const H = 11;
 
         const shellGroup = new THREE.Group();
         shellGroup.userData.equipmentName = equipName;
@@ -304,7 +328,7 @@ export class Scene3D {
         shellGroup.add(edgeMesh);
 
         // Equipment name label above shell
-        const label = this._createLabel(equipName, cx, H + 18, cz);
+        const label = this._createLabel(equipName, cx, this._equipLabelAbsY, cz);
         shellGroup.add(label);
 
         // 1設備 = 1モデル: .000 ステーションが設備レベルのモデルを保持する設計
@@ -348,12 +372,67 @@ export class Scene3D {
             shellMesh,
             modelGroup,
             hasCustomModel,
+            shellColor: 0x4a9eff,
+            shellOpacity: hasCustomModel ? 0 : 0.12,
             machines,
             centroid: { x: cx, z: cz },
+            labelMesh: label,
+            isNode: false,
         });
 
         // 個別マシンを登録（設備にモデルがある場合はビジュアルメッシュを非表示）
         machines.forEach(m => this._addMachine(m, hasCustomModel));
+    }
+
+    _addSourceDrainNode(station) {
+        const px = station.positionX || 0;
+        const pz = station.positionY || 0;
+        const color = STATION_COLORS[station.stationType] || 0x888888;
+        const RADIUS = 5, HEIGHT = 8;
+
+        const group = new THREE.Group();
+        group.userData.equipmentName = station.stationId;
+        group.userData.isEquipment = true;
+
+        const geo = new THREE.CylinderGeometry(RADIUS, RADIUS, HEIGHT, 32);
+        const mat = new THREE.MeshStandardMaterial({
+            color,
+            transparent: true,
+            opacity: 0.75,
+            roughness: 0.4,
+            metalness: 0.2,
+            emissive: color,
+            emissiveIntensity: 0.2,
+        });
+        const cylinderMesh = new THREE.Mesh(geo, mat);
+        cylinderMesh.position.set(px, HEIGHT / 2, pz);
+        cylinderMesh.userData.equipmentName = station.stationId;
+        cylinderMesh.castShadow = true;
+        group.add(cylinderMesh);
+
+        const edgeGeo = new THREE.EdgesGeometry(geo, 15);
+        const edgeColor = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.5).getHex();
+        const edgeMat = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.9 });
+        const edges = new THREE.LineSegments(edgeGeo, edgeMat);
+        edges.position.copy(cylinderMesh.position);
+        group.add(edges);
+
+        const label = this._createLabel(station.stationId, px, this._nodeLabelAbsY, pz);
+        group.add(label);
+
+        this.scene.add(group);
+        this._equipmentGroups.set(station.stationId, {
+            group,
+            shellMesh: cylinderMesh,
+            modelGroup: null,
+            hasCustomModel: false,
+            shellColor: color,
+            shellOpacity: 0.75,
+            machines: [station],
+            centroid: { x: px, z: pz },
+            labelMesh: label,
+            isNode: true,
+        });
     }
 
     _addMachine(station, groupHasCustomModel = false) {
@@ -376,13 +455,14 @@ export class Scene3D {
         } else if (cfg.model3DGrid) {
             mesh = this._buildVoxelMesh(cfg.model3DGrid, this._shellOpacity);
         } else {
-            mesh = this._buildCylinderMesh(60, 80, this._shellOpacity);
+            mesh = this._buildCylinderMesh(6, 8, this._shellOpacity);
         }
         mesh.userData.stationId = station.stationId;
         group.add(mesh);
 
         if (this._showStationNames) {
-            const label = this._createLabel(station.name || station.stationId, 0, 50, 0);
+            const localY = this._machineLabelAbsY - (station.positionZ || 0);
+            const label = this._createLabel(station.name || station.stationId, 0, localY, 0);
             group.add(label);
             group.userData.labelMesh = label;
         }
@@ -393,7 +473,7 @@ export class Scene3D {
     }
 
     _buildVoxelMesh(grid3d, opacity) {
-        const METER_SCALE = 10;
+        const METER_SCALE = 1;
         const gridSizeRaw = grid3d.gridSize || 0.5;
         // gridSize < 5 → meters format; >= 5 → legacy Three.js units
         const isMeters = gridSizeRaw < 5;
@@ -402,7 +482,7 @@ export class Scene3D {
         const cellHeight = isMeters ? cellHeightRaw * METER_SCALE : cellHeightRaw;
         const cells = grid3d.cells || [];
 
-        if (cells.length === 0) return this._buildCylinderMesh(60, 80, opacity);
+        if (cells.length === 0) return this._buildCylinderMesh(6, 8, opacity);
 
         // Origin-based centering: origin cell maps to x=0, z=0
         const origin = grid3d.origin;
@@ -440,7 +520,7 @@ export class Scene3D {
             const size = new THREE.Vector3();
             box.getSize(size);
             const maxDim = Math.max(size.x, size.y, size.z);
-            if (maxDim > 0) model.scale.setScalar(100 / maxDim);
+            if (maxDim > 0) model.scale.setScalar(10 / maxDim);
             box.setFromObject(model);
             model.position.y = -box.min.y;
             targetGroup.add(model);
@@ -451,7 +531,6 @@ export class Scene3D {
     }
 
     _buildCylinderMesh(radius, height, opacity) {
-        // Tetris-style box replaces the old cylinder fallback
         const W = radius * 1.4;
         const group = new THREE.Group();
 
@@ -528,9 +607,11 @@ export class Scene3D {
             group.add(edgeMesh);
         }
 
+        let internalLabel = null;
         if (this._showStationNames) {
-            const label = this._createLabel(station.name || station.stationId, 0, TETRIS_H + 8, 0);
-            group.add(label);
+            internalLabel = this._createLabel(station.name || station.stationId, 0, this._internalLabelAbsY, 0);
+            group.add(internalLabel);
+            group.userData.labelMesh = internalLabel;
         }
 
         group.position.set(px, 0, pz);
@@ -538,7 +619,7 @@ export class Scene3D {
         this.scene.add(group);
         // store with effective global position so setWorkPosition uses correct coords
         const effectiveStation = { ...station, positionX: px, positionY: pz };
-        this._internalStations.set(station.stationId, { group, mesh: group, station: effectiveStation });
+        this._internalStations.set(station.stationId, { group, mesh: group, station: effectiveStation, labelMesh: internalLabel });
     }
 
     _addConnectionLine(conn, stations) {
@@ -576,7 +657,7 @@ export class Scene3D {
         const tex = new THREE.CanvasTexture(canvas);
         const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
         const sprite = new THREE.Sprite(mat);
-        sprite.scale.set(80, 15, 1);
+        sprite.scale.set(8, 1.5, 1);
         sprite.position.set(x, y, z);
         return sprite;
     }
@@ -595,8 +676,8 @@ export class Scene3D {
 
         const cx = (minX + maxX) / 2;
         const cz = (minZ + maxZ) / 2;
-        const range = Math.max(maxX - minX, maxZ - minZ, 200);
-        const gridSize = range + 400;
+        const range = Math.max(maxX - minX, maxZ - minZ, 20);
+        const gridSize = range + 40;
 
         // グリッドを設備中心に配置（地面プレーンはスケール不要）
         this._groundSize = gridSize;
@@ -604,7 +685,7 @@ export class Scene3D {
         this._recreateGrid(gridSize, THEMES[this._theme]);
         this._grid.position.set(cx, 0.2, cz);
 
-        const dist = range * 0.9 + 200;
+        const dist = range * 0.9 + 20;
         this.scene.fog.near = dist * 2;
         this.scene.fog.far = dist * 6;
 
@@ -645,7 +726,7 @@ export class Scene3D {
         const dist = (R / Math.sin(Math.min(fov, fovH) / 2)) * 1.1;
 
         // グリッドを設備中心に配置（地面プレーンはスケール不要）
-        const gridSize = Math.max(R * 2 + 400, 600);
+        const gridSize = Math.max(R * 2 + 40, 60);
         this._groundSize = gridSize;
         if (this._grid) { this.scene.remove(this._grid); this._grid.geometry.dispose(); }
         this._recreateGrid(gridSize, THEMES[this._theme]);
@@ -815,8 +896,8 @@ export class Scene3D {
     _unhighlightEquip(equipName) {
         const eg = this._equipmentGroups.get(equipName);
         if (!eg || !eg.shellMesh) return;
-        eg.shellMesh.material.color.setHex(0x4a9eff);
-        eg.shellMesh.material.opacity = eg.hasCustomModel ? 0 : 0.12;
+        eg.shellMesh.material.color.setHex(eg.shellColor ?? 0x4a9eff);
+        eg.shellMesh.material.opacity = eg.shellOpacity ?? (eg.hasCustomModel ? 0 : 0.12);
     }
 
     setTopView() {
@@ -828,7 +909,7 @@ export class Scene3D {
         const halfH = dist * 0.5;
 
         this._orthoCamera = new THREE.OrthographicCamera(
-            -halfH * aspect, halfH * aspect, halfH, -halfH, 1, 5000
+            -halfH * aspect, halfH * aspect, halfH, -halfH, 0.1, 500
         );
         this._orthoCamera.position.set(target.x, dist, target.z);
         this._orthoCamera.lookAt(target);
@@ -888,13 +969,13 @@ export class Scene3D {
         if (!stEntry) return;
 
         const px = stEntry.station.positionX || 0;
-        const baseH = isMachine ? 110 : TETRIS_H;
-        const py = (stEntry.station.positionZ || 0) + baseH + 20;
+        const absY = isMachine ? this._workMachineAbsY : this._workInternalAbsY;
+        const py = (stEntry.station.positionZ || 0) + absY;
         const pz = stEntry.station.positionY || 0;
 
         let entry = this._works.get(workId);
         if (!entry) {
-            const WBOX = 11;
+            const WBOX = 1.1;
             const color = this._workColor(workId, workType);
             const geo = new THREE.BoxGeometry(WBOX, WBOX, WBOX);
             const mat = new THREE.MeshStandardMaterial({
@@ -956,7 +1037,7 @@ export class Scene3D {
         entry._anim = {
             from,
             to,
-            arcH: Math.max(20, Math.min(80, hDist * 0.35)),
+            arcH: Math.max(2, Math.min(8, hDist * 0.35)),
             startTime: Date.now(),
             duration: 350,
         };
@@ -1000,8 +1081,8 @@ export class Scene3D {
             indicator = new THREE.Mesh(geo, mat);
             const px = m.station.positionX || 0;
             const pz = m.station.positionY || 0;
-            const offset = signalName === 'inputReady' ? -20 : 20;
-            indicator.position.set(px + offset, 90, pz);
+            const offset = signalName === 'inputReady' ? -2 : 2;
+            indicator.position.set(px + offset, 9, pz);
             this.scene.add(indicator);
             this._interlockIndicators.set(key, indicator);
         } else {
@@ -1063,6 +1144,83 @@ export class Scene3D {
     setShowInterlocks(v) {
         this._showInterlocks = v;
         this._interlockIndicators.forEach(m => { m.visible = v; });
+    }
+
+    // ---- Label / work height settings ----
+
+    // Returns display value for current mode (relative: offset from model top, absolute: world Y)
+    getLabelHeightDisplayValues() {
+        const rel = this._labelHeightMode === 'relative';
+        return {
+            mode:         this._labelHeightMode,
+            equipLabel:    rel ? this._equipLabelAbsY    - MODEL_TOP.equip    : this._equipLabelAbsY,
+            machineLabel:  rel ? this._machineLabelAbsY  - MODEL_TOP.machine  : this._machineLabelAbsY,
+            internalLabel: rel ? this._internalLabelAbsY - MODEL_TOP.internal : this._internalLabelAbsY,
+            nodeLabel:     rel ? this._nodeLabelAbsY     - MODEL_TOP.node     : this._nodeLabelAbsY,
+            workMachine:   rel ? this._workMachineAbsY   - MODEL_TOP.equip    : this._workMachineAbsY,
+            workInternal:  rel ? this._workInternalAbsY  - MODEL_TOP.internal : this._workInternalAbsY,
+        };
+    }
+
+    setLabelHeightMode(mode) {
+        this._labelHeightMode = mode;
+    }
+
+    _absY(value, modelTop) {
+        return this._labelHeightMode === 'relative' ? modelTop + value : value;
+    }
+
+    setEquipLabelY(value) {
+        this._equipLabelAbsY = this._absY(value, MODEL_TOP.equip);
+        this._equipmentGroups.forEach(({ labelMesh, isNode }) => {
+            if (labelMesh && !isNode) labelMesh.position.y = this._equipLabelAbsY;
+        });
+    }
+
+    setMachineLabelY(value) {
+        this._machineLabelAbsY = this._absY(value, MODEL_TOP.machine);
+        this._machines.forEach(({ group, station }) => {
+            const label = group.userData.labelMesh;
+            if (label) label.position.y = this._machineLabelAbsY - (station.positionZ || 0);
+        });
+    }
+
+    setInternalLabelY(value) {
+        this._internalLabelAbsY = this._absY(value, MODEL_TOP.internal);
+        this._internalStations.forEach(({ labelMesh }) => {
+            if (labelMesh) labelMesh.position.y = this._internalLabelAbsY;
+        });
+    }
+
+    setNodeLabelY(value) {
+        this._nodeLabelAbsY = this._absY(value, MODEL_TOP.node);
+        this._equipmentGroups.forEach(({ labelMesh, isNode }) => {
+            if (labelMesh && isNode) labelMesh.position.y = this._nodeLabelAbsY;
+        });
+    }
+
+    setWorkMachineY(value) {
+        this._workMachineAbsY = this._absY(value, MODEL_TOP.equip);
+        this._works.forEach((entry) => {
+            const isMachine = this._machines.has(entry.stationId);
+            if (!isMachine) return;
+            const stEntry = this._machines.get(entry.stationId);
+            if (!stEntry || entry._anim) return;
+            const py = (stEntry.station.positionZ || 0) + this._workMachineAbsY;
+            entry.mesh.position.y = py;
+        });
+    }
+
+    setWorkInternalY(value) {
+        this._workInternalAbsY = this._absY(value, MODEL_TOP.internal);
+        this._works.forEach((entry) => {
+            const isInternal = this._internalStations.has(entry.stationId);
+            if (!isInternal) return;
+            const stEntry = this._internalStations.get(entry.stationId);
+            if (!stEntry || entry._anim) return;
+            const py = (stEntry.station.positionZ || 0) + this._workInternalAbsY;
+            entry.mesh.position.y = py;
+        });
     }
 
     _updateVisibility() {

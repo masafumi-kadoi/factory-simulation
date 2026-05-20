@@ -1339,8 +1339,8 @@ class ScenarioEditor {
             type: s.type,
             locationId: s.locationId || null,
             config: s.config || {},
-            x: (s.positionX != null) ? s.positionX : 100 + i * 200,
-            y: (s.positionY != null) ? s.positionY : 300
+            x: (s.positionX != null) ? s.positionX : 10 + i * 20,
+            y: (s.positionY != null) ? s.positionY : 30
         };
 
         // Reconstruct moduler station subScenario

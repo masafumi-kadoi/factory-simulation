@@ -15,8 +15,8 @@
         "workCount": 200,
         "workType": "workA"
       },
-      "positionX": 200,
-      "positionY": 500
+      "positionX": 20,
+      "positionY": 50
     },
     {
       "id": "mod-1",
@@ -134,8 +134,8 @@
           "exit-0"
         ]
       },
-      "positionX": 800,
-      "positionY": 500,
+      "positionX": 80,
+      "positionY": 50,
       "subScenario": {
         "stations": [
           {
@@ -147,8 +147,8 @@
               "noWorkTimeout": -1,
               "stayTime": -1
             },
-            "positionX": 50,
-            "positionY": 300
+            "positionX": 5,
+            "positionY": 30
           },
           {
             "id": "slot-0",
@@ -162,8 +162,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 200,
-            "positionY": 300
+            "positionX": 20,
+            "positionY": 30
           },
           {
             "id": "slot-1",
@@ -177,8 +177,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 400,
-            "positionY": 300
+            "positionX": 40,
+            "positionY": 30
           },
           {
             "id": "slot-2",
@@ -192,8 +192,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 600,
-            "positionY": 300
+            "positionX": 60,
+            "positionY": 30
           },
           {
             "id": "slot-3",
@@ -207,8 +207,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 800,
-            "positionY": 300
+            "positionX": 80,
+            "positionY": 30
           },
           {
             "id": "slot-4",
@@ -222,8 +222,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1000,
-            "positionY": 300
+            "positionX": 100,
+            "positionY": 30
           },
           {
             "id": "slot-5",
@@ -237,8 +237,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1200,
-            "positionY": 300
+            "positionX": 120,
+            "positionY": 30
           },
           {
             "id": "slot-6",
@@ -252,8 +252,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1400,
-            "positionY": 300
+            "positionX": 140,
+            "positionY": 30
           },
           {
             "id": "slot-7",
@@ -267,8 +267,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1600,
-            "positionY": 300
+            "positionX": 160,
+            "positionY": 30
           },
           {
             "id": "slot-8",
@@ -282,8 +282,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1800,
-            "positionY": 300
+            "positionX": 180,
+            "positionY": 30
           },
           {
             "id": "slot-9",
@@ -297,8 +297,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2000,
-            "positionY": 300
+            "positionX": 200,
+            "positionY": 30
           },
           {
             "id": "slot-10",
@@ -312,8 +312,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2200,
-            "positionY": 300
+            "positionX": 220,
+            "positionY": 30
           },
           {
             "id": "slot-11",
@@ -327,8 +327,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2400,
-            "positionY": 300
+            "positionX": 240,
+            "positionY": 30
           },
           {
             "id": "slot-12",
@@ -342,8 +342,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2600,
-            "positionY": 300
+            "positionX": 260,
+            "positionY": 30
           },
           {
             "id": "slot-13",
@@ -357,8 +357,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2800,
-            "positionY": 300
+            "positionX": 280,
+            "positionY": 30
           },
           {
             "id": "slot-14",
@@ -372,8 +372,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3000,
-            "positionY": 300
+            "positionX": 300,
+            "positionY": 30
           },
           {
             "id": "slot-15",
@@ -387,8 +387,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3200,
-            "positionY": 300
+            "positionX": 320,
+            "positionY": 30
           },
           {
             "id": "slot-16",
@@ -402,8 +402,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3400,
-            "positionY": 300
+            "positionX": 340,
+            "positionY": 30
           },
           {
             "id": "slot-17",
@@ -417,8 +417,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3600,
-            "positionY": 300
+            "positionX": 360,
+            "positionY": 30
           },
           {
             "id": "slot-18",
@@ -432,8 +432,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3800,
-            "positionY": 300
+            "positionX": 380,
+            "positionY": 30
           },
           {
             "id": "slot-19",
@@ -447,8 +447,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 4000,
-            "positionY": 300
+            "positionX": 400,
+            "positionY": 30
           },
           {
             "id": "exit-0",
@@ -459,8 +459,8 @@
               "noWorkTimeout": 2.2,
               "stayTime": -1
             },
-            "positionX": 4300,
-            "positionY": 300
+            "positionX": 430,
+            "positionY": 30
           }
         ],
         "connections": [
@@ -732,8 +732,8 @@
           "exit-0"
         ]
       },
-      "positionX": 2000,
-      "positionY": 500,
+      "positionX": 200,
+      "positionY": 50,
       "subScenario": {
         "stations": [
           {
@@ -745,8 +745,8 @@
               "noWorkTimeout": -1,
               "stayTime": -1
             },
-            "positionX": 50,
-            "positionY": 300
+            "positionX": 5,
+            "positionY": 30
           },
           {
             "id": "slot-0",
@@ -760,8 +760,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 200,
-            "positionY": 300
+            "positionX": 20,
+            "positionY": 30
           },
           {
             "id": "slot-1",
@@ -775,8 +775,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 400,
-            "positionY": 300
+            "positionX": 40,
+            "positionY": 30
           },
           {
             "id": "slot-2",
@@ -790,8 +790,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 600,
-            "positionY": 300
+            "positionX": 60,
+            "positionY": 30
           },
           {
             "id": "slot-3",
@@ -805,8 +805,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 800,
-            "positionY": 300
+            "positionX": 80,
+            "positionY": 30
           },
           {
             "id": "slot-4",
@@ -820,8 +820,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1000,
-            "positionY": 300
+            "positionX": 100,
+            "positionY": 30
           },
           {
             "id": "slot-5",
@@ -835,8 +835,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1200,
-            "positionY": 300
+            "positionX": 120,
+            "positionY": 30
           },
           {
             "id": "slot-6",
@@ -850,8 +850,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1400,
-            "positionY": 300
+            "positionX": 140,
+            "positionY": 30
           },
           {
             "id": "slot-7",
@@ -865,8 +865,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1600,
-            "positionY": 300
+            "positionX": 160,
+            "positionY": 30
           },
           {
             "id": "slot-8",
@@ -880,8 +880,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1800,
-            "positionY": 300
+            "positionX": 180,
+            "positionY": 30
           },
           {
             "id": "slot-9",
@@ -895,8 +895,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2000,
-            "positionY": 300
+            "positionX": 200,
+            "positionY": 30
           },
           {
             "id": "slot-10",
@@ -910,8 +910,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2200,
-            "positionY": 300
+            "positionX": 220,
+            "positionY": 30
           },
           {
             "id": "slot-11",
@@ -925,8 +925,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2400,
-            "positionY": 300
+            "positionX": 240,
+            "positionY": 30
           },
           {
             "id": "slot-12",
@@ -940,8 +940,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2600,
-            "positionY": 300
+            "positionX": 260,
+            "positionY": 30
           },
           {
             "id": "slot-13",
@@ -955,8 +955,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2800,
-            "positionY": 300
+            "positionX": 280,
+            "positionY": 30
           },
           {
             "id": "slot-14",
@@ -970,8 +970,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3000,
-            "positionY": 300
+            "positionX": 300,
+            "positionY": 30
           },
           {
             "id": "slot-15",
@@ -985,8 +985,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3200,
-            "positionY": 300
+            "positionX": 320,
+            "positionY": 30
           },
           {
             "id": "slot-16",
@@ -1000,8 +1000,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3400,
-            "positionY": 300
+            "positionX": 340,
+            "positionY": 30
           },
           {
             "id": "slot-17",
@@ -1015,8 +1015,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3600,
-            "positionY": 300
+            "positionX": 360,
+            "positionY": 30
           },
           {
             "id": "slot-18",
@@ -1030,8 +1030,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3800,
-            "positionY": 300
+            "positionX": 380,
+            "positionY": 30
           },
           {
             "id": "slot-19",
@@ -1045,8 +1045,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 4000,
-            "positionY": 300
+            "positionX": 400,
+            "positionY": 30
           },
           {
             "id": "exit-0",
@@ -1057,8 +1057,8 @@
               "noWorkTimeout": 2.2,
               "stayTime": -1
             },
-            "positionX": 4300,
-            "positionY": 300
+            "positionX": 430,
+            "positionY": 30
           }
         ],
         "connections": [
@@ -1330,8 +1330,8 @@
           "exit-0"
         ]
       },
-      "positionX": 3200,
-      "positionY": 500,
+      "positionX": 320,
+      "positionY": 50,
       "subScenario": {
         "stations": [
           {
@@ -1343,8 +1343,8 @@
               "noWorkTimeout": -1,
               "stayTime": -1
             },
-            "positionX": 50,
-            "positionY": 300
+            "positionX": 5,
+            "positionY": 30
           },
           {
             "id": "slot-0",
@@ -1358,8 +1358,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 200,
-            "positionY": 300
+            "positionX": 20,
+            "positionY": 30
           },
           {
             "id": "slot-1",
@@ -1373,8 +1373,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 400,
-            "positionY": 300
+            "positionX": 40,
+            "positionY": 30
           },
           {
             "id": "slot-2",
@@ -1388,8 +1388,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 600,
-            "positionY": 300
+            "positionX": 60,
+            "positionY": 30
           },
           {
             "id": "slot-3",
@@ -1403,8 +1403,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 800,
-            "positionY": 300
+            "positionX": 80,
+            "positionY": 30
           },
           {
             "id": "slot-4",
@@ -1418,8 +1418,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1000,
-            "positionY": 300
+            "positionX": 100,
+            "positionY": 30
           },
           {
             "id": "slot-5",
@@ -1433,8 +1433,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1200,
-            "positionY": 300
+            "positionX": 120,
+            "positionY": 30
           },
           {
             "id": "slot-6",
@@ -1448,8 +1448,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1400,
-            "positionY": 300
+            "positionX": 140,
+            "positionY": 30
           },
           {
             "id": "slot-7",
@@ -1463,8 +1463,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1600,
-            "positionY": 300
+            "positionX": 160,
+            "positionY": 30
           },
           {
             "id": "slot-8",
@@ -1478,8 +1478,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1800,
-            "positionY": 300
+            "positionX": 180,
+            "positionY": 30
           },
           {
             "id": "slot-9",
@@ -1493,8 +1493,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2000,
-            "positionY": 300
+            "positionX": 200,
+            "positionY": 30
           },
           {
             "id": "slot-10",
@@ -1508,8 +1508,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2200,
-            "positionY": 300
+            "positionX": 220,
+            "positionY": 30
           },
           {
             "id": "slot-11",
@@ -1523,8 +1523,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2400,
-            "positionY": 300
+            "positionX": 240,
+            "positionY": 30
           },
           {
             "id": "slot-12",
@@ -1538,8 +1538,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2600,
-            "positionY": 300
+            "positionX": 260,
+            "positionY": 30
           },
           {
             "id": "slot-13",
@@ -1553,8 +1553,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2800,
-            "positionY": 300
+            "positionX": 280,
+            "positionY": 30
           },
           {
             "id": "slot-14",
@@ -1568,8 +1568,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3000,
-            "positionY": 300
+            "positionX": 300,
+            "positionY": 30
           },
           {
             "id": "slot-15",
@@ -1583,8 +1583,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3200,
-            "positionY": 300
+            "positionX": 320,
+            "positionY": 30
           },
           {
             "id": "slot-16",
@@ -1598,8 +1598,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3400,
-            "positionY": 300
+            "positionX": 340,
+            "positionY": 30
           },
           {
             "id": "slot-17",
@@ -1613,8 +1613,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3600,
-            "positionY": 300
+            "positionX": 360,
+            "positionY": 30
           },
           {
             "id": "slot-18",
@@ -1628,8 +1628,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3800,
-            "positionY": 300
+            "positionX": 380,
+            "positionY": 30
           },
           {
             "id": "slot-19",
@@ -1643,8 +1643,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 4000,
-            "positionY": 300
+            "positionX": 400,
+            "positionY": 30
           },
           {
             "id": "exit-0",
@@ -1655,8 +1655,8 @@
               "noWorkTimeout": 2.2,
               "stayTime": -1
             },
-            "positionX": 4300,
-            "positionY": 300
+            "positionX": 430,
+            "positionY": 30
           }
         ],
         "connections": [
@@ -1928,8 +1928,8 @@
           "exit-0"
         ]
       },
-      "positionX": 4400,
-      "positionY": 500,
+      "positionX": 440,
+      "positionY": 50,
       "subScenario": {
         "stations": [
           {
@@ -1941,8 +1941,8 @@
               "noWorkTimeout": -1,
               "stayTime": -1
             },
-            "positionX": 50,
-            "positionY": 300
+            "positionX": 5,
+            "positionY": 30
           },
           {
             "id": "slot-0",
@@ -1956,8 +1956,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 200,
-            "positionY": 300
+            "positionX": 20,
+            "positionY": 30
           },
           {
             "id": "slot-1",
@@ -1971,8 +1971,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 400,
-            "positionY": 300
+            "positionX": 40,
+            "positionY": 30
           },
           {
             "id": "slot-2",
@@ -1986,8 +1986,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 600,
-            "positionY": 300
+            "positionX": 60,
+            "positionY": 30
           },
           {
             "id": "slot-3",
@@ -2001,8 +2001,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 800,
-            "positionY": 300
+            "positionX": 80,
+            "positionY": 30
           },
           {
             "id": "slot-4",
@@ -2016,8 +2016,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1000,
-            "positionY": 300
+            "positionX": 100,
+            "positionY": 30
           },
           {
             "id": "slot-5",
@@ -2031,8 +2031,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1200,
-            "positionY": 300
+            "positionX": 120,
+            "positionY": 30
           },
           {
             "id": "slot-6",
@@ -2046,8 +2046,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1400,
-            "positionY": 300
+            "positionX": 140,
+            "positionY": 30
           },
           {
             "id": "slot-7",
@@ -2061,8 +2061,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1600,
-            "positionY": 300
+            "positionX": 160,
+            "positionY": 30
           },
           {
             "id": "slot-8",
@@ -2076,8 +2076,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 1800,
-            "positionY": 300
+            "positionX": 180,
+            "positionY": 30
           },
           {
             "id": "slot-9",
@@ -2091,8 +2091,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2000,
-            "positionY": 300
+            "positionX": 200,
+            "positionY": 30
           },
           {
             "id": "slot-10",
@@ -2106,8 +2106,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2200,
-            "positionY": 300
+            "positionX": 220,
+            "positionY": 30
           },
           {
             "id": "slot-11",
@@ -2121,8 +2121,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2400,
-            "positionY": 300
+            "positionX": 240,
+            "positionY": 30
           },
           {
             "id": "slot-12",
@@ -2136,8 +2136,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2600,
-            "positionY": 300
+            "positionX": 260,
+            "positionY": 30
           },
           {
             "id": "slot-13",
@@ -2151,8 +2151,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 2800,
-            "positionY": 300
+            "positionX": 280,
+            "positionY": 30
           },
           {
             "id": "slot-14",
@@ -2166,8 +2166,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3000,
-            "positionY": 300
+            "positionX": 300,
+            "positionY": 30
           },
           {
             "id": "slot-15",
@@ -2181,8 +2181,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3200,
-            "positionY": 300
+            "positionX": 320,
+            "positionY": 30
           },
           {
             "id": "slot-16",
@@ -2196,8 +2196,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3400,
-            "positionY": 300
+            "positionX": 340,
+            "positionY": 30
           },
           {
             "id": "slot-17",
@@ -2211,8 +2211,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3600,
-            "positionY": 300
+            "positionX": 360,
+            "positionY": 30
           },
           {
             "id": "slot-18",
@@ -2226,8 +2226,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 3800,
-            "positionY": 300
+            "positionX": 380,
+            "positionY": 30
           },
           {
             "id": "slot-19",
@@ -2241,8 +2241,8 @@
               "processingTime": 1,
               "stayTime": 2.2
             },
-            "positionX": 4000,
-            "positionY": 300
+            "positionX": 400,
+            "positionY": 30
           },
           {
             "id": "exit-0",
@@ -2253,8 +2253,8 @@
               "noWorkTimeout": 2.2,
               "stayTime": -1
             },
-            "positionX": 4300,
-            "positionY": 300
+            "positionX": 430,
+            "positionY": 30
           }
         ],
         "connections": [
@@ -2420,8 +2420,8 @@
         "noWorkTimeout": -1,
         "stayTime": -1
       },
-      "positionX": 5600,
-      "positionY": 500
+      "positionX": 560,
+      "positionY": 50
     }
   ],
   "connections": [

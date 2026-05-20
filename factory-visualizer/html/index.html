@@ -137,6 +137,57 @@
                         </div>
                     </div>
 
+                    <div class="panel-section" id="section-height">
+                        <div class="section-header" data-toggle="height">
+                            <span>高さ設定</span>
+                            <span class="toggle-icon">▾</span>
+                        </div>
+                        <div class="section-body" id="height-body">
+                            <div class="setting-row">
+                                <label>基準</label>
+                                <div class="segment-control" id="label-height-mode">
+                                    <button class="seg-btn active" data-mode="relative">相対</button>
+                                    <button class="seg-btn" data-mode="absolute">絶対</button>
+                                </div>
+                            </div>
+                            <div class="height-mode-hint" id="height-mode-hint">モデル上端からのオフセット (m)</div>
+
+                            <div class="height-group-label">ラベル高さ</div>
+                            <div class="setting-row">
+                                <label>設備名</label>
+                                <input type="range" id="h-equip-label" min="0" max="5" step="0.1" value="1.8">
+                                <input type="number" class="height-num" id="h-equip-label-num" min="0" max="5" step="0.1" value="1.8">
+                            </div>
+                            <div class="setting-row">
+                                <label>マシン名</label>
+                                <input type="range" id="h-machine-label" min="0" max="5" step="0.1" value="0.5">
+                                <input type="number" class="height-num" id="h-machine-label-num" min="0" max="5" step="0.1" value="0.5">
+                            </div>
+                            <div class="setting-row">
+                                <label>内部St名</label>
+                                <input type="range" id="h-internal-label" min="0" max="5" step="0.1" value="0.8">
+                                <input type="number" class="height-num" id="h-internal-label-num" min="0" max="5" step="0.1" value="0.8">
+                            </div>
+                            <div class="setting-row">
+                                <label>ノード名</label>
+                                <input type="range" id="h-node-label" min="0" max="5" step="0.1" value="2.0">
+                                <input type="number" class="height-num" id="h-node-label-num" min="0" max="5" step="0.1" value="2.0">
+                            </div>
+
+                            <div class="height-group-label">ワーク高さ</div>
+                            <div class="setting-row">
+                                <label>マシン上</label>
+                                <input type="range" id="h-work-machine" min="0" max="5" step="0.1" value="2.0">
+                                <input type="number" class="height-num" id="h-work-machine-num" min="0" max="5" step="0.1" value="2.0">
+                            </div>
+                            <div class="setting-row">
+                                <label>内部St上</label>
+                                <input type="range" id="h-work-internal" min="0" max="5" step="0.1" value="2.0">
+                                <input type="number" class="height-num" id="h-work-internal-num" min="0" max="5" step="0.1" value="2.0">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="panel-section" id="section-cameras">
                         <div class="section-header" data-toggle="cameras">
                             <span>📷 カメラ</span>
