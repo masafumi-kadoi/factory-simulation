@@ -957,12 +957,20 @@ export class Scene3D {
         }
 
         const stEntry = isMachine ? this._machines.get(displayStationId) : this._internalStations.get(displayStationId);
-        if (!stEntry) return;
-
-        const px = stEntry.station.positionX || 0;
-        const absY = isMachine ? this._workMachineAbsY : this._workStationAbsY;
-        const py = (stEntry.station.positionZ || 0) + absY;
-        const pz = stEntry.station.positionY || 0;
+        let px, py, pz;
+        if (stEntry) {
+            px = stEntry.station.positionX || 0;
+            const absY = isMachine ? this._workMachineAbsY : this._workStationAbsY;
+            py = (stEntry.station.positionZ || 0) + absY;
+            pz = stEntry.station.positionY || 0;
+        } else {
+            // Source/drain nodes live in _equipmentGroups — derive position from centroid.
+            const eg = this._equipmentGroups.get(stationId);
+            if (!eg) return;
+            px = eg.centroid.x;
+            py = this._workMachineAbsY;
+            pz = eg.centroid.z;
+        }
 
         let entry = this._works.get(workId);
         if (!entry) {
