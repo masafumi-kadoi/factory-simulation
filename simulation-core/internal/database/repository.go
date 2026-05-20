@@ -729,11 +729,126 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		return nil, fmt.Errorf("failed to iterate factory stations: %w", err)
 	}
 
+	// Extract equipmentLayout from machine configs.
+	// The Machine Editor stores internal station configs (processingTime etc.) and
+	// internal connections inside machine.config.equipmentLayout — NOT in factory_stations/connections.
+	// We read that data here and use it as the authoritative source for internal stations.
+	type layoutMember struct {
+		stationID, stationType, name string
+		config                       map[string]interface{}
+	}
+	type layoutData struct {
+		members     []layoutMember
+		connections []struct{ from, to, cond string; fromPort, toPort int }
+	}
+	machineLayouts := make(map[string]*layoutData)
+	for _, rs := range rawStations {
+		if rs.stype != "machine" || !childrenOf[rs.id] {
+			continue
+		}
+		layout, ok := rs.config["equipmentLayout"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		ld := &layoutData{}
+		if members, ok := layout["members"].([]interface{}); ok {
+			for _, m := range members {
+				mem, ok := m.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				sid, _ := mem["stationId"].(string)
+				if sid == "" {
+					continue
+				}
+				stype, _ := mem["stationType"].(string)
+				memName, _ := mem["name"].(string)
+				cfg, _ := mem["config"].(map[string]interface{})
+				if cfg == nil {
+					cfg = make(map[string]interface{})
+				}
+				ld.members = append(ld.members, layoutMember{stationID: sid, stationType: stype, name: memName, config: cfg})
+			}
+		}
+		if conns, ok := layout["connections"].([]interface{}); ok {
+			for _, c := range conns {
+				conn, ok := c.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				from, _ := conn["fromStation"].(string)
+				to, _ := conn["toStation"].(string)
+				if from == "" || to == "" {
+					continue
+				}
+				cond, _ := conn["condition"].(string)
+				if cond == "" {
+					cond = "default"
+				}
+				fp, tp := -1, -1
+				if v, ok := conn["fromPortIndex"].(float64); ok {
+					fp = int(v)
+				}
+				if v, ok := conn["toPortIndex"].(float64); ok {
+					tp = int(v)
+				}
+				ld.connections = append(ld.connections, struct{ from, to, cond string; fromPort, toPort int }{from, to, cond, fp, tp})
+			}
+		}
+		if len(ld.members) > 0 {
+			machineLayouts[rs.id] = ld
+		}
+	}
+
+	// Build per-station overrides from layout members and add virtual stations
+	// (entry/exit stations created by Machine Editor that aren't in factory_stations).
+	rawStationSet := make(map[string]bool)
+	for _, rs := range rawStations {
+		rawStationSet[rs.id] = true
+	}
+	memberCfgOverride := make(map[string]map[string]interface{})
+	memberTypeOverride := make(map[string]string)
+	memberNameOverride := make(map[string]string)
+	for machineID, ld := range machineLayouts {
+		mid := machineID
+		for _, mem := range ld.members {
+			if len(mem.config) > 0 {
+				memberCfgOverride[mem.stationID] = mem.config
+			}
+			if mem.stationType != "" {
+				memberTypeOverride[mem.stationID] = mem.stationType
+			}
+			if mem.name != "" {
+				memberNameOverride[mem.stationID] = mem.name
+			}
+			if !rawStationSet[mem.stationID] {
+				// Virtual station (e.g. entry/exit created in Machine Editor)
+				name := mem.name
+				rawStations = append(rawStations, rawStation{
+					id: mem.stationID, stype: mem.stationType,
+					parentID: &mid, name: &name, config: mem.config,
+				})
+				rawStationSet[mem.stationID] = true
+				childrenOf[mid] = true
+			}
+		}
+	}
+
 	stationSet := make(map[string]bool)
 	var stations []domain.Station
 
 	for _, rs := range rawStations {
+		// Apply layout overrides (config and type are authoritative from equipmentLayout).
+		if cfg, ok := memberCfgOverride[rs.id]; ok {
+			rs.config = cfg
+		}
+		if name, ok := memberNameOverride[rs.id]; ok {
+			rs.name = &name
+		}
 		effectiveType := rs.stype
+		if t, ok := memberTypeOverride[rs.id]; ok && t != "" {
+			effectiveType = t
+		}
 		if rs.stype == "machine" {
 			if childrenOf[rs.id] {
 				// Machine with children: skip — children are the simulation nodes
@@ -827,13 +942,39 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		return nil, fmt.Errorf("failed to iterate factory connections: %w", err)
 	}
 
+	// Append internal connections from equipmentLayout to rawConns.
+	// These are the authoritative intra-machine connections stored by the Machine Editor.
+	for _, ld := range machineLayouts {
+		for _, c := range ld.connections {
+			rawConns = append(rawConns, rawConn{from: c.from, to: c.to, condition: c.cond, fromPort: c.fromPort, toPort: c.toPort})
+		}
+	}
+
 	// First pass: identify entry/exit stations for each machine hub.
-	// A connection hub→child defines child as an entry station.
-	// A connection child→hub defines child as an exit station.
+	// Primary source: equipmentLayout members with stationType "entry"/"exit".
+	// Fallback: hub→child / child→hub connections in factory_connections.
 	hubEntries := make(map[string][]string) // hub ID → ordered entry station IDs
 	hubExits := make(map[string][]string)   // hub ID → ordered exit station IDs
 	seenEntry := make(map[string]bool)
 	seenExit := make(map[string]bool)
+	for machineID, ld := range machineLayouts {
+		for _, mem := range ld.members {
+			switch mem.stationType {
+			case "entry":
+				k := machineID + ":" + mem.stationID
+				if !seenEntry[k] {
+					seenEntry[k] = true
+					hubEntries[machineID] = append(hubEntries[machineID], mem.stationID)
+				}
+			case "exit":
+				k := machineID + ":" + mem.stationID
+				if !seenExit[k] {
+					seenExit[k] = true
+					hubExits[machineID] = append(hubExits[machineID], mem.stationID)
+				}
+			}
+		}
+	}
 	for _, rc := range rawConns {
 		if machineHubs[rc.from] && stationParent[rc.to] == rc.from {
 			k := rc.from + ":" + rc.to
@@ -868,6 +1009,10 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		}
 	}
 	for _, rc := range rawConns {
+		// Skip self-loops (machine→machine-itself artifacts from old equipment group design).
+		if rc.from == rc.to {
+			continue
+		}
 		fromIsHub := machineHubs[rc.from]
 		toIsHub := machineHubs[rc.to]
 		// Hub ↔ direct-child connections define topology only; skip simulation routing.

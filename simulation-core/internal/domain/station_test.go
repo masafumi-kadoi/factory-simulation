@@ -232,7 +232,7 @@ func TestDefaultRules_AllStationTypes(t *testing.T) {
 		{StationTypeSplit, 4, false, false},
 		{StationTypeEntry, 4, false, false},
 		{StationTypeExit, 4, false, false},
-		{StationTypeModuler, 4, false, false},
+		{StationTypeMachine, 4, false, false},
 	}
 
 	for _, tt := range types {

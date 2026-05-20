@@ -22,7 +22,7 @@ func TestSwitchMerge_ToModuler(t *testing.T) {
 	}
 
 	// Moduler with sub-scenario
-	modStation := domain.NewStation("mod-1", domain.StationTypeModuler, map[string]interface{}{
+	modStation := domain.NewStation("mod-1", domain.StationTypeMachine, map[string]interface{}{
 		"entryCount": float64(1), "exitCount": float64(1),
 	})
 	modStation.EntryCount = 1
@@ -87,7 +87,7 @@ func TestSwitchDivert_ToModulers(t *testing.T) {
 
 	for i, name := range []string{"mod-a", "mod-b"} {
 		_ = i
-		modStation := domain.NewStation(name, domain.StationTypeModuler, map[string]interface{}{
+		modStation := domain.NewStation(name, domain.StationTypeMachine, map[string]interface{}{
 			"entryCount": float64(1), "exitCount": float64(1),
 		})
 		modStation.EntryCount = 1

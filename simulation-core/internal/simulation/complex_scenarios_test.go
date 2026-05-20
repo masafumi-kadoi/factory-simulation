@@ -80,7 +80,7 @@ func moduler12(id string, procT float64) domain.Station {
 		mkC("p9", "exit", -1, -1),
 	}
 	return domain.Station{
-		ID: id, Type: domain.StationTypeModuler,
+		ID: id, Type: domain.StationTypeMachine,
 		InPorts:  []domain.Port{{Capacity: 1}},
 		OutPorts: []domain.Port{{Capacity: 1}},
 		Config:   map[string]interface{}{},

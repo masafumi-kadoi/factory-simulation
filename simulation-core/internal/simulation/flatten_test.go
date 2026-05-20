@@ -85,7 +85,7 @@ func TestFlattenScenario_SingleModulerStation(t *testing.T) {
 			makeStation("source-1", domain.StationTypeSource),
 			{
 				ID:         "moduler-1",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,
@@ -186,7 +186,7 @@ func TestFlattenScenario_MultipleEntryExit(t *testing.T) {
 			makeStation("source-2", domain.StationTypeSource),
 			{
 				ID:         "moduler-1",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 2,
 				ExitCount:  1,
@@ -238,7 +238,7 @@ func TestFlattenScenario_NestedModulerStation(t *testing.T) {
 	// Source -> ModulerOuter(Entry -> ModulerInner(Entry -> Processing -> Exit) -> Exit) -> Drain
 	innerModuler := domain.Station{
 		ID:         "inner-moduler",
-		Type:       domain.StationTypeModuler,
+		Type:       domain.StationTypeMachine,
 		Config:     map[string]interface{}{},
 		EntryCount: 1,
 		ExitCount:  1,
@@ -262,7 +262,7 @@ func TestFlattenScenario_NestedModulerStation(t *testing.T) {
 			makeStation("source-1", domain.StationTypeSource),
 			{
 				ID:         "outer-moduler",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,
@@ -352,7 +352,7 @@ func TestFlattenScenario_InterlockRuleStationIDRewrite(t *testing.T) {
 			makeStation("source-1", domain.StationTypeSource),
 			{
 				ID:         "moduler-1",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,
@@ -447,7 +447,7 @@ func TestFlattenScenario_ModulerStationSignals(t *testing.T) {
 			makeStation("source-1", domain.StationTypeSource),
 			{
 				ID:     "moduler-1",
-				Type:   domain.StationTypeModuler,
+				Type:   domain.StationTypeMachine,
 				Config: map[string]interface{}{},
 				InterlockRules: &domain.InterlockConfig{
 					Signals: []domain.SignalDef{
@@ -518,7 +518,7 @@ func TestFlattenScenario_ConnectionPortIndexNormalization(t *testing.T) {
 			makeStation("source-1", domain.StationTypeSource),
 			{
 				ID:         "moduler-1",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 2,
 				ExitCount:  2,
@@ -589,7 +589,7 @@ func TestFlattenScenario_EmptySubScenario(t *testing.T) {
 			makeStation("source-1", domain.StationTypeSource),
 			{
 				ID:         "moduler-1",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,
@@ -655,7 +655,7 @@ func TestFlattenScenario_ModulerToModulerDirect(t *testing.T) {
 			makeStation("source-1", domain.StationTypeSource),
 			{
 				ID:         "moduler-a",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,
@@ -673,7 +673,7 @@ func TestFlattenScenario_ModulerToModulerDirect(t *testing.T) {
 			},
 			{
 				ID:         "moduler-b",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,
@@ -720,7 +720,7 @@ func TestFlattenScenario_RoutingConditionPreserved(t *testing.T) {
 		Stations: []domain.Station{
 			{
 				ID:         "moduler-1",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,
@@ -764,7 +764,7 @@ func TestFlattenScenario_DefaultPortIndexHandling(t *testing.T) {
 			makeStation("source-1", domain.StationTypeSource),
 			{
 				ID:         "moduler-1",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,
@@ -807,7 +807,7 @@ func TestFlattenScenario_ConfigInterlockRulesRawRewrite(t *testing.T) {
 		Stations: []domain.Station{
 			{
 				ID:         "moduler-1",
-				Type:       domain.StationTypeModuler,
+				Type:       domain.StationTypeMachine,
 				Config:     map[string]interface{}{},
 				EntryCount: 1,
 				ExitCount:  1,

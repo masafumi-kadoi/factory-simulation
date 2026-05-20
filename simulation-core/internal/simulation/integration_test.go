@@ -911,7 +911,7 @@ func TestIntegration_Moduler_BasicPassthrough(t *testing.T) {
 			}),
 			{
 				ID:     "moduler-1",
-				Type:   domain.StationTypeModuler,
+				Type:   domain.StationTypeMachine,
 				InPorts:  []domain.Port{{Capacity: 1}},
 				OutPorts: []domain.Port{{Capacity: 1}},
 				Config: map[string]interface{}{},
@@ -981,7 +981,7 @@ func TestIntegration_Moduler_WithMergeAndSplit(t *testing.T) {
 			}),
 			{
 				ID:     "moduler-qc",
-				Type:   domain.StationTypeModuler,
+				Type:   domain.StationTypeMachine,
 				InPorts:  []domain.Port{{Capacity: 1}},
 				OutPorts: []domain.Port{{Capacity: 1}},
 				Config: map[string]interface{}{},
@@ -1088,7 +1088,7 @@ func TestIntegration_LargeScenario_WithModuler(t *testing.T) {
 			}),
 			{
 				ID:     "moduler-qc",
-				Type:   domain.StationTypeModuler,
+				Type:   domain.StationTypeMachine,
 				InPorts:  []domain.Port{{Capacity: 1}},
 				OutPorts: []domain.Port{{Capacity: 1}},
 				Config: map[string]interface{}{},
@@ -1190,7 +1190,7 @@ func TestIntegration_NestedMergeSplitChain(t *testing.T) {
 			// Moduler with internal Split: hogefugapiyo → hogefuga + piyo
 			{
 				ID:       "moduler-1",
-				Type:     domain.StationTypeModuler,
+				Type:     domain.StationTypeMachine,
 				InPorts:  []domain.Port{{Capacity: 1}},
 				OutPorts: []domain.Port{{Capacity: 1}},
 				Config:   map[string]interface{}{},

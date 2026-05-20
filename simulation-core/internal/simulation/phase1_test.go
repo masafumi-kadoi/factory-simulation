@@ -29,7 +29,7 @@ func TestEvaluateRules_AllStationTypes_InitialState(t *testing.T) {
 		// Exit: same as Entry
 		{domain.StationTypeExit, true, false},
 		// Moduler: IWP=false → R1 fires → IR=ON
-		{domain.StationTypeModuler, true, false},
+		{domain.StationTypeMachine, true, false},
 	}
 
 	for _, tt := range tests {

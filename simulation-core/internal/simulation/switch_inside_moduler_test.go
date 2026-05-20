@@ -20,7 +20,7 @@ func makeProcStation(id string) domain.Station {
 //            entry-1 → proc-H → sw-merge
 func TestSwitchInsideModuler_ExactScenario(t *testing.T) {
 	// Outer moduler 1: entry-0 → processing-856080 → exit-0
-	mod1 := domain.NewStation("mod1", domain.StationTypeModuler, map[string]interface{}{})
+	mod1 := domain.NewStation("mod1", domain.StationTypeMachine, map[string]interface{}{})
 	mod1.EntryCount = 1
 	mod1.ExitCount = 1
 	mod1.SubScenario = &domain.SubScenario{
@@ -36,7 +36,7 @@ func TestSwitchInsideModuler_ExactScenario(t *testing.T) {
 	}
 
 	// Outer moduler 2: entry-0 → processing-906533 → processing-907297 → exit-0
-	mod2 := domain.NewStation("mod2", domain.StationTypeModuler, map[string]interface{}{})
+	mod2 := domain.NewStation("mod2", domain.StationTypeMachine, map[string]interface{}{})
 	mod2.EntryCount = 1
 	mod2.ExitCount = 1
 	mod2.SubScenario = &domain.SubScenario{
@@ -56,7 +56,7 @@ func TestSwitchInsideModuler_ExactScenario(t *testing.T) {
 	// Inner moduler: exact structure from failing scenario
 	// entry-0 → proc-959858 → proc-960570 → sw-merge → proc-963251 → proc-963885 → exit-0
 	// entry-1 → proc-962065 → sw-merge
-	innerMod := domain.NewStation("inner-mod", domain.StationTypeModuler, map[string]interface{}{})
+	innerMod := domain.NewStation("inner-mod", domain.StationTypeMachine, map[string]interface{}{})
 	innerMod.EntryCount = 2
 	innerMod.ExitCount = 1
 	innerMod.SubScenario = &domain.SubScenario{
@@ -136,7 +136,7 @@ func TestSwitchInsideModuler_ExactScenario(t *testing.T) {
 
 // TestSwitchInsideModuler: basic case, switch inside moduler with 2 sources directly
 func TestSwitchInsideModuler(t *testing.T) {
-	innerModuler := domain.NewStation("inner-mod", domain.StationTypeModuler, map[string]interface{}{
+	innerModuler := domain.NewStation("inner-mod", domain.StationTypeMachine, map[string]interface{}{
 		"entryCount": float64(2), "exitCount": float64(1),
 	})
 	innerModuler.EntryCount = 2

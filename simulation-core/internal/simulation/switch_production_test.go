@@ -33,7 +33,7 @@ func makeProcStationFull(id string) domain.Station {
 //	sw-967306 → proc-963251 → proc-963885 → exit-0
 func TestSwitchProduction_ExactScenario(t *testing.T) {
 	// moduler-1778493782564: single processing chain
-	mod1 := domain.NewStation("moduler-1778493782564", domain.StationTypeModuler, map[string]interface{}{
+	mod1 := domain.NewStation("moduler-1778493782564", domain.StationTypeMachine, map[string]interface{}{
 		"entryCount": float64(1), "exitCount": float64(1),
 	})
 	mod1.EntryCount = 1
@@ -51,7 +51,7 @@ func TestSwitchProduction_ExactScenario(t *testing.T) {
 	}
 
 	// moduler-1778493783351: two processing stations in chain
-	mod2 := domain.NewStation("moduler-1778493783351", domain.StationTypeModuler, map[string]interface{}{
+	mod2 := domain.NewStation("moduler-1778493783351", domain.StationTypeMachine, map[string]interface{}{
 		"entryCount": float64(1), "exitCount": float64(1),
 	})
 	mod2.EntryCount = 1
@@ -72,7 +72,7 @@ func TestSwitchProduction_ExactScenario(t *testing.T) {
 
 	// moduler-1778493784544: complex inner moduler with switch-merge
 	// SubScenario station ORDER matches production (exit-0 before entry-1)
-	innerMod := domain.NewStation("moduler-1778493784544", domain.StationTypeModuler, map[string]interface{}{
+	innerMod := domain.NewStation("moduler-1778493784544", domain.StationTypeMachine, map[string]interface{}{
 		"entryCount": float64(2), "exitCount": float64(1),
 	})
 	innerMod.EntryCount = 2
