@@ -244,6 +244,8 @@
         .il-modal-tab.active {
             color: var(--text-primary); border-bottom-color: var(--accent, #4a9eff); font-weight: 600;
         }
+        .il-tab-on  { color: #4caf50; font-weight: 700; }
+        .il-tab-off { color: #e57373; font-weight: 700; }
         .il-modal-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
 
         /* Flow view */
@@ -261,6 +263,11 @@
             padding: 3px 0; border-bottom: 1px solid var(--border-color);
         }
         .il-flow-row:last-child { border-bottom: none; }
+        .il-flow-or-sep {
+            text-align: center; font-size: 10px; font-weight: 700;
+            color: var(--text-muted); letter-spacing: 1px;
+            padding: 2px 0; opacity: 0.7;
+        }
         .il-flow-rid {
             font-family: monospace; font-size: 10px; font-weight: 600;
             color: var(--text-muted); min-width: 22px; flex-shrink: 0;

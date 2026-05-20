@@ -160,17 +160,58 @@ const _IL_SIGNAL_LABELS = {
     workEmpty:    '空き',
 };
 
+const _IL_SIGNAL_DESCRIPTIONS = {
+    inputWorkPresent:      '搬入バッファにワークがある（上流から受け入れ済み）',
+    processingWorkPresent: '加工エリアにワークがある（加工中または完了待ち）',
+    outputWorkPresent:     '搬出バッファにワークがある（下流への搬出待ち）',
+    running:               '加工処理が実行中（タイマー動作中）',
+    complete:              '加工処理が完了（完了フラグがON）',
+    processReady:          '加工開始条件が揃っている（ONで加工エンジンが加工を開始）',
+    inputReady:            '搬入を受け付けられる（ONで上流ステーションが搬入動作を開始）',
+    outputReady:           '搬出を許可できる（ONで下流ステーションへの搬出動作を開始）',
+    workFull:              '全バッファが埋まっている（入力・加工・出力すべて満杯）',
+    workEmpty:             '全バッファが空（入力・加工・出力すべて空き）',
+    allPortsFull:          '全入力ポートにワークが揃った（merge専用: 結合処理の開始条件）',
+    allPortsEmpty:         '全出力ポートが空き（split専用: 分岐先の受け入れ可能条件）',
+};
+
 const _IL_TARGET_TABS = {
-    processing: ['inputReady', 'processReady', 'outputReady'],
-    merge:      ['processReady', 'outputReady'],
-    split:      ['inputReady', 'processReady'],
-    switch:     ['inputReady', 'outputReady'],
+    processing: [
+        'inputReady:true',  'inputReady:false',
+        'processReady:true', 'processReady:false',
+        'outputReady:true',  'outputReady:false',
+    ],
+    merge: [
+        'processReady:true', 'processReady:false',
+        'outputReady:true',  'outputReady:false',
+    ],
+    split: [
+        'inputReady:true',  'inputReady:false',
+        'processReady:true', 'processReady:false',
+    ],
+    switch: [
+        'inputReady:true',  'inputReady:false',
+        'outputReady:true',  'outputReady:false',
+    ],
 };
 
 function _getModalTabs(type, rules) {
     const predefined = _IL_TARGET_TABS[type] || [];
-    const extra = [...new Set(rules.map(r => r.target))].filter(t => !predefined.includes(t));
+    const extra = [];
+    rules.forEach(r => {
+        const key = `${r.target}:${r.value}`;
+        if (!predefined.includes(key) && !extra.includes(key)) extra.push(key);
+    });
     return [...predefined, ...extra];
+}
+
+function _getTabLabel(tabKey) {
+    const [sig, val] = tabKey.split(':');
+    const base = _IL_SIGNAL_LABELS[sig] || sig;
+    const onOff = val === 'true'
+        ? '<span class="il-tab-on">ON</span>'
+        : '<span class="il-tab-off">OFF</span>';
+    return `${base} ${onOff}`;
 }
 
 function _getSignalLabel(sig) {
@@ -1614,7 +1655,8 @@ function _buildFlowViewHtml(activeRules) {
     if (!activeRules.length) {
         return '<div class="il-flow-empty">このシグナルにルールはありません</div>';
     }
-    return activeRules.map(r => {
+    return activeRules.map((r, idx) => {
+        const orSep = idx > 0 ? '<div class="il-flow-or-sep">or</div>' : '';
         const conds = r.conditions || [];
         const targetClass = r.value ? 'il-chip-on' : 'il-chip-off';
         const targetLabel = `${_escapeHtml(r.target)} = ${r.value ? 'ON' : 'OFF'}`;
@@ -1631,7 +1673,7 @@ function _buildFlowViewHtml(activeRules) {
             condHtml = `<div class="il-flow-conds-multi">${chips}</div><span class="il-flow-and">AND</span>`;
         }
 
-        return `
+        return `${orSep}
         <div class="il-flow-row">
             <span class="il-flow-rid">${_escapeHtml(r.id || '')}</span>
             <div class="il-flow-conditions">${condHtml}</div>
@@ -1649,16 +1691,20 @@ function _buildInterlockModalHtml(s, rules, activeTab) {
 
     const tabsHtml = tabs.map(tab => `
         <button class="il-modal-tab${tab === activeTab ? ' active' : ''}" data-target="${_escapeHtml(tab)}">
-            ${_escapeHtml(_getSignalLabel(tab))}
+            ${_getTabLabel(tab)}
         </button>`).join('');
 
-    const activeRules = rules.map((r, i) => ({ ...r, _idx: i })).filter(r => r.target === activeTab);
+    const [activeTabSig, activeTabVal] = activeTab.split(':');
+    const activeTabValue = activeTabVal === 'true';
+    const activeRules = rules.map((r, i) => ({ ...r, _idx: i }))
+        .filter(r => r.target === activeTabSig && r.value === activeTabValue);
     const flowHtml = _buildFlowViewHtml(activeRules);
 
     function sigOptions(selected) {
-        return signals.map(sig =>
-            `<option value="${_escapeHtml(sig)}"${sig === selected ? ' selected' : ''}>${_escapeHtml(sig)}</option>`
-        ).join('');
+        return signals.map(sig => {
+            const desc = _IL_SIGNAL_DESCRIPTIONS[sig] ? ` — ${_IL_SIGNAL_DESCRIPTIONS[sig]}` : '';
+            return `<option value="${_escapeHtml(sig)}"${sig === selected ? ' selected' : ''}>${_escapeHtml(sig)}${_escapeHtml(desc)}</option>`;
+        }).join('');
     }
 
     const detailHtml = activeRules.map(r => {
@@ -1675,9 +1721,6 @@ function _buildInterlockModalHtml(s, rules, activeTab) {
             <div class="il-detail-rule-header">
                 <span class="il-rule-id">${_escapeHtml(r.id || `R${ri + 1}`)}</span>
                 <input type="text" class="il-rule-desc" value="${_escapeHtml(r.description || '')}" placeholder="説明">
-                <label class="il-val-label" style="flex-shrink:0">
-                    <input type="checkbox" class="il-target-val"${r.value ? ' checked' : ''}> ON
-                </label>
                 <button class="il-rule-del">削除</button>
             </div>
             <div class="il-detail-conditions">
@@ -1705,7 +1748,7 @@ function _buildInterlockModalHtml(s, rules, activeTab) {
             <div class="il-detail-section">
                 <div class="il-section-label">ルール詳細</div>
                 <div class="il-detail-editor" id="il-detail-editor">${detailHtml}</div>
-                <button class="il-add-btn" id="il-modal-add-rule">＋ ルール追加 (${_escapeHtml(activeTab)})</button>
+                <button class="il-add-btn" id="il-modal-add-rule">＋ ルール追加 (${_getTabLabel(activeTab)})</button>
             </div>
         </div>
         <div class="il-modal-footer">
@@ -1734,7 +1777,10 @@ function _attachInterlockModalListeners(s, modalRules, overlay) {
     function refreshFlow() {
         const fv = document.getElementById('il-flow-view');
         if (!fv) return;
-        const active = modalRules.map((r, i) => ({ ...r, _idx: i })).filter(r => r.target === activeTab);
+        const [tabSig, tabVal] = activeTab.split(':');
+        const tabValue = tabVal === 'true';
+        const active = modalRules.map((r, i) => ({ ...r, _idx: i }))
+            .filter(r => r.target === tabSig && r.value === tabValue);
         fv.innerHTML = _buildFlowViewHtml(active);
     }
 
@@ -1743,7 +1789,6 @@ function _attachInterlockModalListeners(s, modalRules, overlay) {
 
     modal.querySelector('#il-modal-close')?.addEventListener('click', () => overlay.remove());
     modal.querySelector('#il-modal-cancel')?.addEventListener('click', () => overlay.remove());
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
     modal.querySelector('#il-modal-save')?.addEventListener('click', () => {
         s.config = s.config || {};
@@ -1774,11 +1819,12 @@ function _attachInterlockModalListeners(s, modalRules, overlay) {
 
     modal.querySelector('#il-modal-add-rule')?.addEventListener('click', () => {
         const sigs = _getInterlockSignals(type);
+        const [tabSig, tabVal] = activeTab.split(':');
         modalRules.push({
             id: `R${modalRules.length + 1}`,
             description: '',
-            target: activeTab,
-            value: true,
+            target: tabSig,
+            value: tabVal === 'true',
             conditions: [{ signal: sigs[0], value: false }],
         });
         refresh();
@@ -1798,10 +1844,6 @@ function _attachInterlockModalListeners(s, modalRules, overlay) {
             refreshFlow();
         });
 
-        ruleEl.querySelector('.il-target-val')?.addEventListener('change', e => {
-            modalRules[ri].value = e.target.checked;
-            refreshFlow();
-        });
     });
 
     modal.querySelectorAll('.il-cond-add').forEach(btn => {
