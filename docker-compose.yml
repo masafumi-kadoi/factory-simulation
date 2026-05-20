@@ -28,6 +28,7 @@ services:
       - ./database/migrations/016_execution_simulation_time.sql:/docker-entrypoint-initdb.d/016_execution_simulation_time.sql
       - ./database/migrations/017_recreate_scenarios.sql:/docker-entrypoint-initdb.d/017_recreate_scenarios.sql
       - ./database/migrations/018_consolidate_equipment_groups.sql:/docker-entrypoint-initdb.d/018_consolidate_equipment_groups.sql
+      - ./database/migrations/019_fix_orphaned_stations.sql:/docker-entrypoint-initdb.d/019_fix_orphaned_stations.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
