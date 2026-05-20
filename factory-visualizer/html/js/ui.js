@@ -70,7 +70,6 @@ const HEIGHT_ITEMS = [
     { key: 'equipLabel',    sliderId: 'h-equip-label',    numId: 'h-equip-label-num' },
     { key: 'machineLabel',  sliderId: 'h-machine-label',  numId: 'h-machine-label-num' },
     { key: 'internalLabel', sliderId: 'h-internal-label', numId: 'h-internal-label-num' },
-    { key: 'nodeLabel',     sliderId: 'h-node-label',     numId: 'h-node-label-num' },
     { key: 'workMachine',   sliderId: 'h-work-machine',   numId: 'h-work-machine-num' },
     { key: 'workInternal',  sliderId: 'h-work-internal',  numId: 'h-work-internal-num' },
 ];

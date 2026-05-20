@@ -1152,11 +1152,10 @@ export class Scene3D {
     getLabelHeightDisplayValues() {
         const rel = this._labelHeightMode === 'relative';
         return {
-            mode:         this._labelHeightMode,
+            mode:          this._labelHeightMode,
             equipLabel:    rel ? this._equipLabelAbsY    - MODEL_TOP.equip    : this._equipLabelAbsY,
             machineLabel:  rel ? this._machineLabelAbsY  - MODEL_TOP.machine  : this._machineLabelAbsY,
             internalLabel: rel ? this._internalLabelAbsY - MODEL_TOP.internal : this._internalLabelAbsY,
-            nodeLabel:     rel ? this._nodeLabelAbsY     - MODEL_TOP.node     : this._nodeLabelAbsY,
             workMachine:   rel ? this._workMachineAbsY   - MODEL_TOP.equip    : this._workMachineAbsY,
             workInternal:  rel ? this._workInternalAbsY  - MODEL_TOP.internal : this._workInternalAbsY,
         };
@@ -1172,8 +1171,10 @@ export class Scene3D {
 
     setEquipLabelY(value) {
         this._equipLabelAbsY = this._absY(value, MODEL_TOP.equip);
+        this._nodeLabelAbsY  = this._absY(value, MODEL_TOP.node);
         this._equipmentGroups.forEach(({ labelMesh, isNode }) => {
-            if (labelMesh && !isNode) labelMesh.position.y = this._equipLabelAbsY;
+            if (!labelMesh) return;
+            labelMesh.position.y = isNode ? this._nodeLabelAbsY : this._equipLabelAbsY;
         });
     }
 
@@ -1189,13 +1190,6 @@ export class Scene3D {
         this._internalLabelAbsY = this._absY(value, MODEL_TOP.internal);
         this._internalStations.forEach(({ labelMesh }) => {
             if (labelMesh) labelMesh.position.y = this._internalLabelAbsY;
-        });
-    }
-
-    setNodeLabelY(value) {
-        this._nodeLabelAbsY = this._absY(value, MODEL_TOP.node);
-        this._equipmentGroups.forEach(({ labelMesh, isNode }) => {
-            if (labelMesh && isNode) labelMesh.position.y = this._nodeLabelAbsY;
         });
     }
 

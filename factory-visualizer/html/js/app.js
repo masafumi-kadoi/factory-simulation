@@ -187,7 +187,6 @@ function initUI() {
                 case 'height_equipLabel':    scene3d.setEquipLabelY(value);    saveHeightSettings(); break;
                 case 'height_machineLabel':  scene3d.setMachineLabelY(value);  saveHeightSettings(); break;
                 case 'height_internalLabel': scene3d.setInternalLabelY(value); saveHeightSettings(); break;
-                case 'height_nodeLabel':     scene3d.setNodeLabelY(value);     saveHeightSettings(); break;
                 case 'height_workMachine':   scene3d.setWorkMachineY(value);   saveHeightSettings(); break;
                 case 'height_workInternal':  scene3d.setWorkInternalY(value);  saveHeightSettings(); break;
             }
