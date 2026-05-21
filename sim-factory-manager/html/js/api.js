@@ -53,7 +53,8 @@ const FactoryAPI = {
             headers: { 'Content-Type': 'text/csv' },
             body: csvText,
         });
-        const body = await r.json();
+        let body = {};
+        try { body = await r.json(); } catch (_) {}
         if (!r.ok) return { ok: false, ...body };
         return { ok: true, ...body };
     },
