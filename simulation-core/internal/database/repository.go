@@ -743,7 +743,7 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 	}
 	machineLayouts := make(map[string]*layoutData)
 	for _, rs := range rawStations {
-		if rs.stype != "machine" || !childrenOf[rs.id] {
+		if rs.stype != "machine" {
 			continue
 		}
 		layout, ok := rs.config["equipmentLayout"].(map[string]interface{})
