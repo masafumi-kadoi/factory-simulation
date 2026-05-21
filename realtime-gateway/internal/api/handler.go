@@ -246,12 +246,12 @@ func (h *Handler) handleFactoryStationSub(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case http.MethodPut:
 		var body struct {
-			Name        *string  `json:"name"`
-			StationType *string  `json:"stationType"`
-			PosX        *float64 `json:"posX"`
-			PosY        *float64 `json:"posY"`
-			PosZ        *float64 `json:"posZ"`
-			ParentID    *string  `json:"parentId"`
+			Name        *string         `json:"name"`
+			StationType *string         `json:"stationType"`
+			PosX        json.RawMessage `json:"posX"`
+			PosY        json.RawMessage `json:"posY"`
+			PosZ        *float64        `json:"posZ"`
+			ParentID    *string         `json:"parentId"`
 			Config      json.RawMessage `json:"config"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -266,10 +266,24 @@ func (h *Handler) handleFactoryStationSub(w http.ResponseWriter, r *http.Request
 			updates["station_type"] = *body.StationType
 		}
 		if body.PosX != nil {
-			updates["position_x"] = *body.PosX
+			if string(body.PosX) == "null" {
+				updates["position_x"] = nil
+			} else {
+				var v float64
+				if json.Unmarshal(body.PosX, &v) == nil {
+					updates["position_x"] = v
+				}
+			}
 		}
 		if body.PosY != nil {
-			updates["position_y"] = *body.PosY
+			if string(body.PosY) == "null" {
+				updates["position_y"] = nil
+			} else {
+				var v float64
+				if json.Unmarshal(body.PosY, &v) == nil {
+					updates["position_y"] = v
+				}
+			}
 		}
 		if body.PosZ != nil {
 			updates["position_z"] = *body.PosZ

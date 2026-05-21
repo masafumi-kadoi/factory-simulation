@@ -1309,7 +1309,7 @@ function openG3DFloating(groupId, title) {
                 equipMap.get(equip).push(s);
             });
             const nodeSections = state.stations.filter(
-                s => (s.stationType === 'source' || s.stationType === 'drain') && s.parentId == null
+                s => s.stationType === 'source' || s.stationType === 'drain'
             );
 
             const makeRow = (key, displayName, isUnplaced, posLabel) => `<div class="gf-equip-row">
@@ -1550,7 +1550,7 @@ function restoreHeightSettings() {
     updateHeightSliders(scene3d.getLabelHeightDisplayValues());
 }
 
-function _unplaceEquipment(equipName) {
+async function _unplaceEquipment(equipName) {
     // For machine groups: match by equipment prefix. For source/drain: match by stationId directly.
     let members = state.stations.filter(s => {
         if (s.stationType !== 'machine') return false;
@@ -1559,18 +1559,28 @@ function _unplaceEquipment(equipName) {
     });
     if (members.length === 0) {
         members = state.stations.filter(
-            s => s.stationId === equipName && (s.stationType === 'source' || s.stationType === 'drain') && s.parentId == null
+            s => s.stationId === equipName && (s.stationType === 'source' || s.stationType === 'drain')
         );
     }
+    if (members.length === 0) return;
+
+    // Update in-memory state immediately for responsive UI
     members.forEach(s => { s.positionX = null; s.positionY = null; });
-    _movedEquipment.set(equipName, {
-        centroid: null,
-        machines: members.map(s => ({ stationId: s.stationId, positionX: null, positionY: null })),
-    });
+    _movedEquipment.delete(equipName);
     scene3d && scene3d.loadFactory(state.stations, state.connections);
+    renderG3DUnplacedList();
     openG3DFloating('placement');
-    const saveBtn = document.getElementById('gf-save-placement');
-    if (saveBtn) { saveBtn.textContent = '保存して確定 *'; saveBtn.disabled = false; }
+
+    // Persist to DB immediately (posX: null clears the position in the backend)
+    try {
+        await Promise.all(members.map(s =>
+            API.updateStation(state.currentFactory, s.stationId, { posX: null, posY: null })
+        ));
+    } catch (err) {
+        alert('削除失敗: ' + err.message);
+        if (state.currentFactory) await selectFactory(state.currentFactory);
+        openG3DFloating('placement');
+    }
 }
 
 async function saveEquipPlacement() {
