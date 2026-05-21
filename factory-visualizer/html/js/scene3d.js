@@ -369,9 +369,12 @@ export class Scene3D {
             shellMesh.material.depthWrite = false;
             edgeMesh.visible = false;
 
-            // モデルをセントロイド位置に配置（設備グループの一部として移動に追従）
+            // モデルをセントロイド位置に配置（equipmentOrigin で GLB 内部原点を補正）
+            const equipOrigin = modelMachine?.config?.equipmentOrigin;
+            const eox = equipOrigin?.x ?? 0;
+            const eoz = equipOrigin?.z ?? 0;
             modelGroup = new THREE.Group();
-            modelGroup.position.set(cx, 0, cz);
+            modelGroup.position.set(cx - eox, 0, cz - eoz);
             shellGroup.add(modelGroup);
 
             const cfg = modelMachine.config || {};

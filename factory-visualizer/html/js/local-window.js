@@ -56,8 +56,10 @@ let _logicModelRoot = null;   // loaded GLB model object (for coordinate shifts)
 let _logicViewBox = { x: -8, y: -8, w: 16, h: 16 }; // current SVG viewBox (zoom/pan state) — meters
 let _stationRadius = 0.25; // fixed station radius in metres
 let _logicOriginMode = false;
-let _logicOriginX = null; // origin X in metres (null = not set)
-let _logicOriginZ = null; // origin Z in metres (null = not set)
+let _logicOriginX = null;     // origin X in metres for SVG marker (null = not set, 0 after set)
+let _logicOriginZ = null;
+let _modelOriginOffsetX = 0;  // cumulative X offset saved to equipmentOrigin
+let _modelOriginOffsetZ = 0;
 
 // ---- Logic tab state ----
 
@@ -1005,8 +1007,10 @@ function populateLogicTab() {
     // 原点状態をリセットして config から復元
     _logicOriginMode = false;
     const savedOrigin = machineStation?.config?.equipmentOrigin;
-    _logicOriginX = savedOrigin?.x ?? null;
-    _logicOriginZ = savedOrigin?.z ?? null;
+    _modelOriginOffsetX = savedOrigin?.x ?? 0;
+    _modelOriginOffsetZ = savedOrigin?.z ?? 0;
+    _logicOriginX = savedOrigin ? 0 : null;
+    _logicOriginZ = savedOrigin ? 0 : null;
 
     initToolPalette();
     initPropsPanel();
@@ -1235,7 +1239,10 @@ function _setLogicOrigin(x, z) {
         _logicModelBounds.minZ -= z; _logicModelBounds.maxZ -= z;
     }
 
-    // 原点は常に (0, 0)
+    // 累積オフセットを更新（scene3d.js での GLB 配置に使用）
+    _modelOriginOffsetX += x;
+    _modelOriginOffsetZ += z;
+    // マーカーは常に (0, 0) に表示
     _logicOriginX = 0;
     _logicOriginZ = 0;
 
@@ -2240,7 +2247,7 @@ async function saveAndClose() {
 
         // Tab 3: 原点位置を保存
         if (_logicOriginX !== null) {
-            newConfig.equipmentOrigin = { x: _logicOriginX, z: _logicOriginZ };
+            newConfig.equipmentOrigin = { x: _modelOriginOffsetX, z: _modelOriginOffsetZ };
         }
 
         // Tab 3: ステーション配置を equipmentLayout に保存（parentId は変更しない）
