@@ -247,14 +247,9 @@ export function renderExecutionList(executions) {
     }
 
     container.innerHTML = executions.map(exec => {
-        const startDt = exec.startTime ? new Date(exec.startTime).toLocaleString('ja-JP', {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit',
-        }) : '—';
-        const createdDt = exec.createdAt ? new Date(exec.createdAt).toLocaleString('ja-JP', {
-            month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit',
-        }) : '—';
+        const _toLocale = (str, opts) => { const d = str && new Date(str); return d && !isNaN(d) ? d.toLocaleString('ja-JP', opts) : '—'; };
+        const startDt = _toLocale(exec.startTime, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const createdDt = _toLocale(exec.createdAt, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
         return `
         <div class="exec-item" data-exec-id="${esc(exec.id)}" data-ds-id="${esc(exec.dataSourceId || '')}">
             <div class="exec-start">${esc(startDt)}</div>

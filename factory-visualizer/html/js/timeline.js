@@ -163,8 +163,8 @@ export class Timeline {
         ctx.lineTo(nowX, trackY);
         ctx.stroke();
 
-        // Event dots (past)
-        this._events.forEach(evMs => {
+        // Event dots (past) — skip when totalMs is 0 to avoid NaN coordinates
+        if (totalMs > 0) this._events.forEach(evMs => {
             const evX = pad + ((evMs - this._startTime) / totalMs) * trackW;
             const isPast = evMs <= this._currentTime;
             ctx.beginPath();
