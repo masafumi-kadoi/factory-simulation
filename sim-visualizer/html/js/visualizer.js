@@ -131,7 +131,8 @@ export class Visualizer3D {
         this._resizeHandler = () => this._onResize();
         window.addEventListener('resize', this._resizeHandler);
 
-        this.renderer.domElement.addEventListener('click', (event) => this._handleClick(event));
+        this._clickHandler = (event) => this._handleClick(event);
+        this.renderer.domElement.addEventListener('click', this._clickHandler);
     }
 
     _applyMouseConfig() {
@@ -334,6 +335,9 @@ export class Visualizer3D {
         if (this._resizeHandler) {
             window.removeEventListener('resize', this._resizeHandler);
         }
+        if (this._clickHandler) {
+            this.renderer && this.renderer.domElement.removeEventListener('click', this._clickHandler);
+        }
         if (this.scene) {
             this.clear();
         }
@@ -478,6 +482,7 @@ export class Visualizer3D {
     _createModulerGridModel(stationId, station, pos, portTargetList) {
         const grid = station.config.model3DGrid;
         const { gridSize, height, cells, origin } = grid;
+        if (!cells || cells.length === 0) return;
         const PX_PER_M = 80;
         const cellUnit = gridSize * PX_PER_M;
         const modelH = height * PX_PER_M;
