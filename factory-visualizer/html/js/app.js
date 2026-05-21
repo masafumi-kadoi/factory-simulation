@@ -1308,10 +1308,18 @@ function openG3DFloating(groupId, title) {
                 if (!equipMap.has(equip)) equipMap.set(equip, []);
                 equipMap.get(equip).push(s);
             });
+            const nodeSections = state.stations.filter(
+                s => (s.stationType === 'source' || s.stationType === 'drain') && s.parentId == null
+            );
 
-            const rows = [];
+            const makeRow = (key, displayName, isUnplaced, posLabel) => `<div class="gf-equip-row">
+                    <span class="gf-equip-name">${displayName}</span>
+                    <span class="gf-equip-pos" id="gf-pos-${esc(key)}">${posLabel}</span>
+                    ${isUnplaced ? '' : `<button class="gf-unplace-btn" data-equip="${esc(key)}" title="配置を削除">✕</button>`}
+                </div>`;
+
+            const machineRows = [];
             equipMap.forEach((members, equipName) => {
-                // 未保存の移動がある場合はその座標を表示、なければ DB の値を使用
                 const moved = _movedEquipment.get(equipName);
                 const isUnplaced = moved ? moved.centroid === null : members.every(m => m.positionX == null);
                 let posLabel;
@@ -1322,19 +1330,35 @@ function openG3DFloating(groupId, title) {
                     const cz = moved ? moved.centroid.z : members.reduce((acc, m) => acc + (m.positionY || 0), 0) / members.length;
                     posLabel = `X: ${cx.toFixed(1)}m, Y: ${cz.toFixed(1)}m`;
                 }
-                rows.push(`<div class="gf-equip-row">
-                    <span class="gf-equip-name">${esc(equipName)}</span>
-                    <span class="gf-equip-pos" id="gf-pos-${esc(equipName)}">${posLabel}</span>
-                    ${isUnplaced ? '' : `<button class="gf-unplace-btn" data-equip="${esc(equipName)}" title="配置を削除">✕</button>`}
-                </div>`);
+                machineRows.push(makeRow(equipName, esc(equipName), isUnplaced, posLabel));
             });
+
+            const nodeRows = [];
+            nodeSections.forEach(s => {
+                const moved = _movedEquipment.get(s.stationId);
+                const isUnplaced = moved ? moved.centroid === null : s.positionX == null;
+                let posLabel;
+                if (isUnplaced) {
+                    posLabel = '(未配置)';
+                } else {
+                    const cx = moved ? moved.centroid.x : (s.positionX || 0);
+                    const cz = moved ? moved.centroid.z : (s.positionY || 0);
+                    posLabel = `X: ${cx.toFixed(1)}m, Y: ${cz.toFixed(1)}m`;
+                }
+                const typeLabel = s.stationType === 'source' ? 'ソース' : 'ドレイン';
+                nodeRows.push(makeRow(s.stationId, `${esc(s.stationId)} <span style="color:var(--text-muted);font-size:10px">${typeLabel}</span>`, isUnplaced, posLabel));
+            });
+
+            const nodeSection = nodeRows.length
+                ? `<div style="font-size:10px;color:var(--text-muted);padding:4px 6px 2px;border-top:1px solid var(--border-color);margin-top:2px;">ソース / ドレイン</div>${nodeRows.join('')}`
+                : '';
 
             body.innerHTML = `
                 <button class="btn-primary" id="gf-save-placement" style="width:100%;padding:6px;margin-bottom:4px;">保存して確定</button>
                 <button class="btn-secondary" id="gf-exit-placement" style="width:100%;padding:5px;margin-bottom:4px;">保存せず終了</button>
                 <button class="toolbar-btn" id="gf-refresh-placement" style="width:100%;padding:4px;margin-bottom:6px;font-size:11px;">↺ 表示を更新</button>
                 <div style="font-size:11px;color:var(--text-muted);">設備をドラッグして移動。確定で SimDB に保存されます。</div>
-                <div style="max-height:200px;overflow-y:auto;">${rows.join('') || '<div style="color:var(--text-muted);font-size:11px">設備がありません</div>'}</div>
+                <div style="max-height:200px;overflow-y:auto;">${machineRows.join('') || '<div style="color:var(--text-muted);font-size:11px">設備がありません</div>'}${nodeSection}</div>
             `;
             body.querySelector('#gf-exit-placement').addEventListener('click', closeG3DFloating);
             body.querySelector('#gf-save-placement').addEventListener('click', saveEquipPlacement);
@@ -1527,11 +1551,17 @@ function restoreHeightSettings() {
 }
 
 function _unplaceEquipment(equipName) {
-    const members = state.stations.filter(s => {
+    // For machine groups: match by equipment prefix. For source/drain: match by stationId directly.
+    let members = state.stations.filter(s => {
         if (s.stationType !== 'machine') return false;
         const m = s.stationId.match(/^(.+?)[._-]?(\d{3})$/);
         return (m ? m[1] : s.stationId) === equipName;
     });
+    if (members.length === 0) {
+        members = state.stations.filter(
+            s => s.stationId === equipName && (s.stationType === 'source' || s.stationType === 'drain') && s.parentId == null
+        );
+    }
     members.forEach(s => { s.positionX = null; s.positionY = null; });
     _movedEquipment.set(equipName, {
         centroid: null,
