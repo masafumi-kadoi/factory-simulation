@@ -52,7 +52,7 @@ let _logicProjectionScene = null;    // Scene (re-used on zoom/pan)
 let _logicProjectionCX = 0;          // Camera center X (world)
 let _logicProjectionCZ = 0;          // Camera center Z (world)
 let _logicWorldBounds = null; // { left, right, top, bottom } in Three.js world coords (X and Z axes)
-let _logicViewBox = { x: 0, y: 0, w: 200, h: 200 }; // current SVG viewBox (zoom/pan state)
+let _logicViewBox = { x: -8, y: -8, w: 16, h: 16 }; // current SVG viewBox (zoom/pan state) — meters
 
 // ---- Logic tab state ----
 
@@ -834,8 +834,8 @@ function _resetLogicViewBox() {
         const { left, top, right, bottom } = _logicWorldBounds;
         _logicViewBox = { x: left, y: top, w: right - left, h: bottom - top };
     } else {
-        const PAD = 60;
-        let minX = -80, maxX = 80, minY = -80, maxY = 80;
+        const PAD = 3; // meters
+        let minX = -8, maxX = 8, minY = -8, maxY = 8; // meters (matches global view scale)
         childStations.forEach(s => {
             if (s.positionX == null) return;
             const x = s.positionX, y = s.positionY || 0;
@@ -1990,8 +1990,8 @@ function _dropToLogicCanvas(e) {
         const pt = svg.createSVGPoint();
         pt.x = e.clientX; pt.y = e.clientY;
         const sp = pt.matrixTransform(svg.getScreenCTM().inverse());
-        lx = Math.round(sp.x);
-        lz = Math.round(sp.y);
+        lx = Math.round(sp.x * 100) / 100;
+        lz = Math.round(sp.y * 100) / 100;
     }
 
     s.positionX = lx;
