@@ -48,6 +48,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initGlobal3DEditTab();
     initGlobalLogicEditTab();
     initPanelResizer();
+    restoreG3DSettings();
+    restoreHeightSettings();
 
     try {
         await loadFactories();
@@ -165,22 +167,23 @@ function initUI() {
                 case 'theme':
                     applyDocTheme(value);
                     scene3d.applyTheme(value);
+                    saveG3DSettings();
                     break;
-                case 'shellOpacity': scene3d.setShellOpacity(value); break;
-                case 'internalRadius': scene3d.setInternalRadius(value); break;
+                case 'shellOpacity': scene3d.setShellOpacity(value); saveG3DSettings(); break;
+                case 'internalRadius': scene3d.setInternalRadius(value); saveG3DSettings(); break;
                 case 'showInternal':
                     scene3d.setShowInternal(value);
-                    // Force works to re-render at new positions (internal vs hub)
                     scene3d.clearWorks();
                     state.activeWorks.clear();
                     if (timeline && timeline.getCurrentTime() !== null) {
                         applyHistoryAtTime(timeline.getCurrentTime(), false);
                     }
+                    saveG3DSettings();
                     break;
-                case 'showMachineNames': scene3d.setShowMachineNames(value); break;
-                case 'showStationNames': scene3d.setShowStationNames(value); break;
-                case 'showWorks': scene3d.setShowWorks(value); break;
-                case 'showInterlocks': scene3d.setShowInterlocks(value); break;
+                case 'showMachineNames': scene3d.setShowMachineNames(value); saveG3DSettings(); break;
+                case 'showStationNames': scene3d.setShowStationNames(value); saveG3DSettings(); break;
+                case 'showWorks': scene3d.setShowWorks(value); saveG3DSettings(); break;
+                case 'showInterlocks': scene3d.setShowInterlocks(value); saveG3DSettings(); break;
                 case 'labelHeightMode':
                     scene3d.setLabelHeightMode(value);
                     updateHeightSliders(scene3d.getLabelHeightDisplayValues());
@@ -1438,6 +1441,60 @@ function saveG3DSettings() {
         showInterlocks: document.getElementById('show-interlocks').checked,
     };
     try { localStorage.setItem('fv_3d_settings', JSON.stringify(settings)); } catch {}
+}
+
+function restoreG3DSettings() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem('fv_3d_settings')); } catch {}
+    if (!saved) return;
+
+    if (saved.theme) {
+        const el = document.getElementById('scene-theme');
+        if (el) el.value = saved.theme;
+        applyDocTheme(saved.theme);
+        scene3d && scene3d.applyTheme(saved.theme);
+    }
+    if (saved.shellOpacity != null) {
+        const el = document.getElementById('shell-opacity');
+        const valEl = document.getElementById('shell-opacity-val');
+        if (el) el.value = saved.shellOpacity;
+        if (valEl) valEl.textContent = parseFloat(saved.shellOpacity).toFixed(2);
+        scene3d && scene3d.setShellOpacity(parseFloat(saved.shellOpacity));
+    }
+    if (saved.internalRadius != null) {
+        const el = document.getElementById('internal-radius');
+        const valEl = document.getElementById('internal-radius-val');
+        if (el) el.value = saved.internalRadius;
+        if (valEl) valEl.textContent = saved.internalRadius;
+        scene3d && scene3d.setInternalRadius(parseInt(saved.internalRadius));
+    }
+    const checks = {
+        'show-internal':      ['showInternal',      v => scene3d && scene3d.setShowInternal(v)],
+        'show-machine-names': ['showMachineNames',  v => scene3d && scene3d.setShowMachineNames(v)],
+        'show-station-names': ['showStationNames',  v => scene3d && scene3d.setShowStationNames(v)],
+        'show-works':         ['showWorks',         v => scene3d && scene3d.setShowWorks(v)],
+        'show-interlocks':    ['showInterlocks',    v => scene3d && scene3d.setShowInterlocks(v)],
+    };
+    Object.entries(checks).forEach(([id, [savedKey, apply]]) => {
+        if (saved[savedKey] == null) return;
+        const el = document.getElementById(id);
+        if (el) el.checked = saved[savedKey];
+        apply(saved[savedKey]);
+    });
+}
+
+function restoreHeightSettings() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem('fv_height_settings')); } catch {}
+    if (!saved || !scene3d) return;
+
+    if (saved.mode) scene3d.setLabelHeightMode(saved.mode);
+    const h = saved.heights || {};
+    if (h.machineLabel != null) scene3d.setMachineLabelY(h.machineLabel);
+    if (h.stationLabel != null) scene3d.setStationLabelY(h.stationLabel);
+    if (h.workMachine  != null) scene3d.setWorkMachineY(h.workMachine);
+    if (h.workStation  != null) scene3d.setWorkStationY(h.workStation);
+    updateHeightSliders(scene3d.getLabelHeightDisplayValues());
 }
 
 async function saveEquipPlacement() {
