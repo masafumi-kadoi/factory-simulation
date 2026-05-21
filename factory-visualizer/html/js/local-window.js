@@ -722,8 +722,10 @@ function _loadGlbPreview(arrayBuffer) {
         const box = new THREE.Box3().setFromObject(model);
         const size = new THREE.Vector3();
         box.getSize(size);
-        // Place bottom at y=0
-        model.position.y = -box.min.y;
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        // モデルをバウンディングボックス中心が原点に来るよう移動（底面はy=0）
+        model.position.set(-center.x, -box.min.y, -center.z);
         _3dModelGroup.add(model);
         // カメラをモデルのサイズに合わせて調整
         const maxDim = Math.max(size.x, size.y, size.z) || 10;
