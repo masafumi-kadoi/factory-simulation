@@ -430,7 +430,9 @@ async function fetchInitialConditions() {
     const startStr = document.getElementById('sim-start').value;
     if (!startStr) { setICStatus('開始日時を入力してください'); return; }
 
-    const startDatetime = new Date(startStr).toISOString();
+    const parsedDate = new Date(startStr);
+    if (isNaN(parsedDate.getTime())) { setICStatus('無効な日時形式です'); return; }
+    const startDatetime = parsedDate.toISOString();
 
     setICStatus('SimDBから取得中...');
     try {
