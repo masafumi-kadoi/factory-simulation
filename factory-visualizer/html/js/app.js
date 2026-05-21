@@ -1313,11 +1313,19 @@ function openG3DFloating(groupId, title) {
             equipMap.forEach((members, equipName) => {
                 // 未保存の移動がある場合はその座標を表示、なければ DB の値を使用
                 const moved = _movedEquipment.get(equipName);
-                const cx = moved ? moved.centroid.x : members.reduce((acc, m) => acc + (m.positionX || 0), 0) / members.length;
-                const cz = moved ? moved.centroid.z : members.reduce((acc, m) => acc + (m.positionY || 0), 0) / members.length;
+                const isUnplaced = moved ? moved.centroid === null : members.every(m => m.positionX == null);
+                let posLabel;
+                if (isUnplaced) {
+                    posLabel = '(未配置)';
+                } else {
+                    const cx = moved ? moved.centroid.x : members.reduce((acc, m) => acc + (m.positionX || 0), 0) / members.length;
+                    const cz = moved ? moved.centroid.z : members.reduce((acc, m) => acc + (m.positionY || 0), 0) / members.length;
+                    posLabel = `X: ${cx.toFixed(1)}m, Y: ${cz.toFixed(1)}m`;
+                }
                 rows.push(`<div class="gf-equip-row">
                     <span class="gf-equip-name">${esc(equipName)}</span>
-                    <span class="gf-equip-pos" id="gf-pos-${esc(equipName)}">X: ${cx.toFixed(1)}m, Y: ${cz.toFixed(1)}m</span>
+                    <span class="gf-equip-pos" id="gf-pos-${esc(equipName)}">${posLabel}</span>
+                    ${isUnplaced ? '' : `<button class="gf-unplace-btn" data-equip="${esc(equipName)}" title="配置を削除">✕</button>`}
                 </div>`);
             });
 
@@ -1331,6 +1339,12 @@ function openG3DFloating(groupId, title) {
             body.querySelector('#gf-exit-placement').addEventListener('click', closeG3DFloating);
             body.querySelector('#gf-save-placement').addEventListener('click', saveEquipPlacement);
             body.querySelector('#gf-refresh-placement').addEventListener('click', () => openG3DFloating('placement'));
+            body.querySelectorAll('.gf-unplace-btn').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    e.stopPropagation();
+                    _unplaceEquipment(btn.dataset.equip);
+                });
+            });
             break;
         }
         case 'global':
@@ -1510,6 +1524,23 @@ function restoreHeightSettings() {
     if (h.workMachine  != null) scene3d.setWorkMachineY(h.workMachine);
     if (h.workStation  != null) scene3d.setWorkStationY(h.workStation);
     updateHeightSliders(scene3d.getLabelHeightDisplayValues());
+}
+
+function _unplaceEquipment(equipName) {
+    const members = state.stations.filter(s => {
+        if (s.stationType !== 'machine') return false;
+        const m = s.stationId.match(/^(.+?)[._-]?(\d{3})$/);
+        return (m ? m[1] : s.stationId) === equipName;
+    });
+    members.forEach(s => { s.positionX = null; s.positionY = null; });
+    _movedEquipment.set(equipName, {
+        centroid: null,
+        machines: members.map(s => ({ stationId: s.stationId, positionX: null, positionY: null })),
+    });
+    scene3d && scene3d.loadFactory(state.stations, state.connections);
+    openG3DFloating('placement');
+    const saveBtn = document.getElementById('gf-save-placement');
+    if (saveBtn) { saveBtn.textContent = '保存して確定 *'; saveBtn.disabled = false; }
 }
 
 async function saveEquipPlacement() {

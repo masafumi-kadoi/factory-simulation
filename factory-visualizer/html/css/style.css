@@ -960,7 +960,13 @@ input[type="range"] {
 }
 .gf-equip-row:last-child { border-bottom: none; }
 .gf-equip-name { font-weight: 600; color: var(--text-primary); }
-.gf-equip-pos { color: var(--text-muted); font-size: 11px; font-family: monospace; }
+.gf-equip-pos { color: var(--text-muted); font-size: 11px; font-family: monospace; flex: 1; text-align: right; margin-right: 4px; }
+.gf-unplace-btn {
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    font-size: 12px; padding: 1px 4px; border-radius: 3px; line-height: 1;
+    flex-shrink: 0;
+}
+.gf-unplace-btn:hover { background: var(--danger, #c0392b); color: #fff; }
 
 /* --- 未配置設備リスト (g3d-sidebar) --- */
 .g3d-sidebar-divider {
