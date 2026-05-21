@@ -36,7 +36,7 @@ async function checkServices() {
         const results = await PortalAPI.checkAllServices();
 
         container.innerHTML = results.map(svc => {
-            const display = SERVICE_DISPLAY[svc.name] || { label: svc.name, icon: '' };
+            const display = SERVICE_DISPLAY[svc.name] || { label: escapeHtml(svc.name), icon: '' };
             const indicatorClass = svc.status === 'up' ? 'up' : svc.status === 'unknown' ? 'unknown' : 'down';
             const statusText = svc.status === 'up' ? 'Online'
                 : svc.status === 'unknown' ? 'Unknown'
@@ -44,7 +44,7 @@ async function checkServices() {
             const statusColor = svc.status === 'up' ? '#28a745'
                 : svc.status === 'unknown' ? '#ffc107'
                 : '#dc3545';
-            const urlText = svc.url ? svc.url : '(not directly checkable)';
+            const urlText = svc.url ? escapeHtml(svc.url) : '(not directly checkable)';
 
             return `
                 <div class="service-card">

@@ -1059,9 +1059,14 @@ func (h *Handler) runSimulation(execID, dataSourceID, scenarioID, factoryID, sta
 // helpers
 
 func respondJSON(w http.ResponseWriter, status int, v interface{}) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	w.Write(b) //nolint:errcheck
 }
 
 func respondError(w http.ResponseWriter, status int, msg string) {
