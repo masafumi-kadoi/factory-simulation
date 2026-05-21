@@ -621,7 +621,7 @@ function init3DPreview() {
     _3dCamera.lookAt(0, 0, 0);
 
     _3dRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    _3dRenderer.setSize(w, h);
+    _3dRenderer.setSize(w, h, false);
     _3dRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     _3dRenderer.shadowMap.enabled = true;
 
@@ -646,8 +646,8 @@ function init3DPreview() {
         if (!w2 || !h2) return;
         _3dCamera.aspect = w2 / h2;
         _3dCamera.updateProjectionMatrix();
-        _3dRenderer.setSize(w2, h2);
-    }).observe(canvas.parentElement || canvas);
+        _3dRenderer.setSize(w2, h2, false);
+    }).observe(canvas);
 
     (function animate() {
         requestAnimationFrame(animate);

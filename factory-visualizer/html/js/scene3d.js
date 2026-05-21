@@ -33,29 +33,15 @@ const STATION_COLORS = {
     exit:       0xe65100,
 };
 
-// Tetris-block geometry constants (shared with sim-visualizer)
-const TETRIS_CELL = 1.4;
-const TETRIS_BOX  = 1.2;
-const TETRIS_H    = 1.8;
+// Internal station cylinder geometry constants
+const STATION_RADIUS = 0.25; // 直径 0.5m
+const STATION_HEIGHT = 0.2;  // 高さ 0.2m
 
 // Model top heights used for relative↔absolute label height conversion
 export const MODEL_TOP = {
-    machine: 11,      // machine shell height (H)
-    station: TETRIS_H, // 1.8
-    node:     8,       // source/drain cylinder height (HEIGHT)
-};
-
-const STATION_SHAPES = {
-    source:     [[0,0],[1,0],[2,0],[3,0]],
-    drain:      [[0,0],[1,0],[0,1],[1,1]],
-    processing: [[0,0],[1,0],[2,0],[2,1]],
-    merge:      [[0,0],[1,0],[2,0],[1,1]],
-    split:      [[1,0],[0,1],[1,1],[2,1]],
-    switch:     [[0,1],[1,1],[1,0],[2,0]],
-    entry:      [[0,0]],
-    exit:       [[0,0]],
-    inspection: [[0,0],[1,0],[2,0],[0,1]],
-    discharge:  [[0,0],[1,0],[1,1]],
+    machine: 11,           // machine shell height (H)
+    station: STATION_HEIGHT, // 0.2m
+    node:     8,           // source/drain cylinder height (HEIGHT)
 };
 
 export class Scene3D {
@@ -77,10 +63,10 @@ export class Scene3D {
         // Label / work height settings (stored as absolute Y from ground)
         this._labelHeightMode  = 'relative'; // 'relative' | 'absolute'
         this._machineLabelAbsY = MODEL_TOP.machine  + 1.8; // 12.8m
-        this._stationLabelAbsY = MODEL_TOP.station  + 0.8; // 2.6m
+        this._stationLabelAbsY = MODEL_TOP.station  + 0.8; // 1.0m
         this._nodeLabelAbsY    = MODEL_TOP.node     + 2.0; // 10.0m
         this._workMachineAbsY  = MODEL_TOP.machine  + 2.0; // 13.0m
-        this._workStationAbsY  = MODEL_TOP.station  + 2.0; // 3.8m
+        this._workStationAbsY  = MODEL_TOP.station  + 2.0; // 2.2m
         this._onMachineDoubleClick = null;
         this._onMachineClick = null;
         this._onWorkClick = null;
@@ -223,7 +209,39 @@ export class Scene3D {
               && s.parentId == null
         );
         const placedMachineIds = new Set(machines.map(m => m.stationId));
-        const internals = stations.filter(s => s.stationType !== 'machine' && s.parentId != null && placedMachineIds.has(s.parentId));
+
+        // Build internals: config.equipmentLayout.members is authoritative when present
+        // (local-window saves there); fall back to factory_stations DB records with parentId.
+        // Using a Map to deduplicate by stationId.
+        const internalsMap = new Map();
+        const machinesWithConfig = new Set(
+            machines.filter(m => Array.isArray(m.config?.equipmentLayout?.members) && m.config.equipmentLayout.members.length > 0)
+                    .map(m => m.stationId)
+        );
+        // Step 1: DB records for machines that have no config members
+        stations.forEach(s => {
+            if (s.stationType === 'machine') return;
+            if (!s.parentId || !placedMachineIds.has(s.parentId)) return;
+            if (machinesWithConfig.has(s.parentId)) return;
+            internalsMap.set(s.stationId, s);
+        });
+        // Step 2: config members for machines that have them (overrides any DB records)
+        machines.forEach(m => {
+            const members = m.config?.equipmentLayout?.members;
+            if (!Array.isArray(members) || members.length === 0) return;
+            members.forEach(mem => {
+                internalsMap.set(mem.stationId, {
+                    stationId: mem.stationId,
+                    stationType: mem.stationType || 'processing',
+                    name: mem.name || mem.stationType || mem.stationId,
+                    parentId: m.stationId,
+                    positionX: mem.x ?? null,
+                    positionY: mem.y ?? null,
+                    config: mem.config || {},
+                });
+            });
+        });
+        const internals = [...internalsMap.values()];
 
         // Group machines by equipment name (strip .NNN suffix) and render shells
         const groups = this._groupByEquipment(machines);
@@ -556,47 +574,33 @@ export class Scene3D {
         const px = (station.positionX || 0) + parentX;
         const pz = (station.positionY || 0) + parentZ;
 
-        const stationType = station.stationType || 'processing';
-        const cells = STATION_SHAPES[stationType] || [[0, 0]];
-        const color = STATION_COLORS[stationType] || 0x666666;
-
-        const minC = Math.min(...cells.map(([c]) => c));
-        const maxC = Math.max(...cells.map(([c]) => c));
-        const minR = Math.min(...cells.map(([, r]) => r));
-        const maxR = Math.max(...cells.map(([, r]) => r));
-        const cx = (minC + maxC) / 2;
-        const cz = (minR + maxR) / 2;
+        const color = STATION_COLORS[station.stationType] || 0x666666;
         const edgeColor = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55).getHex();
 
         const group = new THREE.Group();
         group.userData.stationId = station.stationId;
         group.userData.isInternal = true;
 
-        for (const [c, r] of cells) {
-            const ox = (c - cx) * TETRIS_CELL;
-            const oz = (r - cz) * TETRIS_CELL;
+        const geo = new THREE.CylinderGeometry(STATION_RADIUS, STATION_RADIUS, STATION_HEIGHT, 16);
+        const mat = new THREE.MeshStandardMaterial({
+            color,
+            emissive: color,
+            emissiveIntensity: 0.4,
+            roughness: 0.3,
+            metalness: 0.35,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(0, STATION_HEIGHT / 2, 0);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData.stationId = station.stationId;
+        group.add(mesh);
 
-            const geo = new THREE.BoxGeometry(TETRIS_BOX, TETRIS_H, TETRIS_BOX);
-            const mat = new THREE.MeshStandardMaterial({
-                color,
-                emissive: color,
-                emissiveIntensity: 0.4,
-                roughness: 0.3,
-                metalness: 0.35,
-            });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.set(ox, TETRIS_H / 2, oz);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            mesh.userData.stationId = station.stationId;
-            group.add(mesh);
-
-            const edgeGeo = new THREE.EdgesGeometry(geo, 30);
-            const edgeMat = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.9 });
-            const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
-            edgeMesh.position.copy(mesh.position);
-            group.add(edgeMesh);
-        }
+        const edgeGeo = new THREE.EdgesGeometry(geo, 30);
+        const edgeMat = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.9 });
+        const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+        edgeMesh.position.copy(mesh.position);
+        group.add(edgeMesh);
 
         let internalLabel = null;
         if (this._showStationNames) {
