@@ -10,9 +10,12 @@ func (eq EventQueue) Len() int {
 	return len(eq)
 }
 
-// Less compares two events by time
+// Less compares two events by time, then by insertion order for determinism
 func (eq EventQueue) Less(i, j int) bool {
-	return eq[i].Time < eq[j].Time
+	if eq[i].Time != eq[j].Time {
+		return eq[i].Time < eq[j].Time
+	}
+	return eq[i].Seq < eq[j].Seq
 }
 
 // Swap swaps two events
@@ -37,6 +40,7 @@ func (eq *EventQueue) Pop() interface{} {
 // PriorityQueue is a wrapper around EventQueue that provides convenient methods
 type PriorityQueue struct {
 	queue EventQueue
+	seq   uint64
 }
 
 // NewPriorityQueue creates a new priority queue
@@ -48,8 +52,10 @@ func NewPriorityQueue() *PriorityQueue {
 	return pq
 }
 
-// Push adds an event to the queue
+// Push adds an event to the queue, stamping it with a monotonic sequence number
 func (pq *PriorityQueue) Push(event *Event) {
+	event.Seq = pq.seq
+	pq.seq++
 	heap.Push(&pq.queue, event)
 }
 

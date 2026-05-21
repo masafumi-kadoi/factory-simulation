@@ -30,6 +30,7 @@ const (
 type Event struct {
 	Type      EventType
 	Time      float64
+	Seq       uint64 // insertion-order tiebreaker for deterministic same-time ordering
 	StationID string
 	WorkID    *string
 	PortIndex int // Port index for port-level events (-1 = no port)
