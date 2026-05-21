@@ -359,27 +359,30 @@ func (h *Handler) HandleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 
 // GetScenario retrieves a scenario by ID
 func (h *Handler) GetScenario(scenarioID string) (*domain.Scenario, error) {
-	// Try to get from memory first
+	// Fast path: already cached
 	h.mu.RLock()
 	scenario, ok := h.scenarios[scenarioID]
 	h.mu.RUnlock()
-
 	if ok {
 		return scenario, nil
 	}
 
-	// If not in memory, try to get from database
+	// Load from database (outside any lock to avoid holding locks during I/O)
 	scenario, err := h.repo.GetScenario(scenarioID)
 	if err != nil {
 		return nil, fmt.Errorf("scenario not found: %s", scenarioID)
 	}
 
 	// Migrate before caching so the cached pointer is already in the current format.
-	// This prevents concurrent MigrateScenario calls on the same pointer (race condition).
 	domain.MigrateScenario(scenario)
 
-	// Cache in memory for future use
+	// Slow path: cache under write lock; double-check to avoid redundant writes
 	h.mu.Lock()
+	if existing, found := h.scenarios[scenarioID]; found {
+		// Another goroutine loaded and cached it while we were loading from DB
+		h.mu.Unlock()
+		return existing, nil
+	}
 	h.scenarios[scenarioID] = scenario
 	h.mu.Unlock()
 
