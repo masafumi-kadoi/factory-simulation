@@ -455,7 +455,6 @@ export class Scene3D {
     _addMachine(station, groupHasCustomModel = false) {
         const cfg = station.config || {};
         const px = station.positionX || 0;
-        const py = station.positionZ || 0;
         const pz = station.positionY || 0;
 
         const group = new THREE.Group();
@@ -472,27 +471,22 @@ export class Scene3D {
         } else if (cfg.model3DGrid) {
             mesh = this._buildVoxelMesh(cfg.model3DGrid, this._shellOpacity);
         } else {
-            mesh = this._buildCylinderMesh(6, 8, this._shellOpacity);
+            mesh = this._buildCylinderMesh(1.5, 2.0, this._shellOpacity);
         }
         mesh.userData.stationId = station.stationId;
         group.add(mesh);
 
-        group.position.set(px, py, pz);
+        group.position.set(px, 0, pz);
         this.scene.add(group);
         this._machines.set(station.stationId, { group, mesh, station });
     }
 
     _buildVoxelMesh(grid3d, opacity) {
-        const METER_SCALE = 1;
-        const gridSizeRaw = grid3d.gridSize || 0.5;
-        // gridSize < 5 → meters format; >= 5 → legacy Three.js units
-        const isMeters = gridSizeRaw < 5;
-        const gridSize = isMeters ? gridSizeRaw * METER_SCALE : gridSizeRaw;
-        const cellHeightRaw = grid3d.height || (isMeters ? 1.5 : gridSizeRaw * 2);
-        const cellHeight = isMeters ? cellHeightRaw * METER_SCALE : cellHeightRaw;
+        const gridSize = grid3d.gridSize || 0.5; // metres per cell
+        const cellHeight = grid3d.height || 1.5;  // metres
         const cells = grid3d.cells || [];
 
-        if (cells.length === 0) return this._buildCylinderMesh(6, 8, opacity);
+        if (cells.length === 0) return this._buildCylinderMesh(1.5, 2.0, opacity);
 
         // Origin-based centering: origin cell maps to x=0, z=0
         const origin = grid3d.origin;
@@ -621,12 +615,8 @@ export class Scene3D {
         const toSt = stations.find(s => s.stationId === conn.toStation);
         if (!fromSt || !toSt) return;
 
-        const from = new THREE.Vector3(
-            fromSt.positionX || 0, (fromSt.positionZ || 0) + 5, fromSt.positionY || 0
-        );
-        const to = new THREE.Vector3(
-            toSt.positionX || 0, (toSt.positionZ || 0) + 5, toSt.positionY || 0
-        );
+        const from = new THREE.Vector3(fromSt.positionX || 0, 1.0, fromSt.positionY || 0);
+        const to   = new THREE.Vector3(toSt.positionX   || 0, 1.0, toSt.positionY   || 0);
 
         const points = [from, to];
         const geo = new THREE.BufferGeometry().setFromPoints(points);

@@ -51,7 +51,7 @@ let _logicProjectionCamera = null;   // OrthographicCamera (re-used on zoom/pan)
 let _logicProjectionScene = null;    // Scene (re-used on zoom/pan)
 let _logicProjectionCX = 0;          // Camera center X (world)
 let _logicProjectionCZ = 0;          // Camera center Z (world)
-let _logicWorldBounds = null; // { left, right, top, bottom } in Three.js world coords (X and Z axes)
+let _logicModelBounds = null; // { minX, maxX, minZ, maxZ } GLBモデルのXZ範囲（metres）
 let _logicViewBox = { x: -8, y: -8, w: 16, h: 16 }; // current SVG viewBox (zoom/pan state) — meters
 
 // ---- Logic tab state ----
@@ -718,16 +718,19 @@ function _loadGlbPreview(arrayBuffer) {
     loader.load(url, gltf => {
         URL.revokeObjectURL(url);
         const model = gltf.scene;
-        // Auto-scale: fit to 100 units max dimension
+        // GLBはメートル単位。スケール変換しない。
         const box = new THREE.Box3().setFromObject(model);
         const size = new THREE.Vector3();
         box.getSize(size);
-        const maxDim = Math.max(size.x, size.y, size.z);
-        if (maxDim > 0) model.scale.setScalar(10 / maxDim);
         // Place bottom at y=0
-        box.setFromObject(model);
         model.position.y = -box.min.y;
         _3dModelGroup.add(model);
+        // カメラをモデルのサイズに合わせて調整
+        const maxDim = Math.max(size.x, size.y, size.z) || 10;
+        _3dCamera.position.set(0, maxDim * 1.2, maxDim * 2);
+        _3dCamera.lookAt(0, 0, 0);
+        _3dControls.target.set(0, 0, 0);
+        _3dControls.update();
     }, undefined, err => {
         URL.revokeObjectURL(url);
         console.error('GLB load error:', err);
@@ -755,7 +758,7 @@ function _initLogicProjection() {
     }
     _logicProjectionCamera = null;
     _logicProjectionScene = null;
-    _logicWorldBounds = null;
+    _logicModelBounds = null;
 
     // キャンバスサイズ（親要素から取得）
     const area = canvas.parentElement;
@@ -785,6 +788,12 @@ function _initLogicProjection() {
         model.position.y = -bbox.min.y;
         scene.add(model);
 
+        // モデルのXZ範囲を記録（viewBoxリセット時にモデル全体が収まるよう使用）
+        _logicModelBounds = {
+            minX: bbox.min.x, maxX: bbox.max.x,
+            minZ: bbox.min.z, maxZ: bbox.max.z,
+        };
+
         // カメラは基準点(0,0)を中心に据え置き。SVGのメートル座標系と一致。
         _logicProjectionCX = 0;
         _logicProjectionCZ = 0;
@@ -797,7 +806,8 @@ function _initLogicProjection() {
         _logicProjectionCamera = cam;
         _logicProjectionScene = scene;
 
-        _rerenderLogicProjection();
+        // GLB読み込み完了後にviewBoxを再計算（モデル範囲を含む）
+        _resetLogicViewBox();
         renderLogicSVG();
     }, undefined, err => {
         URL.revokeObjectURL(url);
@@ -806,18 +816,46 @@ function _initLogicProjection() {
 }
 
 function _resetLogicViewBox() {
-    // viewBoxをメートル座標系でリセット（ステーション座標にフィット、デフォルト±8m）
-    const PAD = 3; // meters
-    let minX = -8, maxX = 8, minY = -8, maxY = 8;
+    const PAD = 2; // metres
+    let minX = -4, maxX = 4, minZ = -4, maxZ = 4;
+
+    // GLBモデルのXZ範囲を含める（モデルが切れないようにする）
+    if (_logicModelBounds) {
+        minX = Math.min(minX, _logicModelBounds.minX - PAD);
+        maxX = Math.max(maxX, _logicModelBounds.maxX + PAD);
+        minZ = Math.min(minZ, _logicModelBounds.minZ - PAD);
+        maxZ = Math.max(maxZ, _logicModelBounds.maxZ + PAD);
+    }
+
+    // ステーション座標を含める
     childStations.forEach(s => {
         if (s.positionX == null) return;
-        const x = s.positionX, y = s.positionY || 0;
-        if (x - PAD < minX) minX = x - PAD;
-        if (x + PAD > maxX) maxX = x + PAD;
-        if (y - PAD < minY) minY = y - PAD;
-        if (y + PAD > maxY) maxY = y + PAD;
+        const x = s.positionX, z = s.positionY || 0;
+        minX = Math.min(minX, x - PAD);
+        maxX = Math.max(maxX, x + PAD);
+        minZ = Math.min(minZ, z - PAD);
+        maxZ = Math.max(maxZ, z + PAD);
     });
-    _logicViewBox = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+
+    // キャンバスのアスペクト比に合わせてviewBoxを拡張（Three.jsとSVGの座標系を一致させるため）
+    const canvas = document.getElementById('logic-projection-canvas');
+    const area = canvas?.parentElement;
+    if (area && area.clientWidth > 0 && area.clientHeight > 0) {
+        const canvasAspect = area.clientWidth / area.clientHeight;
+        const cx = (minX + maxX) / 2;
+        const cz = (minZ + maxZ) / 2;
+        const hw = (maxX - minX) / 2;
+        const hh = (maxZ - minZ) / 2;
+        if (canvasAspect >= hw / hh) {
+            const newHw = hh * canvasAspect;
+            minX = cx - newHw; maxX = cx + newHw;
+        } else {
+            const newHh = hw / canvasAspect;
+            minZ = cz - newHh; maxZ = cz + newHh;
+        }
+    }
+
+    _logicViewBox = { x: minX, y: minZ, w: maxX - minX, h: maxZ - minZ };
     _applyLogicViewBox();
     _rerenderLogicProjection();
 }
@@ -826,6 +864,8 @@ function _applyLogicViewBox() {
     const svg = document.getElementById('logic-svg');
     if (!svg) return;
     svg.setAttribute('viewBox', `${_logicViewBox.x} ${_logicViewBox.y} ${_logicViewBox.w} ${_logicViewBox.h}`);
+    // preserveAspectRatio="none" でThree.jsの座標マッピングと一致させる（letterboxなし）
+    svg.setAttribute('preserveAspectRatio', 'none');
 }
 
 function _rerenderLogicProjection() {
