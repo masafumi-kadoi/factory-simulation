@@ -653,9 +653,9 @@ function handleWsEvent(event) {
         if (event.movement_type === 'arrived' && toStation) {
             state.activeWorks.set(event.item_id, toStation);
             scene3d.setWorkPosition(event.item_id, toStation);
-        } else if (event.movement_type === 'departed' && fromStation) {
-            state.activeWorks.delete(event.item_id);
-            scene3d.removeWork(event.item_id);
+        } else if (event.movement_type === 'departed') {
+            // Keep the mesh at the departure station so the upcoming 'arrived'
+            // event can trigger the arc animation from the current position.
         }
         renderObjectList(state.stations, state.activeWorks, state.activeFilters);
     } else if (event.table === 'machine_signal') {
@@ -1614,6 +1614,50 @@ async function saveEquipPlacement() {
 }
 
 // ============================================================
+// ソースノードプロパティ編集
+// ============================================================
+
+function openSourcePropsModal(stationId) {
+    const st = state.stations.find(s => s.stationId === stationId);
+    const cfg = st?.config || {};
+
+    const continuous = !!cfg.continuous;
+    const workCount = cfg.workCount ?? '';
+    const departureTime = cfg.departureTime ?? '';
+
+    const modal = document.getElementById('source-props-modal');
+    modal.dataset.stationId = stationId;
+    document.getElementById('source-props-continuous').checked = continuous;
+    document.getElementById('source-props-workcount').value = workCount;
+    document.getElementById('source-props-workcount').disabled = continuous;
+    document.getElementById('source-props-departure').value = departureTime;
+    modal.classList.remove('hidden');
+}
+
+async function saveSourceProps() {
+    const modal = document.getElementById('source-props-modal');
+    const stationId = modal.dataset.stationId;
+    const continuous = document.getElementById('source-props-continuous').checked;
+    const workCountRaw = document.getElementById('source-props-workcount').value;
+    const departureRaw = document.getElementById('source-props-departure').value;
+
+    const workCount = workCountRaw !== '' ? parseInt(workCountRaw, 10) : 0;
+    const departureTime = departureRaw !== '' ? parseFloat(departureRaw) : 0;
+
+    const st = state.stations.find(s => s.stationId === stationId);
+    const newConfig = { ...(st?.config || {}), continuous, workCount, departureTime };
+
+    try {
+        await API.updateStation(state.currentFactory, stationId, { config: newConfig });
+        if (st) st.config = newConfig;
+        modal.classList.add('hidden');
+        setStatus('ソース設定を保存しました', 'status-ok');
+    } catch (err) {
+        setStatus('保存失敗: ' + err.message, 'status-error');
+    }
+}
+
+// ============================================================
 // ロジック編集タブ
 // ============================================================
 
@@ -1675,6 +1719,14 @@ function initGlobalLogicEditTab() {
     });
     document.getElementById('new-machine-sid').addEventListener('keydown', e => {
         if (e.key === 'Enter') gleAddMachine();
+    });
+
+    const _closeSourceModal = () => document.getElementById('source-props-modal').classList.add('hidden');
+    document.getElementById('source-props-close').addEventListener('click', _closeSourceModal);
+    document.getElementById('source-props-cancel').addEventListener('click', _closeSourceModal);
+    document.getElementById('source-props-save').addEventListener('click', saveSourceProps);
+    document.getElementById('source-props-continuous').addEventListener('change', e => {
+        document.getElementById('source-props-workcount').disabled = e.target.checked;
     });
 
     setupGleDragDrop();
@@ -2166,7 +2218,11 @@ function gleAttachNodeEvents(g, equip) {
 
     g.addEventListener('dblclick', e => {
         e.stopPropagation();
-        openLocalWindow(repSid);
+        if (rep?.stationType === 'source') {
+            openSourcePropsModal(repSid);
+        } else {
+            openLocalWindow(repSid);
+        }
     });
 
     // 設備本体の円のみホバー（ポート円は自前のイベントを持つ）
