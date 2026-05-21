@@ -816,10 +816,11 @@ function _initLogicProjection() {
 }
 
 function _resetLogicViewBox() {
+    // _logicViewBox = コンテンツ範囲のみ（アスペクト比補正なし）
+    // アスペクト比は _rerenderLogicProjection が毎回動的に補正する
     const PAD = 2; // metres
     let minX = -4, maxX = 4, minZ = -4, maxZ = 4;
 
-    // GLBモデルのXZ範囲を含める（モデルが切れないようにする）
     if (_logicModelBounds) {
         minX = Math.min(minX, _logicModelBounds.minX - PAD);
         maxX = Math.max(maxX, _logicModelBounds.maxX + PAD);
@@ -827,7 +828,6 @@ function _resetLogicViewBox() {
         maxZ = Math.max(maxZ, _logicModelBounds.maxZ + PAD);
     }
 
-    // ステーション座標を含める
     childStations.forEach(s => {
         if (s.positionX == null) return;
         const x = s.positionX, z = s.positionY || 0;
@@ -837,54 +837,71 @@ function _resetLogicViewBox() {
         maxZ = Math.max(maxZ, z + PAD);
     });
 
-    // キャンバスのアスペクト比に合わせてviewBoxを拡張（Three.jsとSVGの座標系を一致させるため）
-    const canvas = document.getElementById('logic-projection-canvas');
-    const area = canvas?.parentElement;
-    if (area && area.clientWidth > 0 && area.clientHeight > 0) {
-        const canvasAspect = area.clientWidth / area.clientHeight;
-        const cx = (minX + maxX) / 2;
-        const cz = (minZ + maxZ) / 2;
-        const hw = (maxX - minX) / 2;
-        const hh = (maxZ - minZ) / 2;
-        if (canvasAspect >= hw / hh) {
-            const newHw = hh * canvasAspect;
-            minX = cx - newHw; maxX = cx + newHw;
-        } else {
-            const newHh = hw / canvasAspect;
-            minZ = cz - newHh; maxZ = cz + newHh;
-        }
-    }
-
     _logicViewBox = { x: minX, y: minZ, w: maxX - minX, h: maxZ - minZ };
     _applyLogicViewBox();
     _rerenderLogicProjection();
 }
 
+// _logicViewBox をキャンバスのアスペクト比で拡張した表示用ビューを返す
+// （_logicViewBox は変更しない）
+function _computeEffectiveView() {
+    const canvas = document.getElementById('logic-projection-canvas');
+    const area = canvas?.parentElement;
+    if (!area || area.clientWidth <= 0 || area.clientHeight <= 0) return _logicViewBox;
+    const W = area.clientWidth, H = area.clientHeight;
+    const canvasAspect = W / H;
+    const { x: vx, y: vy, w: vw, h: vh } = _logicViewBox;
+    const cx = vx + vw / 2, cy = vy + vh / 2;
+    let ew, eh;
+    if (canvasAspect >= vw / vh) { eh = vh; ew = eh * canvasAspect; }
+    else                          { ew = vw; eh = ew / canvasAspect; }
+    return { x: cx - ew / 2, y: cy - eh / 2, w: ew, h: eh };
+}
+
+// SVG描画用のビューボックスを返す
+// Three.js投影あり → キャンバスアスペクト補正済みの表示ビュー
+// Three.js投影なし → ロジカルビューボックスをそのまま使用
+function _getDisplayViewBox() {
+    return _logicProjectionRenderer ? _computeEffectiveView() : _logicViewBox;
+}
+
 function _applyLogicViewBox() {
     const svg = document.getElementById('logic-svg');
     if (!svg) return;
-    svg.setAttribute('viewBox', `${_logicViewBox.x} ${_logicViewBox.y} ${_logicViewBox.w} ${_logicViewBox.h}`);
-    // preserveAspectRatio="none" でThree.jsの座標マッピングと一致させる（letterboxなし）
-    svg.setAttribute('preserveAspectRatio', 'none');
+    // Three.js投影なし(SVGのみ)モードでのみSVG viewBoxを更新
+    // Three.js投影ありの場合は _rerenderLogicProjection が更新する
+    if (!_logicProjectionRenderer) {
+        svg.setAttribute('viewBox', `${_logicViewBox.x} ${_logicViewBox.y} ${_logicViewBox.w} ${_logicViewBox.h}`);
+        svg.removeAttribute('preserveAspectRatio');
+    }
 }
 
 function _rerenderLogicProjection() {
     if (!_logicProjectionRenderer || !_logicProjectionCamera || !_logicProjectionScene) return;
-    const { x: vx, y: vy, w: vw, h: vh } = _logicViewBox;
-    const cam = _logicProjectionCamera;
-    cam.left   = vx - _logicProjectionCX;
-    cam.right  = (vx + vw) - _logicProjectionCX;
-    cam.top    = _logicProjectionCZ - vy;
-    cam.bottom = _logicProjectionCZ - (vy + vh);
-    cam.updateProjectionMatrix();
     const canvas = document.getElementById('logic-projection-canvas');
     const area = canvas?.parentElement;
-    if (area) _logicProjectionRenderer.setSize(area.clientWidth, area.clientHeight, false);
-    _logicProjectionRenderer.render(_logicProjectionScene, _logicProjectionCamera);
-}
+    if (!area || area.clientWidth <= 0 || area.clientHeight <= 0) return;
 
-function _updateLogicViewBox() {
-    _applyLogicViewBox();
+    const W = area.clientWidth, H = area.clientHeight;
+    _logicProjectionRenderer.setSize(W, H, false);
+
+    // キャンバスアスペクト比に合わせた表示ビューを毎回計算
+    const ev = _computeEffectiveView();
+
+    // SVG viewBoxを表示ビューに合わせる（preserveAspectRatio="none"でThree.jsと一致）
+    const svg = document.getElementById('logic-svg');
+    if (svg) {
+        svg.setAttribute('viewBox', `${ev.x} ${ev.y} ${ev.w} ${ev.h}`);
+        svg.setAttribute('preserveAspectRatio', 'none');
+    }
+
+    const cam = _logicProjectionCamera;
+    cam.left   = ev.x - _logicProjectionCX;
+    cam.right  = (ev.x + ev.w) - _logicProjectionCX;
+    cam.top    = _logicProjectionCZ - ev.y;
+    cam.bottom = _logicProjectionCZ - (ev.y + ev.h);
+    cam.updateProjectionMatrix();
+    _logicProjectionRenderer.render(_logicProjectionScene, _logicProjectionCamera);
 }
 
 function _arrayBufferToBase64(buffer) {
@@ -1003,7 +1020,7 @@ function renderGrid() {
     const layer = document.getElementById('logic-grid-layer');
     layer.innerHTML = '';
 
-    const vb = _logicViewBox;
+    const vb = _getDisplayViewBox();
     // グリッドステップをviewBox幅から自動計算（~15本になるよう調整）
     const rawStep = vb.w / 15;
     const step = _niceStep(rawStep);
@@ -1058,8 +1075,8 @@ function renderConnections() {
         const x2 = to.positionX;
         const y2 = to.positionY || 0;
 
-        const R = _logicViewBox.w / 25;
-        const lw = _logicViewBox.w / 400;
+        const R = _getDisplayViewBox().w / 25;
+        const lw = _getDisplayViewBox().w / 400;
         const hitW = R * 0.6;
         const dx = x2 - x1; const dy = y2 - y1;
         const len = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -1099,7 +1116,7 @@ function renderStations() {
     const layer = document.getElementById('logic-station-layer');
     layer.innerHTML = '';
 
-    const R = _logicViewBox.w / 25; // viewBox幅の1/25をステーション半径に
+    const R = _getDisplayViewBox().w / 25; // viewBox幅の1/25をステーション半径に
     const sw = R / 5;
     const fs = R * 0.65;
 
@@ -1147,6 +1164,15 @@ function svgPoint(svg, e) {
 
 function initSVGEvents() {
     const svg = document.getElementById('logic-svg');
+
+    // Rerender when the logic area is resized (panel drag, window resize, etc.)
+    const logicArea = document.getElementById('logic-projection-canvas')?.parentElement;
+    if (logicArea) {
+        new ResizeObserver(() => {
+            _rerenderLogicProjection();
+            renderLogicSVG();
+        }).observe(logicArea);
+    }
 
     svg.addEventListener('mousemove', e => {
         if (!_dragState) return;
@@ -1199,14 +1225,18 @@ function initSVGEvents() {
     svg.addEventListener('mousedown', e => {
         if (e.button === 1) {
             e.preventDefault();
-            _svgPanState = { cx: e.clientX, cy: e.clientY, vb: { ..._logicViewBox } };
+            const dv = _getDisplayViewBox();
+            const rect = svg.getBoundingClientRect();
+            _svgPanState = {
+                cx: e.clientX, cy: e.clientY, vb: { ..._logicViewBox },
+                scaleX: dv.w / rect.width, scaleY: dv.h / rect.height,
+            };
         }
     });
     svg.addEventListener('mousemove', e => {
         if (!_svgPanState) return;
-        const rect = svg.getBoundingClientRect();
-        const scaleX = _svgPanState.vb.w / rect.width;
-        const scaleY = _svgPanState.vb.h / rect.height;
+        const scaleX = _svgPanState.scaleX;
+        const scaleY = _svgPanState.scaleY;
         _logicViewBox = {
             x: _svgPanState.vb.x - (e.clientX - _svgPanState.cx) * scaleX,
             y: _svgPanState.vb.y - (e.clientY - _svgPanState.cy) * scaleY,
