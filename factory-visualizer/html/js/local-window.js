@@ -777,50 +777,38 @@ function _initLogicProjection() {
     loader.load(url, gltf => {
         URL.revokeObjectURL(url);
         const model = gltf.scene;
-        scene.add(model);
 
-        // バウンディングボックスを計算（Three.js単位）
+        // グローバルビュー(scene3d.js)と同じスケール・センタリングを適用
+        // 1. 最大寸法が10mになるようスケール（scene3dの_loadGlbForMachineと同じ）
+        const bbox0 = new THREE.Box3().setFromObject(model);
+        const size0 = new THREE.Vector3();
+        bbox0.getSize(size0);
+        const maxDim = Math.max(size0.x, size0.y, size0.z);
+        if (maxDim > 0) model.scale.setScalar(10 / maxDim);
+
+        // 2. スケール後のbboxでx/z中心を原点に、y=0（地面）に配置
         const bbox = new THREE.Box3().setFromObject(model);
-        const sizeX = bbox.max.x - bbox.min.x;
-        const sizeZ = bbox.max.z - bbox.min.z;
         const cx = (bbox.min.x + bbox.max.x) / 2;
         const cz = (bbox.min.z + bbox.max.z) / 2;
+        model.position.set(-cx, -bbox.min.y, -cz);
 
-        // アスペクト比を合わせてカメラ範囲を決定（5%パディング付き）
-        const aspect = W / (H || 1);
-        const halfModelW = sizeX / 2 * 1.05;
-        const halfModelH = sizeZ / 2 * 1.05;
-        const halfWcam = Math.max(halfModelW, halfModelH * aspect);
-        const halfHcam = halfWcam / aspect;
+        scene.add(model);
 
-        // ワールド座標のビュー範囲を記録（METER_SCALE=1のためThree.js単位=メートル）
-        _logicWorldBounds = {
-            left:   cx - halfWcam,
-            right:  cx + halfWcam,
-            top:    cz - halfHcam,   // 画面上端 = 小さいZ
-            bottom: cz + halfHcam,   // 画面下端 = 大きいZ
-        };
+        // カメラは原点(0,0)を中心に据え置き。SVGのメートル座標系と一致させる
+        _logicProjectionCX = 0;
+        _logicProjectionCZ = 0;
+        // _logicWorldBounds は使わない（常にSVGメートル座標を使用）
 
-        // OrthographicCamera: 真上(-Y方向)から見下ろす
-        const cam = new THREE.OrthographicCamera(
-            -halfWcam, halfWcam,   // left, right（カメラローカル = ワールドX）
-             halfHcam, -halfHcam,  // top, bottom（カメラローカルY+ = ワールドZ-）
-            0.1, 1000
-        );
-        cam.position.set(cx, 100, cz);
-        cam.lookAt(cx, 0, cz);
-        cam.up.set(0, 0, -1); // Z-方向が画面上端
+        const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+        cam.position.set(0, 100, 0);
+        cam.lookAt(0, 0, 0);
+        cam.up.set(0, 0, -1);
 
-        // グローバルに保持（ズーム/パン時に再レンダリング可能にする）
         _logicProjectionCamera = cam;
         _logicProjectionScene = scene;
-        _logicProjectionCX = cx;
-        _logicProjectionCZ = cz;
 
-        renderer.render(scene, cam);
-
-        // SVG viewBoxをGLTFのワールド座標に合わせてリセット（初回のみ全体表示）
-        _resetLogicViewBox();
+        // _logicViewBoxに合わせてカメラフラスタムを設定してレンダリング
+        _rerenderLogicProjection();
         renderLogicSVG();
     }, undefined, err => {
         URL.revokeObjectURL(url);
@@ -829,23 +817,18 @@ function _initLogicProjection() {
 }
 
 function _resetLogicViewBox() {
-    // 初期viewBoxをGLTFバウンディングまたはステーション座標から設定（ズームリセット）
-    if (_logicWorldBounds) {
-        const { left, top, right, bottom } = _logicWorldBounds;
-        _logicViewBox = { x: left, y: top, w: right - left, h: bottom - top };
-    } else {
-        const PAD = 3; // meters
-        let minX = -8, maxX = 8, minY = -8, maxY = 8; // meters (matches global view scale)
-        childStations.forEach(s => {
-            if (s.positionX == null) return;
-            const x = s.positionX, y = s.positionY || 0;
-            if (x - PAD < minX) minX = x - PAD;
-            if (x + PAD > maxX) maxX = x + PAD;
-            if (y - PAD < minY) minY = y - PAD;
-            if (y + PAD > maxY) maxY = y + PAD;
-        });
-        _logicViewBox = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-    }
+    // viewBoxをメートル座標系でリセット（ステーション座標にフィット、デフォルト±8m）
+    const PAD = 3; // meters
+    let minX = -8, maxX = 8, minY = -8, maxY = 8;
+    childStations.forEach(s => {
+        if (s.positionX == null) return;
+        const x = s.positionX, y = s.positionY || 0;
+        if (x - PAD < minX) minX = x - PAD;
+        if (x + PAD > maxX) maxX = x + PAD;
+        if (y - PAD < minY) minY = y - PAD;
+        if (y + PAD > maxY) maxY = y + PAD;
+    });
+    _logicViewBox = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
     _applyLogicViewBox();
     _rerenderLogicProjection();
 }
@@ -967,8 +950,8 @@ function populateLogicTab() {
     initToolPalette();
     initPropsPanel();
     initSVGEvents();
-    _initLogicProjection(); // GLTFがある場合 → _resetLogicViewBox()を呼ぶ
-    if (!_logicWorldBounds) _resetLogicViewBox(); // GLTFなし場合もviewBox初期化
+    _initLogicProjection(); // GLTFがある場合は投影を初期化（viewBoxには影響しない）
+    _resetLogicViewBox();  // 常にメートル座標系でviewBoxを初期化
     renderLogicSVG();
     renderUnplacedList();
     updateInfoBar();
@@ -1972,27 +1955,13 @@ function _dropToLogicCanvas(e) {
     const s = childStations.find(st => st.stationId === stationId);
     if (!s) return;
 
-    let lx, lz;
-    if (_logicWorldBounds) {
-        // GLTF投影モード: キャンバス座標 → GLTFローカル座標
-        const area = document.querySelector('.logic-canvas-area');
-        const rect = area.getBoundingClientRect();
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
-        const W = rect.width || 1;
-        const H = rect.height || 1;
-        const { left, right, top, bottom } = _logicWorldBounds;
-        lx = left + (px / W) * (right - left);
-        lz = top  + (py / H) * (bottom - top);
-    } else {
-        // GLTFなしモード: SVG座標に変換
-        const svg = document.getElementById('logic-svg');
-        const pt = svg.createSVGPoint();
-        pt.x = e.clientX; pt.y = e.clientY;
-        const sp = pt.matrixTransform(svg.getScreenCTM().inverse());
-        lx = Math.round(sp.x * 100) / 100;
-        lz = Math.round(sp.y * 100) / 100;
-    }
+    // 常にSVGメートル座標を使用（GLTFあり・なし共通）
+    const svg = document.getElementById('logic-svg');
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const sp = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const lx = Math.round(sp.x * 100) / 100;
+    const lz = Math.round(sp.y * 100) / 100;
 
     s.positionX = lx;
     s.positionY = lz;
