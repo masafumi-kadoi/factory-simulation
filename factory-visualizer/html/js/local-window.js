@@ -54,6 +54,9 @@ let _logicProjectionCZ = 0;          // Camera center Z (world)
 let _logicModelBounds = null; // { minX, maxX, minZ, maxZ } GLBモデルのXZ範囲（metres）
 let _logicViewBox = { x: -8, y: -8, w: 16, h: 16 }; // current SVG viewBox (zoom/pan state) — meters
 let _stationRadius = 0.25; // fixed station radius in metres
+let _logicOriginMode = false;
+let _logicOriginX = null; // origin X in metres (null = not set)
+let _logicOriginZ = null; // origin Z in metres (null = not set)
 
 // ---- Logic tab state ----
 
@@ -996,6 +999,12 @@ function _exportModelGroupAsGlb() {
 // ---- Logic tab ----
 
 function populateLogicTab() {
+    // 原点状態をリセットして config から復元
+    _logicOriginMode = false;
+    const savedOrigin = machineStation?.config?.equipmentOrigin;
+    _logicOriginX = savedOrigin?.x ?? null;
+    _logicOriginZ = savedOrigin?.z ?? null;
+
     initToolPalette();
     initPropsPanel();
     initSVGEvents();
@@ -1003,6 +1012,7 @@ function populateLogicTab() {
     _resetLogicViewBox();  // 常にメートル座標系でviewBoxを初期化
     renderLogicSVG();
     renderUnplacedList();
+    updateOriginPosDisplay();
     updateInfoBar();
 }
 
@@ -1015,6 +1025,7 @@ function refreshLogicSVGSize() {
 function renderLogicSVG() {
     renderGrid();
     renderConnections();
+    renderOriginMarker();
     renderStations();
 }
 
@@ -1157,6 +1168,71 @@ function renderStations() {
     });
 }
 
+function renderOriginMarker() {
+    const layer = document.getElementById('logic-origin-layer');
+    if (!layer) return;
+    layer.innerHTML = '';
+    if (_logicOriginX === null) return;
+
+    const arm = Math.max(_stationRadius * 2, 0.5);
+    const sw  = arm * 0.12;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${_logicOriginX}, ${_logicOriginZ})`);
+    g.setAttribute('pointer-events', 'none');
+
+    const mk = (x1, y1, x2, y2) => {
+        const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+        l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+        l.setAttribute('stroke', '#ff4444');
+        l.setAttribute('stroke-width', sw);
+        return l;
+    };
+    g.appendChild(mk(-arm, 0, arm, 0));
+    g.appendChild(mk(0, -arm, 0, arm));
+
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('r', sw * 1.2);
+    c.setAttribute('fill', '#ff4444');
+    g.appendChild(c);
+
+    layer.appendChild(g);
+}
+
+function updateOriginPosDisplay() {
+    const el = document.getElementById('logic-origin-pos');
+    if (!el) return;
+    el.textContent = _logicOriginX !== null
+        ? `X: ${_logicOriginX.toFixed(2)} m\nZ: ${_logicOriginZ.toFixed(2)} m`
+        : '未設定';
+}
+
+function _setLogicOrigin(x, z) {
+    _logicOriginX = x;
+    _logicOriginZ = z;
+    _logicOriginMode = false;
+    document.getElementById('btn-logic-origin-mode')?.classList.remove('active');
+    document.getElementById('logic-svg').style.cursor = '';
+
+    // _grid が存在する場合はグリッドの原点セルも更新
+    if (_grid.cells.size > 0) {
+        const allKeys = [..._grid.cells.keys()];
+        const allC = allKeys.map(k => parseInt(k.split(',')[0]));
+        const allR = allKeys.map(k => parseInt(k.split(',')[1]));
+        const refC = _grid.origin ? _grid.origin[0] : (Math.min(...allC) + Math.max(...allC)) / 2;
+        const refR = _grid.origin ? _grid.origin[1] : (Math.min(...allR) + Math.max(...allR)) / 2;
+        _grid.origin = [
+            Math.round(refC + x / _grid.gridSize),
+            Math.round(refR + z / _grid.gridSize),
+        ];
+        renderGridCanvas();
+        update3DPreview();
+    }
+
+    updateOriginPosDisplay();
+    renderLogicSVG();
+}
+
 // ---- SVG event handling ----
 
 function svgPoint(svg, e) {
@@ -1226,6 +1302,13 @@ function initSVGEvents() {
 
     // ---- Middle-click pan ----
     svg.addEventListener('mousedown', e => {
+        // 原点設定モード: 左クリックでクリック位置を原点として確定
+        if (_logicOriginMode && e.button === 0) {
+            e.stopPropagation();
+            const p = svgPoint(svg, e);
+            _setLogicOrigin(p.x, p.y);
+            return;
+        }
         if (e.button === 1) {
             e.preventDefault();
             const dv = _getDisplayViewBox();
@@ -1256,6 +1339,7 @@ function initSVGEvents() {
 }
 
 function onStationMouseDown(e) {
+    if (_logicOriginMode) return; // SVG mousedown が原点設定を担当する
     if (_activeTool !== 'select') return;
     e.stopPropagation();
     const stationId = e.currentTarget.dataset.stationId;
@@ -1331,6 +1415,14 @@ function initToolPalette() {
         _resetLogicViewBox();
         renderLogicSVG();
         renderUnplacedList();
+    });
+
+    document.getElementById('btn-logic-origin-mode')?.addEventListener('click', () => {
+        _logicOriginMode = !_logicOriginMode;
+        document.getElementById('btn-logic-origin-mode').classList.toggle('active', _logicOriginMode);
+        const svg = document.getElementById('logic-svg');
+        if (svg) svg.style.cursor = _logicOriginMode ? 'crosshair' : '';
+        updateInfoBar();
     });
 
     // ステーション半径スライダー／数値入力
@@ -2118,6 +2210,11 @@ async function saveAndClose() {
                 ? { data: _arrayBufferToBase64(glbBuffer), name: 'model.glb' }
                 : null;
             _savedGlbBuffer = glbBuffer;
+        }
+
+        // Tab 3: 原点位置を保存
+        if (_logicOriginX !== null) {
+            newConfig.equipmentOrigin = { x: _logicOriginX, z: _logicOriginZ };
         }
 
         // Tab 3: ステーション配置を equipmentLayout に保存（parentId は変更しない）

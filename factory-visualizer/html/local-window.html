@@ -435,6 +435,9 @@
                     <span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">m</span>
                 </div>
             </div>
+            <div class="palette-section">原点</div>
+            <button class="tool-btn" id="btn-logic-origin-mode">原点設定</button>
+            <div id="logic-origin-pos" style="font-size:10px;color:var(--text-muted);padding:2px 4px;white-space:pre-line;line-height:1.6;">未設定</div>
             <div class="palette-section">位置</div>
             <div id="palette-pos" style="font-size:10px;color:var(--text-muted);padding:2px 4px;line-height:1.8">X: —<br>Y: —</div>
             <div class="palette-section">未配置</div>
@@ -466,6 +469,7 @@
                 </defs>
                 <g id="logic-grid-layer"></g>
                 <g id="logic-conn-layer"></g>
+                <g id="logic-origin-layer"></g>
                 <g id="logic-station-layer"></g>
                 <rect id="logic-select-rect" fill="rgba(74,158,255,0.08)" stroke="#4a9eff"
                       stroke-width="1" stroke-dasharray="4,3"
