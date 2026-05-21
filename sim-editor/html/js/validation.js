@@ -255,23 +255,6 @@ export function validateStation(station) {
     return errors;
 }
 
-function hasCycle(nodeId, graph, visited) {
-    if (visited.has(nodeId)) {
-        return true;
-    }
-
-    visited.add(nodeId);
-    const neighbors = graph.get(nodeId) || [];
-
-    for (const neighbor of neighbors) {
-        if (hasCycle(neighbor, graph, new Set(visited))) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 export function validateInterlockRules(station, scenario) {
     const errors = [];
     const warnings = [];
