@@ -1184,12 +1184,17 @@ export class Scene3D {
     setWorkMachineY(value) {
         this._workMachineAbsY = this._absY(value, MODEL_TOP.machine);
         this._works.forEach((entry) => {
-            const isMachine = this._machines.has(entry.stationId);
-            if (!isMachine) return;
-            const stEntry = this._machines.get(entry.stationId);
-            if (!stEntry || entry._anim) return;
-            const py = (stEntry.station.positionZ || 0) + this._workMachineAbsY;
-            entry.mesh.position.y = py;
+            if (entry._anim) return;
+            const machineEntry = this._machines.get(entry.stationId);
+            if (machineEntry) {
+                entry.mesh.position.y = (machineEntry.station.positionZ || 0) + this._workMachineAbsY;
+                return;
+            }
+            // source/drain nodes are in _equipmentGroups, not _machines
+            const eg = this._equipmentGroups.get(entry.stationId);
+            if (eg && eg.isNode) {
+                entry.mesh.position.y = this._workMachineAbsY;
+            }
         });
     }
 
