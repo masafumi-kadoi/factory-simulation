@@ -778,26 +778,16 @@ function _initLogicProjection() {
         URL.revokeObjectURL(url);
         const model = gltf.scene;
 
-        // グローバルビュー(scene3d.js)と同じスケール・センタリングを適用
-        // 1. 最大寸法が10mになるようスケール（scene3dの_loadGlbForMachineと同じ）
-        const bbox0 = new THREE.Box3().setFromObject(model);
-        const size0 = new THREE.Vector3();
-        bbox0.getSize(size0);
-        const maxDim = Math.max(size0.x, size0.y, size0.z);
-        if (maxDim > 0) model.scale.setScalar(10 / maxDim);
-
-        // 2. スケール後のbboxでx/z中心を原点に、y=0（地面）に配置
+        // GLBはグリッドエディタが基準点(origin)を(0,0,0)としてエクスポートしたもの。
+        // スケール変換・x/z移動は一切行わない（基準点を破壊しないため）。
+        // y方向のみ地面(y=0)に合わせる。
         const bbox = new THREE.Box3().setFromObject(model);
-        const cx = (bbox.min.x + bbox.max.x) / 2;
-        const cz = (bbox.min.z + bbox.max.z) / 2;
-        model.position.set(-cx, -bbox.min.y, -cz);
-
+        model.position.y = -bbox.min.y;
         scene.add(model);
 
-        // カメラは原点(0,0)を中心に据え置き。SVGのメートル座標系と一致させる
+        // カメラは基準点(0,0)を中心に据え置き。SVGのメートル座標系と一致。
         _logicProjectionCX = 0;
         _logicProjectionCZ = 0;
-        // _logicWorldBounds は使わない（常にSVGメートル座標を使用）
 
         const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
         cam.position.set(0, 100, 0);
@@ -807,7 +797,6 @@ function _initLogicProjection() {
         _logicProjectionCamera = cam;
         _logicProjectionScene = scene;
 
-        // _logicViewBoxに合わせてカメラフラスタムを設定してレンダリング
         _rerenderLogicProjection();
         renderLogicSVG();
     }, undefined, err => {

@@ -531,11 +531,10 @@ export class Scene3D {
             box.getSize(size);
             const maxDim = Math.max(size.x, size.y, size.z);
             if (maxDim > 0) model.scale.setScalar(10 / maxDim);
-            // スケール後のbboxでx/z中心を原点に、y=0（地面）に配置
+            // 基準点(origin)はGLB座標の(0,0)にエクスポートされているため
+            // x/z移動は不要。y方向のみ地面(y=0)に合わせる。
             box.setFromObject(model);
-            const cx = (box.min.x + box.max.x) / 2;
-            const cz = (box.min.z + box.max.z) / 2;
-            model.position.set(-cx, -box.min.y, -cz);
+            model.position.y = -box.min.y;
             targetGroup.add(model);
         }, undefined, err => {
             URL.revokeObjectURL(url);
