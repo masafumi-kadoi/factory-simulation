@@ -54,7 +54,7 @@ async function loadAllExecutions() {
         );
 
         allExecutions = executionResults.flat();
-        allExecutions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        allExecutions.sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
 
         renderExecutions();
     } catch (err) {

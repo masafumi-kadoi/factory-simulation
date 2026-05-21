@@ -126,7 +126,7 @@ async function loadRecentExecutions() {
             return;
         }
 
-        allExecutions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        allExecutions.sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
         const recent = allExecutions.slice(0, 5);
 
         container.innerHTML = '<div class="recent-list">' +

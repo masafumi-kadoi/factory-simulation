@@ -88,10 +88,10 @@ function getSortedExecutions() {
     const sorted = [...allExecutions];
     switch (execSort) {
         case 'newest':
-            sorted.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            sorted.sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
             break;
         case 'oldest':
-            sorted.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+            sorted.sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0));
             break;
         case 'status': {
             const order = { 'running': 0, 'pending': 1, 'completed': 2, 'error': 3 };
