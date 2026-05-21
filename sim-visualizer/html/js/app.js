@@ -1104,9 +1104,10 @@ class App {
             }
         }
 
+        const stationsForLookup = scenario.stations || [];
         for (const conn of (scenario.connections || [])) {
-            const fromStation = scenario.stations.find(s => s.id === conn.from);
-            const toStation = scenario.stations.find(s => s.id === conn.to);
+            const fromStation = stationsForLookup.find(s => s.id === conn.from);
+            const toStation = stationsForLookup.find(s => s.id === conn.to);
 
             let newFrom = conn.from;
             let newTo = conn.to;
