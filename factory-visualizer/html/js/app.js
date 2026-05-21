@@ -100,25 +100,40 @@ function initScene() {
 
 function applyHistoryAtTime(ms, animate = true) {
     if (!scene3d || !state.historyEvents.length) return;
-    const workLocations = new Map(); // workId → locationId
+    const workLocations = new Map(); // workId → locationId (at station)
+    const workTransit = new Map();   // workId → fromLocationId (departed but not yet arrived)
     for (const ev of state.historyEvents) {
         if (new Date(ev.event_time).getTime() > ms) break;
         if (ev.movement_type === 'arrived') {
             workLocations.set(ev.item_id, ev.to_location_id);
+            workTransit.delete(ev.item_id);
         } else if (ev.movement_type === 'departed') {
             workLocations.delete(ev.item_id);
+            workTransit.set(ev.item_id, ev.from_location_id);
         }
     }
 
-    // Remove works no longer present at this time
+    // Remove works that are neither at a station nor in transit
     state.activeWorks.forEach((_, workId) => {
-        if (!workLocations.has(workId)) {
+        if (!workLocations.has(workId) && !workTransit.has(workId)) {
             scene3d.removeWork(workId);
             state.activeWorks.delete(workId);
         }
     });
 
-    // Add or move works that changed station
+    // Keep in-transit works visible at their departure station (no arc)
+    // so that when they arrive the arc fires from the departure position.
+    workTransit.forEach((fromLocationId, workId) => {
+        const stationId = state.locationMap.get(Number(fromLocationId));
+        if (!stationId) return;
+        const prevStation = state.activeWorks.get(workId);
+        if (prevStation !== stationId) {
+            state.activeWorks.set(workId, stationId);
+            scene3d.setWorkPosition(workId, stationId, undefined, false);
+        }
+    });
+
+    // Add or move works that changed station (arc animation on arrival)
     workLocations.forEach((locationId, workId) => {
         const stationId = state.locationMap.get(Number(locationId));
         if (!stationId) return;
