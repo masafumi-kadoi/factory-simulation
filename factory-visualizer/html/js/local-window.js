@@ -1096,9 +1096,9 @@ function renderConnections() {
         const x2 = to.positionX;
         const y2 = to.positionY || 0;
 
-        const R = _getDisplayViewBox().w / 25;
-        const lw = _getDisplayViewBox().w / 400;
-        const hitW = R * 0.6;
+        const R = _stationRadius;
+        const lw = R * 0.18;
+        const hitW = R * 1.2;
         const dx = x2 - x1; const dy = y2 - y1;
         const len = Math.sqrt(dx * dx + dy * dy) || 1;
         const ux = dx / len; const uy = dy / len;
