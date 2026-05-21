@@ -114,6 +114,13 @@
                                 </label>
                             </div>
                             <div class="setting-row">
+                                <label>マシン名</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="show-machine-names" checked>
+                                    <span class="toggle-track"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
                                 <label>ステーション名</label>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="show-station-names" checked>
@@ -260,11 +267,16 @@
                     <button class="tl-btn" id="tl-play" title="再生">▶</button>
                     <button class="tl-btn" id="tl-ffwd" title="末尾へ">⏭</button>
                     <select id="tl-speed" title="再生速度">
-                        <option value="10">10x</option>
-                        <option value="60">60x</option>
-                        <option value="300" selected>300x</option>
-                        <option value="600">600x</option>
-                        <option value="3600">3600x</option>
+                        <option value="1">1x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                        <option value="5">5x</option>
+                        <option value="10" selected>10x</option>
+                        <option value="50">50x</option>
+                        <option value="100">100x</option>
+                        <option value="200">200x</option>
+                        <option value="500">500x</option>
+                        <option value="1000">1000x</option>
                     </select>
                     <span id="tl-time" class="tl-time">--:--:--</span>
                 </div>

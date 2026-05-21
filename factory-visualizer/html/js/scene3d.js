@@ -58,6 +58,7 @@ export class Scene3D {
         this._internalRadius = 15;
         this._showInternal = true;
         this._showStationNames = true;
+        this._showMachineNames = true;
         this._showWorks = true;
         this._showInterlocks = false;
         // Label / work height settings (stored as absolute Y from ground)
@@ -404,7 +405,7 @@ export class Scene3D {
         const px = station.positionX || 0;
         const pz = station.positionY || 0;
         const color = STATION_COLORS[station.stationType] || 0x888888;
-        const RADIUS = 5, HEIGHT = 8;
+        const RADIUS = 0.5, HEIGHT = 8;
 
         const group = new THREE.Group();
         group.userData.equipmentName = station.stationId;
@@ -1133,15 +1134,20 @@ export class Scene3D {
 
     setShowStationNames(v) {
         this._showStationNames = v;
-        const toggle = (map) => {
-            map.forEach(({ group }) => {
-                group.children.forEach(child => {
-                    if (child instanceof THREE.Sprite) child.visible = v;
-                });
+        this._internalStations.forEach(({ group }) => {
+            group.children.forEach(child => {
+                if (child instanceof THREE.Sprite) child.visible = v;
             });
-        };
-        toggle(this._equipmentGroups);
-        toggle(this._internalStations);
+        });
+    }
+
+    setShowMachineNames(v) {
+        this._showMachineNames = v;
+        this._equipmentGroups.forEach(({ group }) => {
+            group.children.forEach(child => {
+                if (child instanceof THREE.Sprite) child.visible = v;
+            });
+        });
     }
 
     setShowInterlocks(v) {
@@ -1214,6 +1220,7 @@ export class Scene3D {
     _updateVisibility() {
         this.setShowInternal(this._showInternal);
         this.setShowWorks(this._showWorks);
+        this.setShowMachineNames(this._showMachineNames);
         this.setShowStationNames(this._showStationNames);
         this.setShowInterlocks(this._showInterlocks);
     }

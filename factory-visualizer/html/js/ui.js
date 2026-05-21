@@ -48,6 +48,7 @@ export function initLeftPanel({ onFilterChange, onSettingChange }) {
     // Checkboxes
     const checkboxes = {
         'show-internal': 'showInternal',
+        'show-machine-names': 'showMachineNames',
         'show-station-names': 'showStationNames',
         'show-works': 'showWorks',
         'show-interlocks': 'showInterlocks',

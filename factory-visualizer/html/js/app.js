@@ -177,6 +177,7 @@ function initUI() {
                         applyHistoryAtTime(timeline.getCurrentTime(), false);
                     }
                     break;
+                case 'showMachineNames': scene3d.setShowMachineNames(value); break;
                 case 'showStationNames': scene3d.setShowStationNames(value); break;
                 case 'showWorks': scene3d.setShowWorks(value); break;
                 case 'showInterlocks': scene3d.setShowInterlocks(value); break;
@@ -1269,6 +1270,7 @@ function openG3DFloating(groupId, title) {
     const shellOp = document.getElementById('shell-opacity').value;
     const intRadius = document.getElementById('internal-radius').value;
     const showInt = document.getElementById('show-internal').checked;
+    const showMachineNames = document.getElementById('show-machine-names').checked;
     const showNames = document.getElementById('show-station-names').checked;
     const showWorks = document.getElementById('show-works').checked;
     const showIL = document.getElementById('show-interlocks').checked;
@@ -1351,6 +1353,9 @@ function openG3DFloating(groupId, title) {
             body.innerHTML = `
                 ${row('内部ステーション径', `<input type="range" id="gf-int-radius" min="5" max="30" step="1" value="${intRadius}">
                     <span class="gf-slider-val" id="gf-int-radius-val">${intRadius}</span>`)}
+                ${row('マシン名', `<label class="toggle-switch">
+                    <input type="checkbox" id="gf-show-machine-names" ${showMachineNames?'checked':''}>
+                    <span class="toggle-track"></span></label>`)}
                 ${row('ステーション名', `<label class="toggle-switch">
                     <input type="checkbox" id="gf-show-names" ${showNames?'checked':''}>
                     <span class="toggle-track"></span></label>`)}`;
@@ -1359,6 +1364,10 @@ function openG3DFloating(groupId, title) {
                 scene3d && scene3d.setInternalRadius(parseFloat(e.target.value));
                 document.getElementById('internal-radius').value = e.target.value;
                 document.getElementById('internal-radius-val').textContent = e.target.value;
+            });
+            body.querySelector('#gf-show-machine-names').addEventListener('change', e => {
+                scene3d && scene3d.setShowMachineNames(e.target.checked);
+                document.getElementById('show-machine-names').checked = e.target.checked;
             });
             body.querySelector('#gf-show-names').addEventListener('change', e => {
                 scene3d && scene3d.setShowStationNames(e.target.checked);
@@ -1423,6 +1432,7 @@ function saveG3DSettings() {
         shellOpacity: document.getElementById('shell-opacity').value,
         internalRadius: document.getElementById('internal-radius').value,
         showInternal: document.getElementById('show-internal').checked,
+        showMachineNames: document.getElementById('show-machine-names').checked,
         showStationNames: document.getElementById('show-station-names').checked,
         showWorks: document.getElementById('show-works').checked,
         showInterlocks: document.getElementById('show-interlocks').checked,
