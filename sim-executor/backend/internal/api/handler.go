@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"factory-simulation/sim-executor/backend/internal/database"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -368,6 +369,12 @@ func (h *Handler) HandleExecute(w http.ResponseWriter, r *http.Request) {
 // pollGatewayExecution polls the realtime-gateway until the execution completes,
 // then updates the local execution record with the final status.
 func (h *Handler) pollGatewayExecution(localExecID, gatewayExecID, dataSourceID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("pollGatewayExecution panic recovered: %v", r)
+		}
+	}()
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	url := h.realtimeGatewayURL + "/api/executions/" + gatewayExecID
 	var dsPtr *string
@@ -378,10 +385,15 @@ func (h *Handler) pollGatewayExecution(localExecID, gatewayExecID, dataSourceID 
 		time.Sleep(5 * time.Second)
 		resp, err := client.Get(url)
 		if err != nil {
+			log.Printf("pollGatewayExecution: GET error (attempt %d): %v", i+1, err)
 			continue
 		}
 		var body map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&body)
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&body); decodeErr != nil {
+			log.Printf("pollGatewayExecution: JSON decode error (attempt %d): %v", i+1, decodeErr)
+			resp.Body.Close()
+			continue
+		}
 		resp.Body.Close()
 		status, _ := body["status"].(string)
 		if status == "completed" || status == "error" {
