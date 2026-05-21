@@ -795,14 +795,16 @@ function _initLogicProjection() {
         // スケール変換・x/z移動は一切行わない（基準点を破壊しないため）。
         // y方向のみ地面(y=0)に合わせる。
         const bbox = new THREE.Box3().setFromObject(model);
-        model.position.y = -bbox.min.y;
+        // 保存済みの原点オフセットを適用して座標系を統一する
+        // （MachineEditorを再度開いたときもステーション座標と一致させるため）
+        model.position.set(-_modelOriginOffsetX, -bbox.min.y, -_modelOriginOffsetZ);
         scene.add(model);
         _logicModelRoot = model;
 
-        // モデルのXZ範囲を記録（viewBoxリセット時にモデル全体が収まるよう使用）
+        // モデルのXZ範囲をオフセット適用後の座標系で記録
         _logicModelBounds = {
-            minX: bbox.min.x, maxX: bbox.max.x,
-            minZ: bbox.min.z, maxZ: bbox.max.z,
+            minX: bbox.min.x - _modelOriginOffsetX, maxX: bbox.max.x - _modelOriginOffsetX,
+            minZ: bbox.min.z - _modelOriginOffsetZ, maxZ: bbox.max.z - _modelOriginOffsetZ,
         };
 
         // カメラは基準点(0,0)を中心に据え置き。SVGのメートル座標系と一致。
