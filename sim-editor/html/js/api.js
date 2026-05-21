@@ -23,10 +23,16 @@ export class APIClient {
             const response = await fetch(url, config);
 
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || `HTTP error! status: ${response.status}`);
+                let message = `HTTP error! status: ${response.status}`;
+                try {
+                    const error = await response.json();
+                    message = error.message || error.error || message;
+                } catch (_) { /* response body is not JSON (e.g. nginx 502) */ }
+                throw new Error(message);
             }
 
+            // 204 No Content has no body to parse
+            if (response.status === 204) return null;
             return await response.json();
         } catch (error) {
             console.error('API request failed:', error);

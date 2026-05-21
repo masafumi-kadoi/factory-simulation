@@ -33,8 +33,9 @@ const ExecutorAPI = {
             body: JSON.stringify({ scenarioId, startTime })
         });
         if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.error || `Failed to get initial conditions: ${resp.statusText}`);
+            let msg = `Failed to get initial conditions: ${resp.statusText}`;
+            try { const err = await resp.json(); msg = err.error || err.message || msg; } catch (_) {}
+            throw new Error(msg);
         }
         return resp.json();
     },
@@ -47,8 +48,9 @@ const ExecutorAPI = {
             body: JSON.stringify({ scenarioId, startTime, endCondition, initialConditions })
         });
         if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.error || `Failed to execute simulation: ${resp.statusText}`);
+            let msg = `Failed to execute simulation: ${resp.statusText}`;
+            try { const err = await resp.json(); msg = err.error || err.message || msg; } catch (_) {}
+            throw new Error(msg);
         }
         return resp.json();
     },
