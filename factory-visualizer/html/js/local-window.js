@@ -52,6 +52,7 @@ let _logicProjectionScene = null;    // Scene (re-used on zoom/pan)
 let _logicProjectionCX = 0;          // Camera center X (world)
 let _logicProjectionCZ = 0;          // Camera center Z (world)
 let _logicModelBounds = null; // { minX, maxX, minZ, maxZ } GLBモデルのXZ範囲（metres）
+let _logicModelRoot = null;   // loaded GLB model object (for coordinate shifts)
 let _logicViewBox = { x: -8, y: -8, w: 16, h: 16 }; // current SVG viewBox (zoom/pan state) — meters
 let _stationRadius = 0.25; // fixed station radius in metres
 let _logicOriginMode = false;
@@ -765,6 +766,7 @@ function _initLogicProjection() {
     _logicProjectionCamera = null;
     _logicProjectionScene = null;
     _logicModelBounds = null;
+    _logicModelRoot = null;
 
     // キャンバスサイズ（親要素から取得）
     const area = canvas.parentElement;
@@ -793,6 +795,7 @@ function _initLogicProjection() {
         const bbox = new THREE.Box3().setFromObject(model);
         model.position.y = -bbox.min.y;
         scene.add(model);
+        _logicModelRoot = model;
 
         // モデルのXZ範囲を記録（viewBoxリセット時にモデル全体が収まるよう使用）
         _logicModelBounds = {
@@ -1202,17 +1205,39 @@ function renderOriginMarker() {
 function updateOriginPosDisplay() {
     const el = document.getElementById('logic-origin-pos');
     if (!el) return;
-    el.textContent = _logicOriginX !== null
-        ? `X: ${_logicOriginX.toFixed(2)} m\nZ: ${_logicOriginZ.toFixed(2)} m`
-        : '未設定';
+    el.textContent = _logicOriginX !== null ? '設定済み (0, 0)' : '未設定';
 }
 
 function _setLogicOrigin(x, z) {
-    _logicOriginX = x;
-    _logicOriginZ = z;
     _logicOriginMode = false;
     document.getElementById('btn-logic-origin-mode')?.classList.remove('active');
     document.getElementById('logic-svg').style.cursor = '';
+
+    // クリック位置 (x, z) を (0, 0) にするため全データを (-x, -z) シフトする
+
+    // ステーション座標をシフト
+    childStations.forEach(s => {
+        if (s.positionX != null) {
+            s.positionX = Math.round((s.positionX - x) * 1000) / 1000;
+            s.positionY = Math.round(((s.positionY || 0) - z) * 1000) / 1000;
+        }
+    });
+
+    // Three.js モデルをシフト
+    if (_logicModelRoot) {
+        _logicModelRoot.position.x -= x;
+        _logicModelRoot.position.z -= z;
+    }
+
+    // モデルバウンディングボックスをシフト
+    if (_logicModelBounds) {
+        _logicModelBounds.minX -= x; _logicModelBounds.maxX -= x;
+        _logicModelBounds.minZ -= z; _logicModelBounds.maxZ -= z;
+    }
+
+    // 原点は常に (0, 0)
+    _logicOriginX = 0;
+    _logicOriginZ = 0;
 
     // _grid が存在する場合はグリッドの原点セルも更新
     if (_grid.cells.size > 0) {
@@ -1229,6 +1254,7 @@ function _setLogicOrigin(x, z) {
         update3DPreview();
     }
 
+    _resetLogicViewBox();
     updateOriginPosDisplay();
     renderLogicSVG();
 }
