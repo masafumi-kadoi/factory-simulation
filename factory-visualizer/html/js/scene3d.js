@@ -268,17 +268,49 @@ export class Scene3D {
     }
 
     _clearAll() {
-        this._equipmentGroups.forEach(eg => this.scene.remove(eg.group));
+        const disposeObject = obj => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                else obj.material.dispose();
+            }
+        };
+
+        this._equipmentGroups.forEach(eg => {
+            this.scene.remove(eg.group);
+            eg.group.traverse(disposeObject);
+        });
         this._equipmentGroups.clear();
-        this._machines.forEach(m => this.scene.remove(m.group));
+
+        this._machines.forEach(m => {
+            this.scene.remove(m.group);
+            m.group.traverse(disposeObject);
+        });
         this._machines.clear();
-        this._internalStations.forEach(s => this.scene.remove(s.group));
+
+        this._internalStations.forEach(s => {
+            this.scene.remove(s.group);
+            s.group.traverse(disposeObject);
+        });
         this._internalStations.clear();
-        this._works.forEach(w => this.scene.remove(w.mesh));
+
+        this._works.forEach(w => {
+            this.scene.remove(w.mesh);
+            w.mesh.traverse(disposeObject);
+        });
         this._works.clear();
-        this._connections.forEach(l => this.scene.remove(l));
+
+        this._connections.forEach(l => {
+            this.scene.remove(l);
+            if (l.geometry) l.geometry.dispose();
+            if (l.material) l.material.dispose();
+        });
         this._connections = [];
-        this._interlockIndicators.forEach(g => this.scene.remove(g));
+
+        this._interlockIndicators.forEach(g => {
+            this.scene.remove(g);
+            g.traverse(disposeObject);
+        });
         this._interlockIndicators.clear();
     }
 
