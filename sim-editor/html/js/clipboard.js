@@ -39,13 +39,13 @@ export class Clipboard {
         if (!data) {
             const stored = sessionStorage.getItem('sim-editor-clipboard');
             if (!stored) return;
-            data = JSON.parse(stored);
+            try { data = JSON.parse(stored); } catch { return; }
         }
         if (!data || !data.stations || data.stations.length === 0) return;
 
-        // Calculate centroid of copied stations
+        // Calculate centroid of copied stations (default to 0 for stations without position)
         let cx = 0, cy = 0;
-        data.stations.forEach(s => { cx += s.x; cy += s.y; });
+        data.stations.forEach(s => { cx += (s.x || 0); cy += (s.y || 0); });
         cx /= data.stations.length;
         cy /= data.stations.length;
 
