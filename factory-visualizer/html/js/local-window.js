@@ -53,6 +53,7 @@ let _logicProjectionCX = 0;          // Camera center X (world)
 let _logicProjectionCZ = 0;          // Camera center Z (world)
 let _logicModelBounds = null; // { minX, maxX, minZ, maxZ } GLBモデルのXZ範囲（metres）
 let _logicViewBox = { x: -8, y: -8, w: 16, h: 16 }; // current SVG viewBox (zoom/pan state) — meters
+let _stationRadius = 0.25; // fixed station radius in metres
 
 // ---- Logic tab state ----
 
@@ -1118,7 +1119,7 @@ function renderStations() {
     const layer = document.getElementById('logic-station-layer');
     layer.innerHTML = '';
 
-    const R = _getDisplayViewBox().w / 25; // viewBox幅の1/25をステーション半径に
+    const R = _stationRadius;
     const sw = R / 5;
     const fs = R * 0.65;
 
@@ -1331,6 +1332,20 @@ function initToolPalette() {
         renderLogicSVG();
         renderUnplacedList();
     });
+
+    // ステーション半径スライダー／数値入力
+    const _radiusSlider = document.getElementById('station-radius-slider');
+    const _radiusInput  = document.getElementById('station-radius-input');
+    const _applyRadius = (v) => {
+        v = Math.max(0.1, Math.min(10, parseFloat(v) || 0.25));
+        _stationRadius = v;
+        _radiusSlider.value = v;
+        _radiusInput.value  = v;
+        renderLogicSVG();
+    };
+    _radiusSlider?.addEventListener('input',  () => _applyRadius(_radiusSlider.value));
+    _radiusInput?.addEventListener('change',  () => _applyRadius(_radiusInput.value));
+    _radiusInput?.addEventListener('keydown', e => { if (e.key === 'Enter') _applyRadius(_radiusInput.value); });
 
     // 新規ステーション追加ボタン
     const _doAddStation = () => {
