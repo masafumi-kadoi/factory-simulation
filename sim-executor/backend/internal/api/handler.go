@@ -38,11 +38,14 @@ type APIError struct {
 
 // respondJSON sends a JSON response
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
+	b, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-	}
+	w.Write(b) //nolint:errcheck
 }
 
 // respondError sends an error response
