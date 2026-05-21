@@ -427,6 +427,7 @@ PortWorkDeparted (各ポートから個別に搬出)
 ### 6. Entry（エントリー）
 
 Modulerステーション内部の入口。**透過ステーション**（加工時間0、即通過）。
+**IR は内部接続先ステーションの IR を透過**し、マシンの搬入可を外部へ露出する。
 
 ```
            ┌──────────┐
@@ -452,7 +453,7 @@ WorkArrived
 
 WorkDeparted
   ├─ IWP, PWP, OWP, CPL, PR = OFF
-  └─ evaluateRules → IR = ON
+  └─ evaluateRules → IR 更新（透過導出で上書き）
 ```
 
 > ProcessingStarted / ProcessingCompleted イベントは**発生しません**。
@@ -466,11 +467,44 @@ WorkDeparted
 | R3 | IWP = OFF | → | IR = ON |
 | R4 | IWP = ON | → | IR = OFF |
 
+**IR 透過導出（ルール評価後に上書き）:**
+
+```
+Entry.IR = 内部接続先.IR  AND  (Entry.IWP = OFF)
+```
+
+- 内部接続先が Merge ポートの場合はポートレベルの IR を参照
+- IWP=ON のとき（ワーク保持中）は常に IR=OFF（二重ロード防止）
+- この導出はルール R3/R4 の結果を上書きする
+
+**外部からワークが来たとき（WorkArrived 時の interlock チェック）:**
+
+Entry の WorkArrived は `IWP` のみをチェックし、`IR` はチェックしません。
+これは「すでに Transit コミット済みのワーク」が、Transit 中に proc-inner が処理開始して IR=OFF になった場合でも正常に到着できるようにするためです。
+到着後のワークは proc-inner が IR=ON になるまで Entry 内で待機します。
+
+**Entry.IR による外部バックプレッシャー:**
+
+```
+proc-inner.IR = OFF (加工中)
+  → propagateToNeighborEntryExit(proc-inner)
+    → Entry.IR = proc-inner.IR AND NOT(IWP) = OFF
+       → 外部上流の checkHandshakes が Entry.IR=OFF を検出
+          → 外部上流は新たなワーク搬出をしない（バックプレッシャー）
+
+proc-inner.IR = ON (加工完了後)
+  → propagateToNeighborEntryExit(proc-inner)
+    → Entry.IR = ON
+       → checkHandshakes(Entry)
+          → 外部上流.OR=ON なら WorkDeparted スケジュール
+```
+
 ---
 
 ### 7. Exit（イグジット）
 
 Modulerステーション内部の出口。Entryと同じ透過動作。
+**OR は内部接続元ステーションの OR を透過**し、マシンの搬出可を外部へ露出する。
 
 ```
                     ┌──────────┐
@@ -479,7 +513,16 @@ Modulerステーション内部の出口。Entryと同じ透過動作。
                     └──────────┘
 ```
 
-ポート構成・信号フロー・デフォルトルールは **Entry と同一**です。
+ポート構成・基本信号フロー・デフォルトルールは **Entry と同一**。
+
+**OR 透過導出（ルール評価後に上書き）:**
+
+```
+Exit.OR = 内部接続元.OR  OR  (Exit.OWP = ON)
+```
+
+- 内部接続元が Split ポートの場合はポートレベルの OR を参照
+- Exit 自身にワークがある（OWP=ON）ときは常に OR=ON を維持
 
 ---
 

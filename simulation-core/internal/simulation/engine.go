@@ -344,8 +344,14 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 	// Clear station-level reservation
 	delete(e.reservedStations, station.ID)
 
-	// Check interlock: InputReady must be ON
-	if !station.IsInputReady() {
+	// Check interlock: InputReady must be ON.
+	// Entry stations use transparent IR (reflects downstream readiness), so only check IWP to prevent
+	// double-loading. Work already in transit is committed by the departure mechanism.
+	if station.Type == domain.StationTypeEntry {
+		if station.GetSignal(domain.SignalInputWorkPresent) {
+			return fmt.Errorf("interlock violation: transparent Entry %s already holds work (double-load)", station.ID)
+		}
+	} else if !station.IsInputReady() {
 		return fmt.Errorf("interlock violation: station %s InputReady=OFF (state=%s), cannot accept work", station.ID, station.State)
 	}
 
@@ -987,6 +993,118 @@ func (e *Engine) updatePortDerivedSignals(station *domain.Station, portIndex int
 	e.evaluatePortRules(port)
 }
 
+// getDownstreamIRForEntry returns the inputReady of the station/port that Entry connects to internally.
+func (e *Engine) getDownstreamIRForEntry(entry *domain.Station) bool {
+	conns := e.scenario.GetConnectionsFrom(entry.ID)
+	if len(conns) == 0 {
+		return false
+	}
+	conn := conns[0]
+	toStation := e.scenario.GetStation(conn.To)
+	if toStation == nil {
+		return false
+	}
+	isPortDest := conn.ToPortIndex >= 0 &&
+		(toStation.Type == domain.StationTypeMerge ||
+			(toStation.Type == domain.StationTypeSwitch && toStation.GetDirection() == "merge"))
+	if isPortDest {
+		return toStation.IsPortInputReady(conn.ToPortIndex)
+	}
+	return toStation.IsInputReady()
+}
+
+// getUpstreamORForExit returns the outputReady of the station/port that connects into Exit internally.
+func (e *Engine) getUpstreamORForExit(exit *domain.Station) bool {
+	conns := e.scenario.GetConnectionsTo(exit.ID)
+	if len(conns) == 0 {
+		return false
+	}
+	conn := conns[0]
+	fromStation := e.scenario.GetStation(conn.From)
+	if fromStation == nil {
+		return false
+	}
+	isPortSrc := conn.FromPortIndex >= 0 &&
+		(fromStation.Type == domain.StationTypeSplit ||
+			(fromStation.Type == domain.StationTypeSwitch && fromStation.GetDirection() == "divert"))
+	if isPortSrc {
+		return fromStation.IsPortOutputReady(conn.FromPortIndex)
+	}
+	return fromStation.IsOutputReady()
+}
+
+// applyEntryIRDerivation sets Entry.IR = downstream.IR AND NOT(Entry.IWP).
+// Returns true if the value changed.
+func (e *Engine) applyEntryIRDerivation(entry *domain.Station) bool {
+	newIR := e.getDownstreamIRForEntry(entry) && !entry.GetSignal(domain.SignalInputWorkPresent)
+	oldIR := entry.GetSignal(domain.SignalInputReady)
+	if oldIR == newIR {
+		return false
+	}
+	entry.SetSignal(domain.SignalInputReady, newIR)
+	e.statusLogs = append(e.statusLogs, StationStatusLog{
+		StationID:  entry.ID,
+		Timestamp:  e.currentTime,
+		StatusType: "signal_change",
+		Value:      newIR,
+		SignalName: domain.SignalInputReady,
+		OldValue:   oldIR,
+		RuleID:     "derived-entry",
+		MachineID:  e.stationMachineMap[entry.ID],
+	})
+	return true
+}
+
+// applyExitORDerivation sets Exit.OR = upstream.OR OR Exit.OWP.
+// Returns true if the value changed.
+func (e *Engine) applyExitORDerivation(exit *domain.Station) bool {
+	newOR := e.getUpstreamORForExit(exit) || exit.GetSignal(domain.SignalOutputWorkPresent)
+	oldOR := exit.GetSignal(domain.SignalOutputReady)
+	if oldOR == newOR {
+		return false
+	}
+	exit.SetSignal(domain.SignalOutputReady, newOR)
+	e.statusLogs = append(e.statusLogs, StationStatusLog{
+		StationID:  exit.ID,
+		Timestamp:  e.currentTime,
+		StatusType: "signal_change",
+		Value:      newOR,
+		SignalName: domain.SignalOutputReady,
+		OldValue:   oldOR,
+		RuleID:     "derived-exit",
+		MachineID:  e.stationMachineMap[exit.ID],
+	})
+	return true
+}
+
+// propagateToNeighborEntryExit propagates signal changes to neighboring Entry/Exit stations.
+// Called after any station's signals are evaluated to keep Entry.IR and Exit.OR in sync.
+func (e *Engine) propagateToNeighborEntryExit(station *domain.Station) error {
+	for _, conn := range e.scenario.GetConnectionsTo(station.ID) {
+		fromStation := e.scenario.GetStation(conn.From)
+		if fromStation == nil || fromStation.Type != domain.StationTypeEntry {
+			continue
+		}
+		if e.applyEntryIRDerivation(fromStation) {
+			if err := e.checkHandshakes(fromStation); err != nil {
+				return err
+			}
+		}
+	}
+	for _, conn := range e.scenario.GetConnectionsFrom(station.ID) {
+		toStation := e.scenario.GetStation(conn.To)
+		if toStation == nil || toStation.Type != domain.StationTypeExit {
+			continue
+		}
+		if e.applyExitORDerivation(toStation) {
+			if err := e.checkHandshakes(toStation); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // deriveStationSignals derives station-level signals from port-level signals for Merge/Split.
 // Merge: InPorts[1+] → Station.Signals (IR=ANY, IWP=ANY, allPortsFull=ALL, portNFull)
 // Split: OutPorts[1+] → Station.Signals (OR=ANY, OWP=ANY, allPortsEmpty=ALL, portNEmpty, portNHasWork)
@@ -1380,6 +1498,27 @@ func (e *Engine) evaluateAndLogSignals(station *domain.Station) error {
 
 	// Check if processReady=ON → schedule processing start
 	e.triggerProcessReady(station)
+
+	// Transparent signal derivation for Entry/Exit stations (overrides rule-evaluated IR/OR)
+	if station.Type == domain.StationTypeEntry {
+		if e.applyEntryIRDerivation(station) {
+			if err := e.checkHandshakes(station); err != nil {
+				return err
+			}
+		}
+	}
+	if station.Type == domain.StationTypeExit {
+		if e.applyExitORDerivation(station) {
+			if err := e.checkHandshakes(station); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Propagate signal changes to neighboring Entry/Exit stations
+	if err := e.propagateToNeighborEntryExit(station); err != nil {
+		return err
+	}
 
 	return nil
 }
