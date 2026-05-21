@@ -41,7 +41,7 @@ const STATION_HEIGHT = 0.2;  // 高さ 0.2m
 export const MODEL_TOP = {
     machine: 11,           // machine shell height (H)
     station: STATION_HEIGHT, // 0.2m
-    node:     8,           // source/drain cylinder height (HEIGHT)
+    node:     2,           // source/drain cylinder height (HEIGHT)
 };
 
 export class Scene3D {
@@ -65,7 +65,7 @@ export class Scene3D {
         this._labelHeightMode  = 'relative'; // 'relative' | 'absolute'
         this._machineLabelAbsY = MODEL_TOP.machine  + 1.8; // 12.8m
         this._stationLabelAbsY = MODEL_TOP.station  + 0.8; // 1.0m
-        this._nodeLabelAbsY    = MODEL_TOP.node     + 2.0; // 10.0m
+        this._nodeLabelAbsY    = MODEL_TOP.node     + 2.0; // 4.0m
         this._workMachineAbsY  = MODEL_TOP.machine  + 2.0; // 13.0m
         this._workStationAbsY  = MODEL_TOP.station  + 2.0; // 2.2m
         this._onMachineDoubleClick = null;
@@ -405,7 +405,7 @@ export class Scene3D {
         const px = station.positionX || 0;
         const pz = station.positionY || 0;
         const color = STATION_COLORS[station.stationType] || 0x888888;
-        const RADIUS = 0.5, HEIGHT = 8;
+        const RADIUS = 0.5, HEIGHT = 2;
 
         const group = new THREE.Group();
         group.userData.equipmentName = station.stationId;
