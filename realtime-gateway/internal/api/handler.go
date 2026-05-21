@@ -656,10 +656,18 @@ func (h *Handler) handleCSVImport(w http.ResponseWriter, r *http.Request, factor
 				stationType = strings.TrimSpace(rec[2])
 			}
 			if len(rec) > 3 {
-				posX, _ = strconv.ParseFloat(strings.TrimSpace(rec[3]), 64)
+				if v, parseErr := strconv.ParseFloat(strings.TrimSpace(rec[3]), 64); parseErr == nil {
+					posX = v
+				} else {
+					errs = append(errs, csvError{lineNum, "pos_x", fmt.Sprintf("invalid number: %s", rec[3])})
+				}
 			}
 			if len(rec) > 4 {
-				posY, _ = strconv.ParseFloat(strings.TrimSpace(rec[4]), 64)
+				if v, parseErr := strconv.ParseFloat(strings.TrimSpace(rec[4]), 64); parseErr == nil {
+					posY = v
+				} else {
+					errs = append(errs, csvError{lineNum, "pos_y", fmt.Sprintf("invalid number: %s", rec[4])})
+				}
 			}
 		} else {
 			// Extended: station_id, equipment_id, name, station_type, pos_x, pos_y
@@ -670,10 +678,18 @@ func (h *Handler) handleCSVImport(w http.ResponseWriter, r *http.Request, factor
 				stationType = strings.TrimSpace(rec[3])
 			}
 			if len(rec) > 4 {
-				posX, _ = strconv.ParseFloat(strings.TrimSpace(rec[4]), 64)
+				if v, parseErr := strconv.ParseFloat(strings.TrimSpace(rec[4]), 64); parseErr == nil {
+					posX = v
+				} else {
+					errs = append(errs, csvError{lineNum, "pos_x", fmt.Sprintf("invalid number: %s", rec[4])})
+				}
 			}
 			if len(rec) > 5 {
-				posY, _ = strconv.ParseFloat(strings.TrimSpace(rec[5]), 64)
+				if v, parseErr := strconv.ParseFloat(strings.TrimSpace(rec[5]), 64); parseErr == nil {
+					posY = v
+				} else {
+					errs = append(errs, csvError{lineNum, "pos_y", fmt.Sprintf("invalid number: %s", rec[5])})
+				}
 			}
 		}
 
