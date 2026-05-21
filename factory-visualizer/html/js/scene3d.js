@@ -1070,6 +1070,12 @@ export class Scene3D {
         };
     }
 
+    hasRenderableStation(stationId) {
+        return this._machines.has(stationId) ||
+               this._internalStations.has(stationId) ||
+               this._equipmentGroups.has(stationId);
+    }
+
     removeWork(workId) {
         const entry = this._works.get(workId);
         if (entry) {

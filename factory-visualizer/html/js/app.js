@@ -123,9 +123,13 @@ function applyHistoryAtTime(ms, animate = true) {
 
     // Keep in-transit works visible at their departure station (no arc)
     // so that when they arrive the arc fires from the departure position.
+    // Skip unrenderable stations (e.g. unpositioned source/drain) so that
+    // activeWorks isn't polluted with a phantom station that would suppress
+    // the arc animation when the work later arrives at a real machine.
     workTransit.forEach((fromLocationId, workId) => {
         const stationId = state.locationMap.get(Number(fromLocationId));
         if (!stationId) return;
+        if (!scene3d.hasRenderableStation(stationId)) return;
         const prevStation = state.activeWorks.get(workId);
         if (prevStation !== stationId) {
             state.activeWorks.set(workId, stationId);
@@ -137,6 +141,12 @@ function applyHistoryAtTime(ms, animate = true) {
     workLocations.forEach((locationId, workId) => {
         const stationId = state.locationMap.get(Number(locationId));
         if (!stationId) return;
+        if (!scene3d.hasRenderableStation(stationId)) {
+            // Work arrived at unrenderable station (e.g. unpositioned drain) — clean up.
+            scene3d.removeWork(workId);
+            state.activeWorks.delete(workId);
+            return;
+        }
         const prevStation = state.activeWorks.get(workId);
         if (prevStation !== stationId) {
             state.activeWorks.set(workId, stationId);
@@ -653,8 +663,14 @@ function handleWsEvent(event) {
         const fromStation = state.locationMap.get(Number(event.from_location_id));
 
         if (event.movement_type === 'arrived' && toStation) {
-            state.activeWorks.set(event.item_id, toStation);
-            scene3d.setWorkPosition(event.item_id, toStation);
+            if (scene3d.hasRenderableStation(toStation)) {
+                state.activeWorks.set(event.item_id, toStation);
+                scene3d.setWorkPosition(event.item_id, toStation);
+            } else {
+                // Arrived at unrenderable station (e.g. unpositioned drain) — remove mesh.
+                scene3d.removeWork(event.item_id);
+                state.activeWorks.delete(event.item_id);
+            }
         } else if (event.movement_type === 'departed') {
             // Keep the mesh at the departure station so the upcoming 'arrived'
             // event can trigger the arc animation from the current position.
