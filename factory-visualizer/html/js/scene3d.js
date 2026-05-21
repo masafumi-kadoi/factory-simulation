@@ -526,14 +526,10 @@ export class Scene3D {
         this._glbLoader.load(url, gltf => {
             URL.revokeObjectURL(url);
             const model = gltf.scene;
+            // GLBはメートル単位・基準点(origin)が(0,0)でエクスポート済み。
+            // スケール変換しない（ローカルビューと同スケールにするため）。
+            // y方向のみ地面(y=0)に合わせる。
             const box = new THREE.Box3().setFromObject(model);
-            const size = new THREE.Vector3();
-            box.getSize(size);
-            const maxDim = Math.max(size.x, size.y, size.z);
-            if (maxDim > 0) model.scale.setScalar(10 / maxDim);
-            // 基準点(origin)はGLB座標の(0,0)にエクスポートされているため
-            // x/z移動は不要。y方向のみ地面(y=0)に合わせる。
-            box.setFromObject(model);
             model.position.y = -box.min.y;
             targetGroup.add(model);
         }, undefined, err => {
