@@ -248,8 +248,11 @@ export class AddConnectionCommand {
     }
 
     undo() {
+        const conn = this.connection;
         this.editor.scenario.connections = this.editor.scenario.connections.filter(
-            c => !(c.from === this.connection.from && c.to === this.connection.to)
+            c => !(c.from === conn.from && c.to === conn.to &&
+                   (c.fromPortIndex ?? -1) === (conn.fromPortIndex ?? -1) &&
+                   (c.toPortIndex ?? -1) === (conn.toPortIndex ?? -1))
         );
         this.editor._markDirty();
         this.editor._render();
