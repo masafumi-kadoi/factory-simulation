@@ -653,8 +653,7 @@ export class Canvas {
                     if (s) moves.push({ id: sid, fromX: startPos.x, fromY: startPos.y, toX: s.x, toY: s.y });
                 }
                 const command = new MoveMultipleStationsCommand(this.editor, moves);
-                this.editor.commandManager.undoStack.push(command);
-                this.editor.commandManager.redoStack = [];
+                this.editor.commandManager._record(command);
             } else if (moved) {
                 // Single station move
                 const stationData = this.editor.getStation(this.draggedStation);
@@ -664,8 +663,7 @@ export class Canvas {
                         this.dragStartPos.x, this.dragStartPos.y,
                         stationData.x, stationData.y
                     );
-                    this.editor.commandManager.undoStack.push(command);
-                    this.editor.commandManager.redoStack = [];
+                    this.editor.commandManager._record(command);
                 }
             }
             this.draggedStation = null;

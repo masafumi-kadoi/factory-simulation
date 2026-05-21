@@ -9,10 +9,13 @@ export class CommandManager {
 
     execute(command) {
         command.execute();
-        this.undoStack.push(command);
-        this.redoStack = []; // Clear redo stack on new action
+        this._record(command);
+    }
 
-        // Limit stack size
+    // Record a command that has already been executed (e.g. drag-move)
+    _record(command) {
+        this.undoStack.push(command);
+        this.redoStack = [];
         if (this.undoStack.length > this.maxStackSize) {
             this.undoStack.shift();
         }
