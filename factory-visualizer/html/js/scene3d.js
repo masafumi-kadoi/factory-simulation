@@ -163,10 +163,6 @@ export class Scene3D {
             this.scene.fog = new THREE.Fog(t.fog[0], t.fog[1], t.fog[2]);
         }
         if (this._ground) this._ground.material.color.setHex(t.ground);
-        if (this._grid) {
-            this.scene.remove(this._grid);
-            this._grid.geometry.dispose();
-        }
         if (this._groundSize) this._recreateGrid(this._groundSize, t);
     }
 
@@ -187,13 +183,67 @@ export class Scene3D {
     }
 
     _recreateGrid(size, t) {
-        const divisions = Math.max(10, Math.round(size / 5));
-        this._grid = new THREE.GridHelper(size, divisions, t.gridCenter, t.gridLines);
-        this._grid.position.y = 0.2;
-        if (this._ground) {
-            this._grid.position.x = this._ground.position.x;
-            this._grid.position.z = this._ground.position.z;
+        if (this._grid) {
+            this.scene.remove(this._grid);
+            if (this._grid.geometry) this._grid.geometry.dispose();
+            if (this._grid.material) this._grid.material.dispose();
+            this._grid = null;
         }
+
+        const vertexShader = `
+            varying vec3 vWorldPos;
+            void main() {
+                vec4 world = modelMatrix * vec4(position, 1.0);
+                vWorldPos = world.xyz;
+                gl_Position = projectionMatrix * viewMatrix * world;
+            }
+        `;
+        const fragmentShader = `
+            #extension GL_OES_standard_derivatives : enable
+            precision highp float;
+            varying vec3 vWorldPos;
+            uniform vec3 uLineColor;
+            uniform vec3 uCenterColor;
+            uniform vec2 uCenter;
+            uniform float uFadeStart;
+            uniform float uFadeEnd;
+
+            float gridFactor(float spacing) {
+                vec2 coord = vWorldPos.xz / spacing;
+                vec2 d = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+                return 1.0 - min(min(d.x, d.y), 1.0);
+            }
+
+            void main() {
+                float fine   = gridFactor(5.0);
+                float coarse = gridFactor(25.0);
+                float dist = length(vWorldPos.xz - uCenter);
+                float fade = 1.0 - clamp((dist - uFadeStart) / (uFadeEnd - uFadeStart), 0.0, 1.0);
+                float alpha = max(fine * 0.55, coarse) * fade * 0.9;
+                if (alpha < 0.01) discard;
+                vec3 color = mix(uLineColor, uCenterColor, coarse);
+                gl_FragColor = vec4(color, alpha);
+            }
+        `;
+
+        const geo = new THREE.PlaneGeometry(2000, 2000, 4, 4);
+        const mat = new THREE.ShaderMaterial({
+            vertexShader,
+            fragmentShader,
+            uniforms: {
+                uLineColor:   { value: new THREE.Color(t.gridLines) },
+                uCenterColor: { value: new THREE.Color(t.gridCenter) },
+                uCenter:      { value: new THREE.Vector2(0, 0) },
+                uFadeStart:   { value: 60 },
+                uFadeEnd:     { value: 160 },
+            },
+            transparent: true,
+            depthWrite: false,
+        });
+
+        this._grid = new THREE.Mesh(geo, mat);
+        this._grid.rotation.x = -Math.PI / 2;
+        this._grid.position.y = 0.25;
         this.scene.add(this._grid);
     }
 
@@ -1371,6 +1421,17 @@ export class Scene3D {
         });
 
         const cam = this._useOrtho ? this._orthoCamera : this.camera;
+
+        // Keep infinite grid centered under camera (snap to grid spacing for seamless tiling)
+        if (this._grid?.material?.uniforms) {
+            const snap = 5;
+            const cx = Math.round(cam.position.x / snap) * snap;
+            const cz = Math.round(cam.position.z / snap) * snap;
+            this._grid.position.x = cx;
+            this._grid.position.z = cz;
+            this._grid.material.uniforms.uCenter.value.set(cx, cz);
+        }
+
         this.renderer && this.renderer.render(this.scene, cam);
     }
 
