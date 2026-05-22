@@ -8,8 +8,8 @@ const THEMES = {
         background: 0x0f1629,
         fog: [0x0f1629, 50, 200],
         ground: 0x101828,
-        gridCenter: 0x2a4070,
-        gridLines: 0x1a2744,
+        gridCenter: 0x3a6098,
+        gridLines: 0x1e3354,
     },
     light: {
         background: 0xf0f4f8,
@@ -705,11 +705,8 @@ export class Scene3D {
         const range = Math.max(maxX - minX, maxZ - minZ, 20);
         const gridSize = range + 40;
 
-        // グリッドを設備中心に配置（地面プレーンはスケール不要）
         this._groundSize = gridSize;
-        if (this._grid) { this.scene.remove(this._grid); this._grid.geometry.dispose(); }
         this._recreateGrid(gridSize, THEMES[this._theme]);
-        this._grid.position.set(cx, 0.2, cz);
 
         const dist = range * 0.9 + 20;
         this.scene.fog.near = dist * 2;
@@ -751,12 +748,9 @@ export class Scene3D {
         // 縦横のうち制約の厳しい方でフィット（1.1 = 10% 余白）
         const dist = (R / Math.sin(Math.min(fov, fovH) / 2)) * 1.1;
 
-        // グリッドを設備中心に配置（地面プレーンはスケール不要）
         const gridSize = Math.max(R * 2 + 40, 60);
         this._groundSize = gridSize;
-        if (this._grid) { this.scene.remove(this._grid); this._grid.geometry.dispose(); }
         this._recreateGrid(gridSize, THEMES[this._theme]);
-        this._grid.position.set(cx, 0.2, cz);
 
         // フォグはカメラ距離ベースで設定
         this.scene.fog.near = dist * 2;
