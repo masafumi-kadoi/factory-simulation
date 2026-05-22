@@ -1056,7 +1056,7 @@ export class Scene3D {
         const from = entry.mesh.position.clone();
         const to = new THREE.Vector3(px, py, pz);
         const hDist = Math.sqrt((to.x - from.x) ** 2 + (to.z - from.z) ** 2);
-        if (hDist < 1) {
+        if (hDist < 0.01) {
             entry._anim = null;
             entry.mesh.position.set(px, py, pz);
             return;
