@@ -199,8 +199,6 @@ export class Scene3D {
             }
         `;
         const fragmentShader = `
-            #extension GL_OES_standard_derivatives : enable
-            precision highp float;
             varying vec3 vWorldPos;
             uniform vec3 uLineColor;
             uniform vec3 uCenterColor;
@@ -226,7 +224,7 @@ export class Scene3D {
             }
         `;
 
-        const geo = new THREE.PlaneGeometry(2000, 2000, 4, 4);
+        const geo = new THREE.PlaneGeometry(2000, 2000, 32, 32);
         const mat = new THREE.ShaderMaterial({
             vertexShader,
             fragmentShader,
