@@ -342,6 +342,65 @@
             display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
         }
 
+        /* ---- View Display tab ---- */
+        #tab-view { flex-direction: row; }
+        .lv-left {
+            width: 240px; flex-shrink: 0; display: flex; flex-direction: column;
+            background: var(--bg-panel); border-right: 1px solid var(--border-color); overflow-y: auto;
+        }
+        .lv-main {
+            flex: 1; min-width: 0; display: flex; flex-direction: column;
+        }
+        .lv-sync-bar {
+            padding: 4px 10px; font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+            background: var(--bg-panel); border-bottom: 1px solid var(--border-color);
+        }
+        .lv-canvas-wrapper {
+            flex: 1; min-height: 0; position: relative; overflow: hidden;
+        }
+        .lv-section { border-bottom: 1px solid var(--border-color); }
+        .lv-section-hdr {
+            padding: 7px 10px; font-size: 11px; font-weight: 600;
+            color: var(--text-secondary); display: flex; align-items: center;
+            justify-content: space-between; user-select: none;
+            background: var(--bg-panel-hdr);
+        }
+        .lv-section-body { padding: 8px 10px; }
+        .lv-row {
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 11px; color: var(--text-secondary); margin-bottom: 8px; gap: 6px;
+        }
+        .lv-row:last-child { margin-bottom: 0; }
+        .lv-row label { flex: 1; }
+        .lv-slider-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+        .lv-slider-inner { display: flex; align-items: center; width: 100%; gap: 6px; }
+        .lv-val { font-size: 10px; color: var(--text-muted); min-width: 26px; text-align: right; }
+        .lv-select {
+            font-size: 11px; background: var(--bg-input); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: 3px; padding: 2px 4px;
+        }
+        .lv-num {
+            width: 56px; font-size: 11px; background: var(--bg-input); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: 3px;
+            padding: 2px 4px; text-align: right; font-family: inherit;
+        }
+        .lv-filter-bar { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+        .lv-filter-btn {
+            font-size: 10px; padding: 2px 8px; background: var(--bg-surface);
+            color: var(--text-secondary); border: 1px solid var(--border-color);
+            border-radius: 3px; cursor: pointer;
+        }
+        .lv-filter-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+        #lv-object-list { display: flex; flex-direction: column; }
+        .lv-obj-item {
+            display: flex; align-items: center; gap: 6px; padding: 3px 5px;
+            font-size: 11px; color: var(--text-secondary); border-radius: 3px; cursor: pointer;
+        }
+        .lv-obj-item:hover { background: var(--bg-surface); color: var(--text-primary); }
+        .lv-obj-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .lv-obj-dot-sq { width: 8px; height: 8px; border-radius: 1px; flex-shrink: 0; }
+        .lv-sub-header { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; margin-top: 2px; }
+
         /* ---- Modals ---- */
         .lw-modal-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.6);
@@ -379,6 +438,7 @@
         <div class="tab active" data-tab="info">モデル情報</div>
         <div class="tab" data-tab="model3d">3Dモデル編集</div>
         <div class="tab" data-tab="logic">ロジック編集</div>
+        <div class="tab" data-tab="view">ビュー表示</div>
     </div>
 
     <!-- Tab: Info -->
@@ -481,6 +541,90 @@
             <div class="props-title">プロパティ</div>
             <div class="props-empty" id="props-empty">ステーションを選択</div>
             <div id="props-fields" style="display:none;"></div>
+        </div>
+    </div>
+
+    <!-- Tab: View Display -->
+    <div class="tab-content" id="tab-view">
+        <!-- Left panel -->
+        <div class="lv-left">
+            <!-- Objects section -->
+            <div class="lv-section">
+                <div class="lv-section-hdr">オブジェクト</div>
+                <div class="lv-section-body">
+                    <div class="lv-filter-bar">
+                        <button class="lv-filter-btn active" data-lv-filter="station">ステーション</button>
+                        <button class="lv-filter-btn active" data-lv-filter="work">ワーク</button>
+                    </div>
+                    <div id="lv-object-list"></div>
+                </div>
+            </div>
+            <!-- Display settings section -->
+            <div class="lv-section">
+                <div class="lv-section-hdr">表示設定</div>
+                <div class="lv-section-body">
+                    <div class="lv-row">
+                        <label>シーンテーマ</label>
+                        <select id="lv-theme" class="lv-select">
+                            <option value="dark-navy">ダークネイビー</option>
+                            <option value="dark">ダーク</option>
+                            <option value="light">ライト</option>
+                            <option value="auto">自動</option>
+                        </select>
+                    </div>
+                    <div class="lv-row lv-slider-row">
+                        <label>設備シェル透明度</label>
+                        <div class="lv-slider-inner">
+                            <input type="range" id="lv-shell-opacity" min="0" max="1" step="0.05" value="0.6"
+                                   style="flex:1;accent-color:var(--accent-blue);">
+                            <span id="lv-shell-opacity-val" class="lv-val">0.6</span>
+                        </div>
+                    </div>
+                    <div class="lv-row lv-slider-row">
+                        <label>内部ステーション径</label>
+                        <div class="lv-slider-inner">
+                            <input type="range" id="lv-station-radius" min="0.1" max="5" step="0.05" value="0.25"
+                                   style="flex:1;accent-color:var(--accent-blue);">
+                            <span id="lv-station-radius-val" class="lv-val">0.25</span>
+                        </div>
+                    </div>
+                    <div class="lv-row">
+                        <label>ステーション名</label>
+                        <input type="checkbox" id="lv-show-station-names" checked>
+                    </div>
+                    <div class="lv-row">
+                        <label>ワーク表示</label>
+                        <input type="checkbox" id="lv-show-works" checked>
+                    </div>
+                    <div class="lv-row">
+                        <label>インターロック表示</label>
+                        <input type="checkbox" id="lv-show-interlocks">
+                    </div>
+                </div>
+            </div>
+            <!-- Height settings section -->
+            <div class="lv-section">
+                <div class="lv-section-hdr">高さ設定</div>
+                <div class="lv-section-body">
+                    <div class="lv-sub-header">ラベル高さ</div>
+                    <div class="lv-row">
+                        <label>ステーション名</label>
+                        <input type="number" class="lv-num" id="lv-h-station-label"
+                               value="0.8" min="0" max="10" step="0.1">
+                    </div>
+                    <div class="lv-sub-header" style="margin-top:8px;">ワーク高さ</div>
+                    <div class="lv-row">
+                        <label>ステーション上</label>
+                        <input type="number" class="lv-num" id="lv-h-work-station"
+                               value="0.5" min="0" max="10" step="0.1">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 3D canvas area -->
+        <div class="lv-main">
+            <div id="lv-sync-bar" class="lv-sync-bar">同期待機中</div>
+            <div id="lv-canvas-wrapper" class="lv-canvas-wrapper"></div>
         </div>
     </div>
 

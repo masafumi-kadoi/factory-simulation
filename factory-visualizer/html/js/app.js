@@ -58,6 +58,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     restoreSimStart();
+
+    // Expose state and timeline for child windows (e.g. local-window ビュー表示 tab sync)
+    window._fvState = state;
+    window._fvTimeline = timeline;
 });
 
 function initScene() {

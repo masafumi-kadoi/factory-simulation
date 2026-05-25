@@ -236,6 +236,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     initTabs();
     initButtons();
+    initViewTab();
     await loadMachineData();
 });
 
@@ -256,6 +257,9 @@ function initTabs() {
 
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
+            const prevTab = document.querySelector('.tab.active')?.dataset.tab;
+            if (prevTab === 'view' && tab.dataset.tab !== 'view') _lvDeactivateTab();
+
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             tab.classList.add('active');
@@ -269,6 +273,7 @@ function initTabs() {
                     else if (_glbPreviewBuffer) _loadGlbPreview(_glbPreviewBuffer);
                 }
             }
+            if (tab.dataset.tab === 'view') { _lvActivateTab(); }
         });
     });
 }
@@ -2277,5 +2282,746 @@ async function saveAndClose() {
         alert('保存失敗: ' + err.message);
         btn.disabled = false;
         btn.textContent = '保存する';
+    }
+}
+
+// ============================================================
+// ---- View Display Tab ----
+// ============================================================
+
+const LV_STATION_COLORS_CSS = {
+    source: '#28a745', processing: '#007bff', drain: '#6c757d',
+    merge: '#6f42c1', split: '#fd7e14', entry: '#2e7d32', exit: '#e65100',
+    inspection: '#ffc107', discharge: '#dc3545', switch: '#17a2b8',
+};
+const LV_STATION_COLORS_HEX = {
+    source: 0x28a745, processing: 0x007bff, drain: 0x6c757d,
+    merge: 0x6f42c1, split: 0xfd7e14, entry: 0x2e7d32, exit: 0xe65100,
+    inspection: 0xffc107, discharge: 0xdc3545, switch: 0x17a2b8,
+};
+
+let _lvScene = null;
+let _lvActiveWorks = new Map();  // workId → stationId
+let _lvHistory = [];             // filtered item_movement events
+let _lvLocationMap = new Map();  // locationId → stationId (from opener)
+let _lvLastSyncTime = null;
+let _lvLastHistoryLen = 0;
+let _lvSyncActive = false;
+let _lvSyncFrameId = null;
+let _lvActiveFilters = new Set(['station', 'work']);
+
+
+function initViewTab() {
+    document.getElementById('lv-shell-opacity').addEventListener('input', e => {
+        const v = parseFloat(e.target.value);
+        document.getElementById('lv-shell-opacity-val').textContent = v.toFixed(2);
+        _lvScene?.setShellOpacity(v);
+    });
+    document.getElementById('lv-station-radius').addEventListener('input', e => {
+        const v = parseFloat(e.target.value);
+        document.getElementById('lv-station-radius-val').textContent = v.toFixed(2);
+        _lvScene?.setStationRadius(v);
+    });
+    document.getElementById('lv-theme').addEventListener('change', e => {
+        _lvScene?.applyTheme(e.target.value);
+    });
+    document.getElementById('lv-show-station-names').addEventListener('change', e => {
+        _lvScene?.setShowStationNames(e.target.checked);
+    });
+    document.getElementById('lv-show-works').addEventListener('change', e => {
+        _lvScene?.setShowWorks(e.target.checked);
+        if (e.target.checked) _lvLastSyncTime = null; // Force re-apply to rebuild missing work meshes
+    });
+    document.getElementById('lv-show-interlocks').addEventListener('change', e => {
+        _lvScene?.setShowInterlocks(e.target.checked);
+    });
+    document.getElementById('lv-h-station-label').addEventListener('input', e => {
+        _lvScene?.setStationLabelY(parseFloat(e.target.value) || 0.8);
+    });
+    document.getElementById('lv-h-work-station').addEventListener('input', e => {
+        _lvScene?.setWorkY(parseFloat(e.target.value) || 0.5);
+    });
+
+    document.querySelectorAll('.lv-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.classList.toggle('active');
+            const f = btn.dataset.lvFilter;
+            if (btn.classList.contains('active')) _lvActiveFilters.add(f);
+            else _lvActiveFilters.delete(f);
+            _lvRenderObjectList();
+        });
+    });
+}
+
+function _lvActivateTab() {
+    _lvLastSyncTime = null; // Force re-apply on activation
+    if (!_lvScene) {
+        // Defer one frame so the container has valid dimensions
+        requestAnimationFrame(() => {
+            const wrapper = document.getElementById('lv-canvas-wrapper');
+            if (!wrapper) return;
+            _lvScene = new LocalViewScene(wrapper);
+            _lvScene.loadStations(childStations, childConnections);
+            // Apply current UI settings
+            _lvScene.applyTheme(document.getElementById('lv-theme').value);
+            _lvScene.setShellOpacity(parseFloat(document.getElementById('lv-shell-opacity').value));
+            _lvScene.setShowStationNames(document.getElementById('lv-show-station-names').checked);
+            _lvScene.setShowWorks(document.getElementById('lv-show-works').checked);
+            _lvScene.setStationLabelY(parseFloat(document.getElementById('lv-h-station-label').value) || 0.8);
+            _lvScene.setWorkY(parseFloat(document.getElementById('lv-h-work-station').value) || 0.5);
+            // Apply current timeline position now that scene is ready
+            const currentMs = _lvGetOpenerTimeline()?.getCurrentTime?.();
+            if (currentMs !== null && currentMs !== undefined && !isNaN(currentMs)) {
+                _lvLastSyncTime = currentMs;
+                _lvApplyHistoryAtTime(currentMs, false);
+            }
+        });
+    } else {
+        _lvScene.resume();
+        _lvScene.loadStations(childStations, childConnections);
+    }
+    _lvRefreshHistory();
+    _lvStartSyncLoop();
+    _lvRenderObjectList();
+}
+
+function _lvDeactivateTab() {
+    _lvStopSyncLoop();
+    _lvScene?.pause();
+}
+
+function _lvGetOpenerState() {
+    try {
+        return window.opener?._fvState || null;
+    } catch (_e) { return null; }
+}
+
+function _lvGetOpenerTimeline() {
+    try {
+        return window.opener?._fvTimeline || null;
+    } catch (_e) { return null; }
+}
+
+function _lvRefreshHistory() {
+    const openerState = _lvGetOpenerState();
+    if (!openerState) {
+        _lvHistory = [];
+        _lvLocationMap = new Map();
+        _lvLastHistoryLen = 0;
+        return;
+    }
+    const openerHistory = openerState.historyEvents;
+    const openerLocationMap = openerState.locationMap;
+    if (!Array.isArray(openerHistory) || !openerLocationMap) {
+        _lvHistory = [];
+        return;
+    }
+    _lvLastHistoryLen = openerHistory.length;
+    _lvLocationMap = openerLocationMap;
+
+    const myStationIds = new Set(childStations.map(s => s.stationId));
+    _lvHistory = openerHistory.filter(ev => {
+        const fromSt = openerLocationMap.get(Number(ev.from_location_id));
+        const toSt = openerLocationMap.get(Number(ev.to_location_id));
+        return myStationIds.has(fromSt) || myStationIds.has(toSt);
+    });
+}
+
+function _lvApplyHistoryAtTime(ms, animate = true) {
+    if (!_lvScene || !_lvHistory.length) return;
+
+    const workLocations = new Map(); // workId → locationId (at station)
+    const workTransit  = new Map();  // workId → fromLocationId (departed, not yet arrived)
+
+    for (const ev of _lvHistory) {
+        if (new Date(ev.event_time).getTime() > ms) break;
+        if (ev.movement_type === 'arrived') {
+            workLocations.set(ev.item_id, ev.to_location_id);
+            workTransit.delete(ev.item_id);
+        } else if (ev.movement_type === 'departed') {
+            workLocations.delete(ev.item_id);
+            workTransit.set(ev.item_id, ev.from_location_id);
+        }
+    }
+
+    // Remove works no longer in this machine
+    _lvActiveWorks.forEach((_, workId) => {
+        if (!workLocations.has(workId) && !workTransit.has(workId)) {
+            _lvScene.removeWork(workId);
+            _lvActiveWorks.delete(workId);
+        }
+    });
+
+    // In-transit: show at departure station without animation (only if departure is in this machine)
+    workTransit.forEach((fromLocId, workId) => {
+        const stationId = _lvLocationMap.get(Number(fromLocId));
+        if (!stationId || !_lvScene.hasRenderableStation(stationId)) {
+            // Work departed from outside this machine (heading here but not arrived yet) — remove ghost
+            _lvScene.removeWork(workId);
+            _lvActiveWorks.delete(workId);
+            return;
+        }
+        const prev = _lvActiveWorks.get(workId);
+        if (prev !== stationId) {
+            _lvActiveWorks.set(workId, stationId);
+            _lvScene.setWorkPosition(workId, stationId, false);
+        }
+    });
+
+    // Arrived: animate to destination
+    workLocations.forEach((locId, workId) => {
+        const stationId = _lvLocationMap.get(Number(locId));
+        if (!stationId || !_lvScene.hasRenderableStation(stationId)) {
+            _lvScene.removeWork(workId);
+            _lvActiveWorks.delete(workId);
+            return;
+        }
+        const prev = _lvActiveWorks.get(workId);
+        if (prev !== stationId) {
+            _lvActiveWorks.set(workId, stationId);
+            _lvScene.setWorkPosition(workId, stationId, animate);
+        }
+    });
+
+    _lvRenderObjectList();
+}
+
+function _lvStartSyncLoop() {
+    _lvStopSyncLoop(); // Cancel any existing loop before starting
+    _lvSyncActive = true;
+    _lvSyncFrameId = setInterval(() => _lvSyncTick(), 50);
+}
+
+function _lvStopSyncLoop() {
+    _lvSyncActive = false;
+    if (_lvSyncFrameId) { clearInterval(_lvSyncFrameId); _lvSyncFrameId = null; }
+}
+
+function _lvSyncTick() {
+    if (!_lvSyncActive) { clearInterval(_lvSyncFrameId); _lvSyncFrameId = null; return; }
+
+    const syncBar = document.getElementById('lv-sync-bar');
+    const openerState    = _lvGetOpenerState();
+    const openerTimeline = _lvGetOpenerTimeline();
+
+    if (openerState) {
+        // Detect history change (new execution loaded in global)
+        const newLen = openerState.historyEvents?.length || 0;
+        if (newLen !== _lvLastHistoryLen) {
+            _lvRefreshHistory();
+            _lvScene?.clearWorks();
+            _lvActiveWorks.clear();
+            _lvLastSyncTime = null;
+        }
+
+        const currentMs = openerTimeline?.getCurrentTime?.();
+        if (currentMs !== null && currentMs !== undefined && !isNaN(currentMs)) {
+            if (currentMs !== _lvLastSyncTime) {
+                _lvLastSyncTime = currentMs;
+                _lvApplyHistoryAtTime(currentMs, true);
+            }
+            if (syncBar) {
+                const isPlaying = openerTimeline?.isPlaying;
+                const d = new Date(currentMs);
+                const timeStr = d.toLocaleString('ja-JP', {
+                    month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                });
+                syncBar.textContent = `${isPlaying ? '▶ 再生中' : '⏸ 停止'} | ${timeStr}`;
+                syncBar.style.color = isPlaying ? '#4caf50' : 'var(--text-muted)';
+            }
+        } else {
+            if (syncBar) {
+                syncBar.textContent = 'データなし（グローバルビューで実行を選択してください）';
+                syncBar.style.color = 'var(--text-muted)';
+            }
+        }
+    } else {
+        if (syncBar) {
+            syncBar.textContent = 'グローバルビューと未接続';
+            syncBar.style.color = 'var(--text-muted)';
+        }
+    }
+
+}
+
+function _lvRenderObjectList() {
+    const listEl = document.getElementById('lv-object-list');
+    if (!listEl) return;
+
+    const items = [];
+
+    if (_lvActiveFilters.has('station')) {
+        childStations.forEach(s => {
+            const color = LV_STATION_COLORS_CSS[s.stationType] || '#666';
+            const label = (s.name && s.name !== s.stationId) ? `${s.name}` : s.stationId;
+            items.push(
+                `<div class="lv-obj-item">` +
+                `<span class="lv-obj-dot" style="background:${color}"></span>` +
+                `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>` +
+                `</div>`
+            );
+        });
+    }
+
+    if (_lvActiveFilters.has('work')) {
+        _lvActiveWorks.forEach((stationId, workId) => {
+            items.push(
+                `<div class="lv-obj-item">` +
+                `<span class="lv-obj-dot-sq" style="background:#4a9eff"></span>` +
+                `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${workId}</span>` +
+                `</div>`
+            );
+        });
+    }
+
+    listEl.innerHTML = items.length
+        ? items.join('')
+        : '<div style="font-size:10px;color:var(--text-muted);padding:4px 0;">なし</div>';
+}
+
+// ============================================================
+// ---- LocalViewScene — self-contained Three.js scene ----
+// ============================================================
+
+class LocalViewScene {
+    constructor(container) {
+        this.container = container;
+        this._stations = new Map();      // stationId → { group, station }
+        this._works = new Map();         // workId → { mesh, stationId, _anim }
+        this._connectionLines = [];
+        this._theme = 'dark-navy';
+        this._shellOpacity = 0.6;
+        this._showStationNames = true;
+        this._showWorks = true;
+        this._showInterlocks = false;
+        this._stationLabelY = 0.8;
+        this._workY = 0.5;
+        this._stationRadius = 0.25;
+        this._animActive = true;
+        this._gridHelper = null;
+
+        this._initScene();
+        this._animate();
+    }
+
+    _initScene() {
+        const w = this.container.clientWidth  || 800;
+        const h = this.container.clientHeight || 500;
+
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(50, w / (h || 1), 0.1, 200);
+        this.camera.position.set(0, 15, 20);
+        this.camera.lookAt(0, 0, 0);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(w, h);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.container.appendChild(this.renderer.domElement);
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+        this.scene.add(ambient);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        this.scene.add(dirLight);
+
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.minDistance = 1;
+        this.controls.maxDistance = 100;
+        this.controls.maxPolarAngle = Math.PI / 2 - 0.02;
+        this.controls.mouseButtons = {
+            LEFT: THREE.MOUSE.PAN,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.ROTATE,
+        };
+
+        this._applyThemeColors();
+
+        this._resizeObs = new ResizeObserver(() => this._onResize());
+        this._resizeObs.observe(this.container);
+    }
+
+    // ---- Theme ----
+
+    _themeConfig(name) {
+        const THEMES = {
+            'dark-navy': { bg: 0x0d1520, gridMain: 0x2b5278, gridSub: 0x162a3e },
+            'dark':      { bg: 0x0f1629, gridMain: 0x3a6098, gridSub: 0x1e3354 },
+            'light':     { bg: 0xf0f4f8, gridMain: 0x9aacbf, gridSub: 0xc5d0dc },
+        };
+        let t = name;
+        if (t === 'auto') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        return THEMES[t] || THEMES['dark-navy'];
+    }
+
+    _applyThemeColors() {
+        const t = this._themeConfig(this._theme);
+        this.renderer.setClearColor(t.bg);
+        this.scene.fog = new THREE.Fog(t.bg, 40, 120);
+        if (this._gridHelper) this.scene.remove(this._gridHelper);
+        this._gridHelper = new THREE.GridHelper(200, 200, t.gridMain, t.gridSub);
+        this.scene.add(this._gridHelper);
+    }
+
+    applyTheme(theme) {
+        this._theme = theme;
+        this._applyThemeColors();
+        const stations = [...this._stations.values()].map(s => s.station);
+        if (stations.length) this.loadStations(stations, this._lastConnections || []);
+    }
+
+    // ---- Stations ----
+
+    loadStations(stations, connections) {
+        this._lastConnections = connections || [];
+        this._stations.forEach(({ group }) => this.scene.remove(group));
+        this._stations.clear();
+        this._connectionLines.forEach(l => this.scene.remove(l));
+        this._connectionLines = [];
+
+        const placed = stations.filter(s => s.positionX !== null && s.positionY !== null);
+        for (const st of placed) this._addStation(st);
+        for (const conn of this._lastConnections) this._addConnectionLine(conn, placed);
+
+        this._fitCamera(placed);
+    }
+
+    _addStation(station) {
+        const px = station.positionX || 0;
+        const pz = station.positionY || 0;
+        const color = LV_STATION_COLORS_HEX[station.stationType] || 0x666666;
+        const R = this._stationRadius;
+        const H = 0.2;
+
+        const group = new THREE.Group();
+        group.userData.stationId = station.stationId;
+
+        const geo  = new THREE.CylinderGeometry(R, R, H, 16);
+        const mat  = new THREE.MeshStandardMaterial({
+            color, emissive: color, emissiveIntensity: 0.4, roughness: 0.3, metalness: 0.35,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.y = H / 2;
+        mesh.castShadow = true;
+        group.add(mesh);
+
+        const edgeColor = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55).getHex();
+        const edgeGeo = new THREE.EdgesGeometry(geo, 30);
+        const edgeMat = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.9 });
+        const edges   = new THREE.LineSegments(edgeGeo, edgeMat);
+        edges.position.copy(mesh.position);
+        group.add(edges);
+
+        if (this._showStationNames) {
+            const label = this._createLabel(station.name || station.stationId, 0, this._stationLabelY, 0);
+            group.add(label);
+            group.userData.labelMesh = label;
+        }
+
+        group.position.set(px, 0, pz);
+        this.scene.add(group);
+        this._stations.set(station.stationId, { group, station });
+    }
+
+    _addConnectionLine(conn, stations) {
+        const fromSt = stations.find(s => s.stationId === conn.fromStation);
+        const toSt   = stations.find(s => s.stationId === conn.toStation);
+        if (!fromSt || !toSt) return;
+        const pts = [
+            new THREE.Vector3(fromSt.positionX || 0, 0.15, fromSt.positionY || 0),
+            new THREE.Vector3(toSt.positionX   || 0, 0.15, toSt.positionY   || 0),
+        ];
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({ color: 0x3a6eb0, transparent: true, opacity: 0.8 });
+        const line = new THREE.Line(geo, mat);
+        this.scene.add(line);
+        this._connectionLines.push(line);
+    }
+
+    _createLabel(text, x, y, z) {
+        const canvas = document.createElement('canvas');
+        canvas.width  = 256;
+        canvas.height = 48;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, 256, 48);
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const display = text.length > 18 ? text.substring(0, 16) + '…' : text;
+        ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+        ctx.lineWidth = 4;
+        ctx.strokeText(display, 128, 24);
+        ctx.fillStyle = '#e8edf5';
+        ctx.fillText(display, 128, 24);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(4, 0.75, 1);
+        sprite.position.set(x, y, z);
+        return sprite;
+    }
+
+    // ---- Works ----
+
+    hasRenderableStation(stationId) {
+        return this._stations.has(stationId);
+    }
+
+    _workColor(workId) {
+        const PRESET = {
+            'finished-part': 0x4caf50, 'raw-part': 0x11ccaa,
+            typeA: 0xff3355, typeB: 0x3355ff, typeC: 0xcc33ff,
+        };
+        if (PRESET[workId]) return PRESET[workId];
+        let h = 0;
+        for (let i = 0; i < workId.length; i++) h = (h * 127 + workId.charCodeAt(i)) >>> 0;
+        return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.62).getHex();
+    }
+
+    setWorkPosition(workId, stationId, animate = true) {
+        if (!this._showWorks) return;
+
+        const stEntry = this._stations.get(stationId);
+        if (!stEntry) return;
+
+        const px = stEntry.station.positionX || 0;
+        const pz = stEntry.station.positionY || 0;
+        const py = this._workY;
+
+        let entry = this._works.get(workId);
+        if (!entry) {
+            const SZ    = 0.3;
+            const color = this._workColor(workId);
+            const geo   = new THREE.BoxGeometry(SZ, SZ, SZ);
+            const mat   = new THREE.MeshStandardMaterial({
+                color, emissive: color, emissiveIntensity: 0.5, roughness: 0.2, metalness: 0.6,
+            });
+            const fill  = new THREE.Mesh(geo, mat);
+            const eGeo  = new THREE.EdgesGeometry(geo);
+            const eMat  = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+            const edges = new THREE.LineSegments(eGeo, eMat);
+
+            const group = new THREE.Group();
+            group.add(fill);
+            group.add(edges);
+            group.userData.workId = workId;
+            group.position.set(px, py, pz);
+            this.scene.add(group);
+
+            entry = { mesh: group, stationId, _anim: null };
+            this._works.set(workId, entry);
+            return;
+        }
+
+        if (entry.stationId === stationId && !entry._anim) return;
+        entry.stationId = stationId;
+
+        if (!animate) {
+            entry._anim = null;
+            entry.mesh.position.set(px, py, pz);
+            return;
+        }
+
+        const from  = entry.mesh.position.clone();
+        const to    = new THREE.Vector3(px, py, pz);
+        const hDist = Math.sqrt((to.x - from.x) ** 2 + (to.z - from.z) ** 2);
+        if (hDist < 0.01) {
+            entry._anim = null;
+            entry.mesh.position.set(px, py, pz);
+            return;
+        }
+        entry._anim = {
+            from, to,
+            arcH: Math.max(0.3, Math.min(2, hDist * 0.35)),
+            startTime: Date.now(),
+            duration: 350,
+        };
+    }
+
+    removeWork(workId) {
+        const entry = this._works.get(workId);
+        if (!entry) return;
+        this.scene.remove(entry.mesh);
+        entry.mesh.traverse(obj => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) {
+                if (obj.material.map) obj.material.map.dispose();
+                obj.material.dispose();
+            }
+        });
+        this._works.delete(workId);
+    }
+
+    clearWorks() {
+        this._works.forEach((_, workId) => this.removeWork(workId));
+        this._works.clear();
+    }
+
+    // ---- Settings ----
+
+    setShellOpacity(v) {
+        this._shellOpacity = v;
+        this._stations.forEach(({ group }) => {
+            group.traverse(obj => {
+                if (obj.isMesh && obj.material) {
+                    obj.material.opacity = v;
+                    obj.material.transparent = v < 1;
+                    obj.material.needsUpdate = true;
+                }
+            });
+        });
+    }
+
+    setStationRadius(r) {
+        this._stationRadius = r;
+        const stations = [...this._stations.values()].map(s => s.station);
+        this.loadStations(stations, this._lastConnections || []);
+    }
+
+    setShowStationNames(v) {
+        this._showStationNames = v;
+        this._stations.forEach(({ group }) => {
+            const label = group.userData.labelMesh;
+            if (label) label.visible = v;
+        });
+    }
+
+    setShowWorks(v) {
+        this._showWorks = v;
+        this._works.forEach(({ mesh }) => { mesh.visible = v; });
+    }
+
+    setShowInterlocks(v) {
+        this._showInterlocks = v;
+        // Future: show interlock signal indicators on stations
+    }
+
+    setStationLabelY(v) {
+        this._stationLabelY = v;
+        this._stations.forEach(({ group }) => {
+            const label = group.userData.labelMesh;
+            if (label) label.position.y = v;
+        });
+    }
+
+    setWorkY(v) {
+        this._workY = v;
+        this._works.forEach(entry => {
+            if (!entry._anim) entry.mesh.position.y = v;
+        });
+    }
+
+    // ---- Camera ----
+
+    _fitCamera(stations) {
+        if (!stations || stations.length === 0) {
+            this.camera.position.set(0, 15, 20);
+            this.controls.target.set(0, 0, 0);
+            this.controls.update();
+            return;
+        }
+
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        stations.forEach(s => {
+            const x = s.positionX || 0, z = s.positionY || 0;
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+        });
+
+        const cx   = (minX + maxX) / 2;
+        const cz   = (minZ + maxZ) / 2;
+        const range = Math.max(maxX - minX, maxZ - minZ, 4);
+        const dist  = range * 0.8 + 6;
+
+        this.camera.position.set(cx, dist * 0.65, cz + dist);
+        this.camera.lookAt(cx, 0, cz);
+        this.controls.target.set(cx, 0, cz);
+        this.controls.maxDistance = dist * 5;
+        this.controls.update();
+    }
+
+    fitView() {
+        const placed = [...this._stations.values()].map(s => s.station);
+        this._fitCamera(placed);
+    }
+
+    // ---- Resize ----
+
+    _onResize() {
+        const w = this.container.clientWidth;
+        const h = this.container.clientHeight;
+        if (w === 0 || h === 0) return;
+        this.camera.aspect = w / h;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(w, h);
+    }
+
+    // ---- Animation loop ----
+
+    _animate() {
+        if (!this._animActive) return;
+        this._animFrameId = requestAnimationFrame(() => this._animate());
+        this.controls.update();
+
+        // Arc animation update
+        const now = Date.now();
+        this._works.forEach(entry => {
+            if (!entry._anim) return;
+            const { from, to, arcH, startTime, duration } = entry._anim;
+            const t = Math.min(1, (now - startTime) / duration);
+            const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            const x = from.x + (to.x - from.x) * ease;
+            const z = from.z + (to.z - from.z) * ease;
+            const y = from.y + (to.y - from.y) * ease + arcH * Math.sin(Math.PI * t);
+            entry.mesh.position.set(x, y, z);
+            if (t >= 1) entry._anim = null;
+        });
+
+        // Camera-following grid
+        if (this._gridHelper) {
+            this._gridHelper.position.x = Math.round(this.camera.position.x / 5) * 5;
+            this._gridHelper.position.z = Math.round(this.camera.position.z / 5) * 5;
+        }
+
+        this.renderer.render(this.scene, this.camera);
+    }
+
+    // ---- Pause / Resume ----
+
+    pause() {
+        this._animActive = false;
+    }
+
+    resume() {
+        if (this._animActive) return;
+        this._animActive = true;
+        this._animate();
+    }
+
+    // ---- Dispose ----
+
+    dispose() {
+        this._animActive = false;
+        if (this._animFrameId) cancelAnimationFrame(this._animFrameId);
+        this._resizeObs?.disconnect();
+        this.clearWorks();
+        this._stations.forEach(({ group }) => {
+            group.traverse(obj => {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (obj.material.map) obj.material.map.dispose();
+                    obj.material.dispose();
+                }
+            });
+        });
+        this._connectionLines.forEach(l => {
+            l.geometry?.dispose();
+            l.material?.dispose();
+        });
+        this.renderer.dispose();
+        this.renderer.domElement.parentElement?.removeChild(this.renderer.domElement);
     }
 }
