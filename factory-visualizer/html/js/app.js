@@ -447,6 +447,9 @@ async function selectFactory(factoryId) {
 // ---- 3-zone realtime data loading ----
 
 async function loadRealtimeData(factoryId) {
+    // Guard: abort if the factory changed while we were loading
+    if (state.currentFactory !== factoryId) return;
+
     // Try to start poller (only if factory has external DB configured)
     try {
         const factory = state.currentFactoryData?.id === factoryId ? state.currentFactoryData : (state.factories.find(f => f.id === factoryId) || {});
@@ -461,6 +464,7 @@ async function loadRealtimeData(factoryId) {
     // Prefer active (ended_at == null), then most recent
     const ds = dsArr.find(d => !d.endedAt) || dsArr[0];
     if (!ds) return;
+    if (state.currentFactory !== factoryId) return;
 
     state.realtimeDataSourceId = ds.id;
 
@@ -498,6 +502,7 @@ async function loadRealtimeData(factoryId) {
 }
 
 async function loadSimulationResults(factoryId) {
+    if (state.currentFactory !== factoryId) return;
     const dss = await API.fetchFactoryDataSources(factoryId, 'simulation');
     const dsArr = Array.isArray(dss) ? dss : [];
 
