@@ -13,7 +13,7 @@ const state = {
     currentFactoryData: null,
     stations: [],
     connections: [],
-    locationMap: new Map(),     // locationId → stationId
+    locationMap: new Map(),     // locationId → stationId (active map for rendering)
     stationByLocation: new Map(), // stationId → locationId
     execution: null,
     initialConditions: {},
@@ -23,7 +23,15 @@ const state = {
     ws: null,
     wsRetryTimer: null,
     wsRetryDelay: 1000,
-    historyEvents: [],          // sorted item_movement events for timeline replay
+    historyEvents: [],          // legacy — kept for compat
+
+    // 3-zone timeline state
+    realtimeDataSourceId: null,
+    realtimeHistoryEvents: [],       // sorted item_movement for left zone
+    realtimeLocationMap: new Map(),  // locationId → stationId for realtime DS
+    simDataSourceId: null,
+    simHistoryEvents: [],            // sorted item_movement for right zone
+    simLocationMap: new Map(),       // locationId → stationId for sim DS
 };
 
 let scene3d = null;
@@ -115,10 +123,26 @@ function initScene() {
 }
 
 function applyHistoryAtTime(ms, animate = true) {
-    if (!scene3d || !state.historyEvents.length) return;
+    if (!scene3d) return;
+
+    // Pick the right events + locationMap based on zone
+    const isRealtime = ms <= Date.now();
+    const events   = isRealtime ? state.realtimeHistoryEvents : state.simHistoryEvents;
+    const locMap   = isRealtime ? state.realtimeLocationMap   : state.simLocationMap;
+
+    // Sync the active locationMap so handleWsEvent / renderObjectList are consistent
+    state.locationMap = locMap;
+
+    if (!events.length) {
+        scene3d.clearWorks();
+        state.activeWorks.clear();
+        renderObjectList(state.stations, state.activeWorks, state.activeFilters);
+        return;
+    }
+
     const workLocations = new Map(); // workId → locationId (at station)
     const workTransit = new Map();   // workId → fromLocationId (departed but not yet arrived)
-    for (const ev of state.historyEvents) {
+    for (const ev of events) {
         if (new Date(ev.event_time).getTime() > ms) break;
         if (ev.movement_type === 'arrived') {
             workLocations.set(ev.item_id, ev.to_location_id);
@@ -137,13 +161,8 @@ function applyHistoryAtTime(ms, animate = true) {
         }
     });
 
-    // Keep in-transit works visible at their departure station (no arc)
-    // so that when they arrive the arc fires from the departure position.
-    // Skip unrenderable stations (e.g. unpositioned source/drain) so that
-    // activeWorks isn't polluted with a phantom station that would suppress
-    // the arc animation when the work later arrives at a real machine.
     workTransit.forEach((fromLocationId, workId) => {
-        const stationId = state.locationMap.get(Number(fromLocationId));
+        const stationId = locMap.get(Number(fromLocationId));
         if (!stationId) return;
         if (!scene3d.hasRenderableStation(stationId)) return;
         const prevStation = state.activeWorks.get(workId);
@@ -153,12 +172,10 @@ function applyHistoryAtTime(ms, animate = true) {
         }
     });
 
-    // Add or move works that changed station (arc animation on arrival)
     workLocations.forEach((locationId, workId) => {
-        const stationId = state.locationMap.get(Number(locationId));
+        const stationId = locMap.get(Number(locationId));
         if (!stationId) return;
         if (!scene3d.hasRenderableStation(stationId)) {
-            // Work arrived at unrenderable station (e.g. unpositioned drain) — clean up.
             scene3d.removeWork(workId);
             state.activeWorks.delete(workId);
             return;
@@ -185,6 +202,10 @@ function initTimeline() {
             document.getElementById('tl-play').textContent = playing ? '⏸' : '▶';
         },
     });
+
+    // Initialise with current time and refresh the NOW marker every 30 s
+    timeline.setNow(Date.now());
+    setInterval(() => timeline.setNow(Date.now()), 30_000);
 
     document.getElementById('tl-play').addEventListener('click', () => timeline.togglePlay());
     document.getElementById('tl-rewind').addEventListener('click', () => timeline.seekToStart());
@@ -264,60 +285,22 @@ function initUI() {
 
     setExecutionListClickHandler(async (execId, dsId) => {
         if (!dsId) return;
-        state.liveDataSourceId = dsId;
-        // await ensures locationMap is populated before replaying events
-        await subscribeWebSocket(dsId);
-        setStatus('実行履歴を再生中', 'status-running');
-        document.getElementById('btn-stop-sim').disabled = false;
-        const vizBtn = document.getElementById('btn-open-visualizer');
-        if (vizBtn) vizBtn.disabled = false;
-
-        // タイムラインを選択した実行の情報で更新
+        setStatus('シミュレーション結果を読み込み中...', 'status-running');
         try {
-            const exec = await API.fetchExecution(execId);
-            timeline.setExecution({
-                ...exec,
-                startDatetime: exec.startTime,
-                simulationTime: exec.simulationTime || 86400,
-            });
-        } catch (e) {
-            console.warn('[execHistory] failed to fetch execution for timeline', e);
-        }
-
-        // Replay historical events so the 3D view shows the simulation final state
-        try {
-            const events = await API.fetchDataSourceEvents(
-                dsId,
-                new Date(0).toISOString(),
-                new Date('2100-01-01').toISOString()
-            );
-            if (Array.isArray(events)) {
-                // Store sorted item_movement events for timeline-driven replay
-                state.historyEvents = events
-                    .filter(ev => ev.table === 'item_movement')
-                    .sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
-
-                // Recalibrate timeline to actual event timestamps (exec.startTime is server
-                // creation time and may differ from the simulation's startDatetime base).
-                if (state.historyEvents.length > 0) {
-                    const firstMs = new Date(state.historyEvents[0].event_time).getTime();
-                    const lastMs = new Date(state.historyEvents[state.historyEvents.length - 1].event_time).getTime();
-                    timeline.setExecution({
-                        startDatetime: new Date(firstMs).toISOString(),
-                        simulationTime: Math.max(Math.ceil((lastMs - firstMs) / 1000), 60),
-                    });
-                }
-
-                if (scene3d) scene3d.clearWorks();
-                state.activeWorks.clear();
-                for (const ev of events) {
-                    handleWsEvent(ev);
-                }
+            await loadSimulationIntoRightZone(dsId);
+            timeline.selectSimulation(dsId);
+            document.getElementById('btn-stop-sim').disabled = false;
+            const vizBtn = document.getElementById('btn-open-visualizer');
+            if (vizBtn) vizBtn.disabled = false;
+            setStatus('シミュレーション結果を表示中', 'status-ok');
+            if (state.simHistoryEvents.length > 0) {
+                const firstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
+                timeline.setCurrentTime(firstMs + 1, true);
             }
         } catch (e) {
-            console.warn('[execHistory] failed to replay historical events', e);
+            console.warn('[execHistory] failed to load simulation', e);
+            setStatus('読み込み失敗: ' + e.message, 'status-error');
         }
-        timeline.seekToEnd();
     });
 
     // Factory selector
@@ -368,6 +351,11 @@ function initUI() {
 
     // Simulation panel
     document.getElementById('btn-fetch-ic').addEventListener('click', () => fetchInitialConditions());
+    document.getElementById('btn-run-now').addEventListener('click', () => {
+        const fid = state.currentFactory;
+        if (!fid) { setStatus('工場を選択してください', 'status-warn'); return; }
+        runSimulation();
+    });
 
     // Run modal
     document.getElementById('run-modal-close').addEventListener('click', () => {
@@ -427,9 +415,169 @@ async function selectFactory(factoryId) {
         now.setSeconds(0, 0);
         const local = toLocalIsoString(now);
         document.getElementById('sim-start').value = local;
+
+        // Reset 3-zone state and refresh timeline
+        state.realtimeDataSourceId = null;
+        state.realtimeHistoryEvents = [];
+        state.realtimeLocationMap = new Map();
+        state.simDataSourceId = null;
+        state.simHistoryEvents = [];
+        state.simLocationMap = new Map();
+        timeline.setNow(Date.now());
+        timeline.setRealtimeData([]);
+        timeline.clearSimulationData();
+
+        // Load realtime data in background (non-blocking)
+        loadRealtimeData(factoryId).catch(e => console.warn('[realtime] load error', e));
+
+        // Load existing simulation results into right zone
+        loadSimulationResults(factoryId).catch(e => console.warn('[sim] load error', e));
     } catch (err) {
         setStatus('読み込み失敗: ' + err.message, 'status-error');
     }
+}
+
+// ---- 3-zone realtime data loading ----
+
+async function loadRealtimeData(factoryId) {
+    // Try to start poller (only if factory has external DB configured)
+    try {
+        const factory = state.factories.find(f => f.id === factoryId) || state.currentFactoryData || {};
+        if (factory.factoryDbHost) {
+            await API.startPoller(factoryId).catch(() => {});
+        }
+    } catch (e) { /* ignore */ }
+
+    // Find latest realtime data source for this factory
+    const dss = await API.fetchFactoryDataSources(factoryId, 'realtime');
+    const dsArr = Array.isArray(dss) ? dss : [];
+    // Prefer active (ended_at == null), then most recent
+    const ds = dsArr.find(d => !d.endedAt) || dsArr[0];
+    if (!ds) return;
+
+    state.realtimeDataSourceId = ds.id;
+
+    // Load layout for this data source
+    try {
+        const layout = await API.fetchDataSourceLayout(ds.id);
+        const locs = layout.locations || [];
+        const locMap = new Map();
+        locs.forEach(loc => locMap.set(Number(loc.id), loc.name));
+        state.realtimeLocationMap = locMap;
+    } catch (e) {
+        console.warn('[realtime] layout load failed', e);
+    }
+
+    // Load past 24h of events
+    const from = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const to   = new Date(Date.now()).toISOString();
+    try {
+        const events = await API.fetchDataSourceEvents(ds.id, from, to);
+        const evArr = Array.isArray(events) ? events : [];
+        state.realtimeHistoryEvents = evArr
+            .filter(ev => ev.table === 'item_movement' || ev.movement_type)
+            .sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
+
+        const evtMs = state.realtimeHistoryEvents.map(ev => new Date(ev.event_time).getTime());
+        timeline.setRealtimeData(evtMs);
+    } catch (e) {
+        console.warn('[realtime] events load failed', e);
+    }
+
+    // Subscribe WebSocket for live updates on realtime DS
+    state.liveDataSourceId = ds.id;
+    subscribeRealtimeWebSocket(ds.id);
+    setStatus(`リアルタイム監視中: ${factoryName(factoryId)}`, 'status-running');
+}
+
+async function loadSimulationResults(factoryId) {
+    const dss = await API.fetchFactoryDataSources(factoryId, 'simulation');
+    const dsArr = Array.isArray(dss) ? dss : [];
+
+    // Load the most recent completed simulation into the right zone
+    if (dsArr.length === 0) return;
+    const latest = dsArr[0];
+    await loadSimulationIntoRightZone(latest.id);
+
+    // Render execution list
+    try {
+        const execs = await API.fetchFactoryExecutions(factoryId);
+        renderExecutionList(Array.isArray(execs) ? execs : []);
+    } catch (e) { /* ignore */ }
+}
+
+async function loadSimulationIntoRightZone(dataSourceId) {
+    try {
+        const layout = await API.fetchDataSourceLayout(dataSourceId);
+        const locs = layout.locations || [];
+        const locMap = new Map();
+        locs.forEach(loc => locMap.set(Number(loc.id), loc.name));
+        state.simLocationMap = locMap;
+    } catch (e) {
+        console.warn('[sim] layout load failed', e);
+    }
+
+    try {
+        const events = await API.fetchDataSourceEvents(
+            dataSourceId,
+            new Date(0).toISOString(),
+            new Date('2100-01-01').toISOString()
+        );
+        const evArr = Array.isArray(events) ? events : [];
+        state.simHistoryEvents = evArr
+            .filter(ev => ev.table === 'item_movement' || ev.movement_type)
+            .sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
+        state.simDataSourceId = dataSourceId;
+
+        if (state.simHistoryEvents.length > 0) {
+            const firstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
+            const lastMs  = new Date(state.simHistoryEvents[state.simHistoryEvents.length - 1].event_time).getTime();
+            const evtMs = state.simHistoryEvents.map(ev => new Date(ev.event_time).getTime());
+            timeline.setSimulationData(dataSourceId, firstMs, lastMs, evtMs);
+        }
+    } catch (e) {
+        console.warn('[sim] events load failed', e);
+    }
+}
+
+// Subscribe WebSocket for realtime (live) data — does NOT clear works on reconnect
+function subscribeRealtimeWebSocket(dataSourceId) {
+    disconnectWebSocket();
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/ws/live`;
+    const ws = new WebSocket(url);
+    state.ws = ws;
+    ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'subscribe', data_source_id: dataSourceId }));
+        state.wsRetryDelay = 1000;
+    };
+    ws.onmessage = ev => {
+        try {
+            const msg = JSON.parse(ev.data);
+            if (msg.type !== 'event') return;
+            const event = msg.data;
+            if (event.table !== 'item_movement') return;
+            // Append to realtimeHistoryEvents
+            state.realtimeHistoryEvents.push(event);
+            // Update timeline dots
+            const evtMs = state.realtimeHistoryEvents.map(e => new Date(e.event_time).getTime());
+            timeline.setRealtimeData(evtMs);
+            // If currently viewing realtime zone, update 3D
+            const curMs = timeline.getCurrentTime();
+            if (curMs !== null && curMs <= Date.now()) {
+                state.locationMap = state.realtimeLocationMap;
+                handleWsEvent(event);
+            }
+        } catch (e) { console.warn('[ws] parse error', e); }
+    };
+    ws.onclose = () => {
+        if (state.liveDataSourceId === dataSourceId) {
+            state.wsRetryTimer = setTimeout(() => {
+                state.wsRetryDelay = Math.min(state.wsRetryDelay * 2, 30000);
+                subscribeRealtimeWebSocket(dataSourceId);
+            }, state.wsRetryDelay);
+        }
+    };
 }
 
 function buildLocationMap() {
@@ -540,52 +688,14 @@ async function pollExecution(execId, dataSourceId) {
 
 async function loadExecutionResult(execId, dataSourceId, startDatetime, simulationTime) {
     try {
-        const exec = await API.fetchExecution(execId);
-        timeline.setExecution({
-            ...exec,
-            startDatetime,
-            simulationTime,
-        });
+        await loadSimulationIntoRightZone(dataSourceId);
+        timeline.selectSimulation(dataSourceId);
 
-        state.liveDataSourceId = dataSourceId;
-        // subscribeWebSocket also loads the layout (locationMap) before connecting WS
-        await subscribeWebSocket(dataSourceId);
-
-        // Replay historical events so the 3D view shows the final simulation state.
-        // Simulation is already complete, so no live WS events will arrive — we must
-        // load the full history from the events API.
-        try {
-            const events = await API.fetchDataSourceEvents(
-                dataSourceId,
-                new Date(0).toISOString(),
-                new Date('2100-01-01').toISOString()
-            );
-            if (Array.isArray(events)) {
-                state.historyEvents = events
-                    .filter(ev => ev.table === 'item_movement')
-                    .sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
-
-                // Recalibrate timeline to actual event timestamps in case the passed
-                // startDatetime differs from the simulation base time in the DB.
-                if (state.historyEvents.length > 0) {
-                    const firstMs = new Date(state.historyEvents[0].event_time).getTime();
-                    const lastMs = new Date(state.historyEvents[state.historyEvents.length - 1].event_time).getTime();
-                    timeline.setExecution({
-                        startDatetime: new Date(firstMs).toISOString(),
-                        simulationTime: Math.max(Math.ceil((lastMs - firstMs) / 1000), 60),
-                    });
-                }
-
-                for (const ev of events) {
-                    handleWsEvent(ev);
-                }
-            }
-        } catch (e) {
-            console.warn('[loadExecutionResult] failed to load historical events:', e);
+        // Seek to right zone start so the user sees the simulation
+        if (state.simHistoryEvents.length > 0) {
+            const firstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
+            timeline.setCurrentTime(firstMs + 1, true);
         }
-
-        // Advance timeline to end so the 3D view matches the replayed final state.
-        timeline.seekToEnd();
 
         const vizBtn = document.getElementById('btn-open-visualizer');
         if (vizBtn && dataSourceId) vizBtn.disabled = false;

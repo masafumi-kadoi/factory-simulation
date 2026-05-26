@@ -399,6 +399,32 @@ type DataSource struct {
 	CreatedAt    time.Time       `json:"createdAt"`
 }
 
+func (r *Repository) ListDataSourcesByFactory(factoryID, sourceType string) ([]DataSource, error) {
+	query := `SELECT id, source_type, scenario_id, factory_id, label, friendly_name, started_at, ended_at, config, created_at
+	           FROM data_sources WHERE factory_id = $1`
+	args := []interface{}{factoryID}
+	if sourceType != "" {
+		query += " AND source_type = $2"
+		args = append(args, sourceType)
+	}
+	query += " ORDER BY started_at DESC"
+	rows, err := r.db.Conn().Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]DataSource, 0)
+	for rows.Next() {
+		var d DataSource
+		if err := rows.Scan(&d.ID, &d.SourceType, &d.ScenarioID, &d.FactoryID, &d.Label,
+			&d.FriendlyName, &d.StartedAt, &d.EndedAt, &d.Config, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, d)
+	}
+	return result, rows.Err()
+}
+
 func (r *Repository) ListDataSources() ([]DataSource, error) {
 	rows, err := r.db.Conn().Query(
 		`SELECT id, source_type, scenario_id, factory_id, label, friendly_name, started_at, ended_at, config, created_at
@@ -428,6 +454,17 @@ func (r *Repository) CreateDataSource(sourceType, scenarioID, friendlyName strin
 		`INSERT INTO data_sources (source_type, scenario_id, friendly_name, config)
 		 VALUES ($1,$2,$3,$4) RETURNING id, source_type, scenario_id, factory_id, label, friendly_name, started_at, ended_at, config, created_at`,
 		sourceType, nullStr(scenarioID), nullStr(friendlyName), cfg,
+	).Scan(&d.ID, &d.SourceType, &d.ScenarioID, &d.FactoryID, &d.Label,
+		&d.FriendlyName, &d.StartedAt, &d.EndedAt, &d.Config, &d.CreatedAt)
+	return &d, err
+}
+
+func (r *Repository) CreateSimulationDataSourceForFactory(factoryID, friendlyName string) (*DataSource, error) {
+	var d DataSource
+	err := r.db.Conn().QueryRow(
+		`INSERT INTO data_sources (source_type, factory_id, friendly_name, config)
+		 VALUES ('simulation',$1,$2,'{}') RETURNING id, source_type, scenario_id, factory_id, label, friendly_name, started_at, ended_at, config, created_at`,
+		factoryID, nullStr(friendlyName),
 	).Scan(&d.ID, &d.SourceType, &d.ScenarioID, &d.FactoryID, &d.Label,
 		&d.FriendlyName, &d.StartedAt, &d.EndedAt, &d.Config, &d.CreatedAt)
 	return &d, err

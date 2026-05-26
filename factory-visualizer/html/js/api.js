@@ -115,6 +115,28 @@ export async function fetchDataSourceEvents(dataSourceId, fromTime, toTime) {
     return req('GET', qs ? `${path}?${qs}` : path);
 }
 
+// ---- Factory data sources ----
+
+export async function fetchFactoryDataSources(factoryId, type) {
+    let path = `/factories/${encodeURIComponent(factoryId)}/datasources`;
+    if (type) path += `?type=${encodeURIComponent(type)}`;
+    return req('GET', path);
+}
+
+// ---- Poller control ----
+
+export async function startPoller(factoryId) {
+    return req('POST', `/factories/${encodeURIComponent(factoryId)}/poller/start`, {});
+}
+
+export async function stopPoller(factoryId) {
+    return req('POST', `/factories/${encodeURIComponent(factoryId)}/poller/stop`, {});
+}
+
+export async function fetchPollerStatus(factoryId) {
+    return req('GET', `/factories/${encodeURIComponent(factoryId)}/poller/status`);
+}
+
 // ---- Executions ----
 
 export async function fetchExecutions() {

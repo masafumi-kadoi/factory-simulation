@@ -20,6 +20,7 @@ func main() {
 	pass := getEnv("DB_PASSWORD", "postgres")
 	dbname := getEnv("DB_NAME", "factory_simulation")
 	simCoreURL := getEnv("SIMULATION_CORE_URL", "http://simulation-core:8080")
+	pollerURL  := getEnv("FACTORY_POLLER_URL", "http://factory-poller:8091")
 	listenPort := getEnv("PORT", "8090")
 
 	db, err := database.NewDB(host, port, user, pass, dbname)
@@ -40,7 +41,7 @@ func main() {
 	if err := repo.ResetPendingExecutions(); err != nil {
 		log.Printf("warning: failed to reset pending executions: %v", err)
 	}
-	h := api.NewHandler(repo, hub, simCoreURL)
+	h := api.NewHandler(repo, hub, simCoreURL, pollerURL)
 
 	srv := &http.Server{
 		Addr:         ":" + listenPort,

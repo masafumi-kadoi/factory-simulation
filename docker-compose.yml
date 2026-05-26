@@ -62,6 +62,27 @@ services:
     networks:
       - factory-network
 
+  factory-poller:
+    build:
+      context: ./factory-poller
+      dockerfile: Dockerfile
+    container_name: factory-poller
+    environment:
+      PORT: 8091
+      INTERNAL_DB_DSN: "host=postgres port=5432 dbname=factory_simulation user=postgres password=postgres sslmode=disable"
+    expose:
+      - "8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8091/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - factory-network
+
   realtime-gateway:
     build:
       context: ./realtime-gateway
@@ -75,12 +96,15 @@ services:
       DB_NAME: factory_simulation
       PORT: 8090
       SIMULATION_CORE_URL: http://simulation-core:8080
+      FACTORY_POLLER_URL: http://factory-poller:8091
     expose:
       - "8090"
     depends_on:
       postgres:
         condition: service_healthy
       simulation-core:
+        condition: service_healthy
+      factory-poller:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8090/health"]

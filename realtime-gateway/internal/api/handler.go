@@ -21,17 +21,19 @@ import (
 )
 
 type Handler struct {
-	repo       *database.Repository
-	hub        *notify.Hub
-	simCoreURL string
-	httpClient *http.Client
+	repo          *database.Repository
+	hub           *notify.Hub
+	simCoreURL    string
+	pollerURL     string
+	httpClient    *http.Client
 }
 
-func NewHandler(repo *database.Repository, hub *notify.Hub, simCoreURL string) *Handler {
+func NewHandler(repo *database.Repository, hub *notify.Hub, simCoreURL, pollerURL string) *Handler {
 	return &Handler{
 		repo:       repo,
 		hub:        hub,
 		simCoreURL: simCoreURL,
+		pollerURL:  pollerURL,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -156,6 +158,14 @@ func (h *Handler) handleFactory(w http.ResponseWriter, r *http.Request, rest str
 		h.handleFactoryMachineSub(w, r, id, machineSub)
 	case sub == "executions" || sub == "executions/":
 		h.handleFactoryExecutions(w, r, id)
+	case sub == "datasources" || sub == "datasources/":
+		h.handleFactoryDataSources(w, r, id)
+	case sub == "poller/start":
+		h.handlePollerStart(w, r, id)
+	case sub == "poller/stop":
+		h.handlePollerStop(w, r, id)
+	case sub == "poller/status":
+		h.handlePollerStatus(w, r, id)
 	case strings.HasPrefix(sub, "simdb/"):
 		simdbSub := strings.TrimPrefix(sub, "simdb/")
 		h.handleFactorySimDB(w, r, id, simdbSub)
@@ -405,6 +415,118 @@ func (h *Handler) handleFactoryExecutions(w http.ResponseWriter, r *http.Request
 		return
 	}
 	respondJSON(w, 200, execs)
+}
+
+// handleFactoryDataSources handles GET /factories/{fid}/datasources[?type=realtime|simulation]
+func (h *Handler) handleFactoryDataSources(w http.ResponseWriter, r *http.Request, factoryID string) {
+	if r.Method != http.MethodGet {
+		respondError(w, 405, "method not allowed")
+		return
+	}
+	sourceType := r.URL.Query().Get("type")
+	dss, err := h.repo.ListDataSourcesByFactory(factoryID, sourceType)
+	if err != nil {
+		respondError(w, 500, err.Error())
+		return
+	}
+	respondJSON(w, 200, dss)
+}
+
+// handlePollerStart handles POST /factories/{fid}/poller/start
+func (h *Handler) handlePollerStart(w http.ResponseWriter, r *http.Request, factoryID string) {
+	if r.Method != http.MethodPost {
+		respondError(w, 405, "method not allowed")
+		return
+	}
+	factory, err := h.repo.GetFactory(factoryID)
+	if err != nil {
+		respondError(w, 404, err.Error())
+		return
+	}
+	if factory.FactoryDBHost == nil || *factory.FactoryDBHost == "" {
+		respondError(w, 422, "factory has no external DB configured")
+		return
+	}
+	if h.pollerURL == "" {
+		respondError(w, 503, "factory-poller service not configured")
+		return
+	}
+
+	port := 5432
+	if factory.FactoryDBPort != nil {
+		port = *factory.FactoryDBPort
+	}
+	payload := map[string]interface{}{
+		"factoryId":      factoryID,
+		"externalDbHost": *factory.FactoryDBHost,
+		"externalDbPort": port,
+		"externalDbName": strVal(factory.FactoryDBName),
+		"externalDbUser": strVal(factory.FactoryDBUser),
+		"externalDbPass": strVal(factory.FactoryDBPass),
+	}
+	body, _ := json.Marshal(payload)
+	resp, err := h.httpClient.Post(h.pollerURL+"/poller/start", "application/json", bytes.NewReader(body))
+	if err != nil {
+		respondError(w, 502, "poller service unreachable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(data)
+}
+
+// handlePollerStop handles POST /factories/{fid}/poller/stop
+func (h *Handler) handlePollerStop(w http.ResponseWriter, r *http.Request, factoryID string) {
+	if r.Method != http.MethodPost {
+		respondError(w, 405, "method not allowed")
+		return
+	}
+	if h.pollerURL == "" {
+		respondError(w, 503, "factory-poller service not configured")
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{"factoryId": factoryID})
+	resp, err := h.httpClient.Post(h.pollerURL+"/poller/stop", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		respondError(w, 502, "poller service unreachable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(data)
+}
+
+// handlePollerStatus handles GET /factories/{fid}/poller/status
+func (h *Handler) handlePollerStatus(w http.ResponseWriter, r *http.Request, factoryID string) {
+	if r.Method != http.MethodGet {
+		respondError(w, 405, "method not allowed")
+		return
+	}
+	if h.pollerURL == "" {
+		respondJSON(w, 200, map[string]interface{}{"running": false, "factoryId": factoryID, "dataSourceId": nil})
+		return
+	}
+	resp, err := h.httpClient.Get(h.pollerURL + "/poller/status?factoryId=" + factoryID)
+	if err != nil {
+		respondJSON(w, 200, map[string]interface{}{"running": false, "factoryId": factoryID, "dataSourceId": nil})
+		return
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(data)
+}
+
+func strVal(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // handleFactorySimDB handles /factories/{fid}/simdb/{sub}
@@ -913,7 +1035,7 @@ func (h *Handler) handleExecutions(w http.ResponseWriter, r *http.Request) {
 		var ds *database.DataSource
 		var dsErr error
 		if body.FactoryID != "" {
-			ds, dsErr = h.repo.CreateRealtimeDataSource(body.FactoryID, friendlyName)
+			ds, dsErr = h.repo.CreateSimulationDataSourceForFactory(body.FactoryID, friendlyName)
 		} else {
 			ds, dsErr = h.repo.CreateDataSource("simulation", body.ScenarioID, friendlyName, nil)
 		}
