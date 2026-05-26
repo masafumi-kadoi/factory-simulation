@@ -126,7 +126,10 @@ function applyHistoryAtTime(ms, animate = true) {
     if (!scene3d) return;
 
     // Pick the right events + locationMap based on zone
-    const isRealtime = ms <= Date.now();
+    // Use timeline's fixed nowMs (updated every 30s) rather than live Date.now(),
+    // so seeking just past the NOW marker correctly switches to sim data.
+    const zoneNow = timeline?._nowMs ?? Date.now();
+    const isRealtime = ms <= zoneNow;
     const events   = isRealtime ? state.realtimeHistoryEvents : state.simHistoryEvents;
     const locMap   = isRealtime ? state.realtimeLocationMap   : state.simLocationMap;
 
@@ -564,7 +567,7 @@ function subscribeRealtimeWebSocket(dataSourceId) {
             timeline.setRealtimeData(evtMs);
             // If currently viewing realtime zone, update 3D
             const curMs = timeline.getCurrentTime();
-            if (curMs !== null && curMs <= Date.now()) {
+            if (curMs !== null && curMs <= (timeline._nowMs ?? Date.now())) {
                 state.locationMap = state.realtimeLocationMap;
                 handleWsEvent(event);
             }
