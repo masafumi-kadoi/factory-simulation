@@ -438,6 +438,11 @@ async function selectFactory(factoryId) {
         timeline.setRealtimeData([]);
         timeline.clearSimulationData();
 
+        // Reset toolbar buttons until the new factory's data is confirmed loaded
+        document.getElementById('btn-stop-sim').disabled = true;
+        const vizBtnReset = document.getElementById('btn-open-visualizer');
+        if (vizBtnReset) vizBtnReset.disabled = true;
+
         // Load realtime data in background (non-blocking)
         loadRealtimeData(factoryId, gen).catch(e => console.warn('[realtime] load error', e));
 
@@ -510,6 +515,12 @@ async function loadRealtimeData(factoryId, gen = _loadGen) {
     state.liveDataSourceId = ds.id;
     subscribeRealtimeWebSocket(ds.id);
     setStatus(`リアルタイム監視中: ${factoryName(factoryId)}`, 'status-running');
+
+    // Enable visualizer button for the live data source
+    if (ok()) {
+        const vizBtn = document.getElementById('btn-open-visualizer');
+        if (vizBtn) vizBtn.disabled = false;
+    }
 }
 
 async function loadSimulationResults(factoryId, gen = _loadGen) {
