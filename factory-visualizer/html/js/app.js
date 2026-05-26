@@ -296,11 +296,8 @@ function initUI() {
             document.getElementById('btn-stop-sim').disabled = false;
             const vizBtn = document.getElementById('btn-open-visualizer');
             if (vizBtn) vizBtn.disabled = false;
+            seekToSimStart();
             setStatus('シミュレーション結果を表示中', 'status-ok');
-            if (state.simHistoryEvents.length > 0) {
-                const firstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
-                timeline.setCurrentTime(firstMs + 1, true);
-            }
         } catch (e) {
             console.warn('[execHistory] failed to load simulation', e);
             setStatus('読み込み失敗: ' + e.message, 'status-error');
@@ -582,6 +579,19 @@ async function loadSimulationIntoRightZone(dataSourceId) {
     }
 }
 
+// Seek the timeline to the best viewing position for the loaded simulation.
+// Prefers the first future event (right zone); falls back to nowMs+1 so the
+// user is placed in the right zone and sees the sim's final state.
+function seekToSimStart() {
+    if (!state.simHistoryEvents.length || !timeline) return;
+    const nowMs = timeline._nowMs ?? Date.now();
+    const firstFutureEv = state.simHistoryEvents.find(ev => new Date(ev.event_time).getTime() > nowMs);
+    const seekMs = firstFutureEv
+        ? new Date(firstFutureEv.event_time).getTime() + 1
+        : nowMs + 1;  // all events in past → show final state at right-zone start
+    timeline.setCurrentTime(seekMs, true);
+}
+
 // Subscribe WebSocket for realtime (live) data — does NOT clear works on reconnect
 function subscribeRealtimeWebSocket(dataSourceId) {
     disconnectWebSocket();
@@ -733,11 +743,8 @@ async function loadExecutionResult(execId, dataSourceId, startDatetime, simulati
         await loadSimulationIntoRightZone(dataSourceId);
         timeline.selectSimulation(dataSourceId);
 
-        // Seek to right zone start so the user sees the simulation
-        if (state.simHistoryEvents.length > 0) {
-            const firstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
-            timeline.setCurrentTime(firstMs + 1, true);
-        }
+        // Seek into the right zone so the user sees the simulation results
+        seekToSimStart();
 
         const vizBtn = document.getElementById('btn-open-visualizer');
         if (vizBtn && dataSourceId) vizBtn.disabled = false;
