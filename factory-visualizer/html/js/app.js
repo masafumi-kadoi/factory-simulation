@@ -522,6 +522,14 @@ async function loadSimulationResults(factoryId, gen = _loadGen) {
     const latest = dsArr[0];
     await loadSimulationIntoRightZone(latest.id);
 
+    // Enable the stop and visualizer buttons now that sim data is loaded
+    if (gen === _loadGen) {
+        const stopBtn = document.getElementById('btn-stop-sim');
+        if (stopBtn) stopBtn.disabled = false;
+        const vizBtn = document.getElementById('btn-open-visualizer');
+        if (vizBtn) vizBtn.disabled = false;
+    }
+
     // Render execution list
     try {
         const execs = await API.fetchFactoryExecutions(factoryId);
@@ -800,10 +808,23 @@ function disconnectWebSocket() {
 }
 
 function stopLive() {
-    disconnectWebSocket();
-    state.liveDataSourceId = null;
+    // Clear simulation data from the right zone (do not touch the realtime WS)
+    state.simDataSourceId = null;
+    state.simHistoryEvents = [];
+    state.simLocationMap = new Map();
+    timeline.clearSimulationData();
+
+    // Return view to the realtime zone (seek to NOW)
+    if (timeline && timeline._nowMs !== null) {
+        timeline.setCurrentTime(timeline._nowMs, true);
+    }
+
     document.getElementById('btn-stop-sim').disabled = true;
-    setStatus('停止', 'status-idle');
+    const vizBtn = document.getElementById('btn-open-visualizer');
+    if (vizBtn) vizBtn.disabled = !state.liveDataSourceId;
+
+    const label = state.currentFactory ? `リアルタイム監視中: ${factoryName(state.currentFactory)}` : '停止';
+    setStatus(label, state.liveDataSourceId ? 'status-running' : 'status-idle');
 }
 
 function handleWsEvent(event) {
