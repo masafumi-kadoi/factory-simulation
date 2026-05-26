@@ -313,6 +313,11 @@ async function loadMachineData() {
 
         childConnections = Array.isArray(layout.connections) ? layout.connections : [];
 
+        if (childStations.length === 0) {
+            addStation('entry', 'entry');
+            addStation('exit', 'exit');
+        }
+
         populateInfoTab();
         populateModelTab();
         populateLogicTab();
@@ -2125,7 +2130,9 @@ function addStation(type, name, x = null, y = null) {
         parentId: MACHINE_ID,
         positionX: x,
         positionY: y,
-        config: {},
+        config: type === 'processing'
+            ? { processingTime: 2, arrivalTime: 0.5, departureTime: 0.5 }
+            : {},
     });
     _selectedStation = x !== null ? id : null;
     if (x !== null) {
@@ -2310,6 +2317,20 @@ let _lvSyncActive = false;
 let _lvSyncFrameId = null;
 let _lvActiveFilters = new Set(['station', 'work']);
 
+const _themeChannel = new BroadcastChannel('fv_theme');
+
+function _applyDocTheme(theme) {
+    const root = document.documentElement;
+    root.className = theme === 'auto' ? 'theme-auto' : (theme === 'light' ? 'theme-light' : '');
+}
+
+function _applySharedTheme(theme) {
+    const el = document.getElementById('lv-theme');
+    if (el) el.value = theme;
+    _applyDocTheme(theme);
+    _lvScene?.applyTheme(theme);
+}
+
 
 function initViewTab() {
     document.getElementById('lv-shell-opacity').addEventListener('input', e => {
@@ -2323,7 +2344,11 @@ function initViewTab() {
         _lvScene?.setStationRadius(v);
     });
     document.getElementById('lv-theme').addEventListener('change', e => {
-        _lvScene?.applyTheme(e.target.value);
+        const theme = e.target.value;
+        _applyDocTheme(theme);
+        _lvScene?.applyTheme(theme);
+        try { localStorage.setItem('fv_scene_theme', theme); } catch {}
+        _themeChannel.postMessage({ type: 'theme', value: theme });
     });
     document.getElementById('lv-show-station-names').addEventListener('change', e => {
         _lvScene?.setShowStationNames(e.target.checked);
@@ -2335,12 +2360,34 @@ function initViewTab() {
     document.getElementById('lv-show-interlocks').addEventListener('change', e => {
         _lvScene?.setShowInterlocks(e.target.checked);
     });
+    document.getElementById('lv-show-entry').addEventListener('change', e => {
+        _lvScene?.setShowEntry(e.target.checked);
+    });
+    document.getElementById('lv-show-exit').addEventListener('change', e => {
+        _lvScene?.setShowExit(e.target.checked);
+    });
     document.getElementById('lv-h-station-label').addEventListener('input', e => {
         _lvScene?.setStationLabelY(parseFloat(e.target.value) || 0.8);
     });
     document.getElementById('lv-h-work-station').addEventListener('input', e => {
         _lvScene?.setWorkY(parseFloat(e.target.value) || 0.5);
     });
+
+    // Init theme from shared storage or opener
+    const _initTheme = (() => {
+        try {
+            const shared = localStorage.getItem('fv_scene_theme');
+            if (shared) return shared;
+            const g3d = JSON.parse(localStorage.getItem('fv_3d_settings') || 'null');
+            if (g3d?.theme) return g3d.theme;
+        } catch {}
+        return 'dark';
+    })();
+    _applySharedTheme(_initTheme);
+
+    _themeChannel.onmessage = e => {
+        if (e.data?.type === 'theme') _applySharedTheme(e.data.value);
+    };
 
     document.querySelectorAll('.lv-filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2367,6 +2414,8 @@ function _lvActivateTab() {
             _lvScene.setShellOpacity(parseFloat(document.getElementById('lv-shell-opacity').value));
             _lvScene.setShowStationNames(document.getElementById('lv-show-station-names').checked);
             _lvScene.setShowWorks(document.getElementById('lv-show-works').checked);
+            _lvScene.setShowEntry(document.getElementById('lv-show-entry').checked);
+            _lvScene.setShowExit(document.getElementById('lv-show-exit').checked);
             _lvScene.setStationLabelY(parseFloat(document.getElementById('lv-h-station-label').value) || 0.8);
             _lvScene.setWorkY(parseFloat(document.getElementById('lv-h-work-station').value) || 0.5);
             // Apply current timeline position now that scene is ready
@@ -2595,6 +2644,8 @@ class LocalViewScene {
         this._showStationNames = true;
         this._showWorks = true;
         this._showInterlocks = false;
+        this._showEntry = true;
+        this._showExit = true;
         this._stationLabelY = 0.8;
         this._workY = 0.5;
         this._stationRadius = 0.25;
@@ -2647,13 +2698,13 @@ class LocalViewScene {
 
     _themeConfig(name) {
         const THEMES = {
-            'dark-navy': { bg: 0x0d1520, gridMain: 0x2b5278, gridSub: 0x162a3e },
-            'dark':      { bg: 0x0f1629, gridMain: 0x3a6098, gridSub: 0x1e3354 },
+            'dark':      { bg: 0x0d1520, gridMain: 0x2b5278, gridSub: 0x162a3e },
+            'dark-navy': { bg: 0x0d1520, gridMain: 0x2b5278, gridSub: 0x162a3e }, // legacy alias
             'light':     { bg: 0xf0f4f8, gridMain: 0x9aacbf, gridSub: 0xc5d0dc },
         };
         let t = name;
         if (t === 'auto') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        return THEMES[t] || THEMES['dark-navy'];
+        return THEMES[t] || THEMES['dark'];
     }
 
     _applyThemeColors() {
@@ -2697,6 +2748,7 @@ class LocalViewScene {
 
         const group = new THREE.Group();
         group.userData.stationId = station.stationId;
+        group.userData.stationType = station.stationType;
 
         const geo  = new THREE.CylinderGeometry(R, R, H, 16);
         const mat  = new THREE.MeshStandardMaterial({
@@ -2721,6 +2773,8 @@ class LocalViewScene {
         }
 
         group.position.set(px, 0, pz);
+        if (station.stationType === 'entry') group.visible = this._showEntry;
+        if (station.stationType === 'exit')  group.visible = this._showExit;
         this.scene.add(group);
         this._stations.set(station.stationId, { group, station });
     }
@@ -2897,6 +2951,20 @@ class LocalViewScene {
     setShowInterlocks(v) {
         this._showInterlocks = v;
         // Future: show interlock signal indicators on stations
+    }
+
+    setShowEntry(v) {
+        this._showEntry = v;
+        this._stations.forEach(({ group }) => {
+            if (group.userData.stationType === 'entry') group.visible = v;
+        });
+    }
+
+    setShowExit(v) {
+        this._showExit = v;
+        this._stations.forEach(({ group }) => {
+            if (group.userData.stationType === 'exit') group.visible = v;
+        });
     }
 
     setStationLabelY(v) {

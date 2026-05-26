@@ -28,6 +28,18 @@ const state = {
 
 let scene3d = null;
 let timeline = null;
+
+const _themeChannel = new BroadcastChannel('fv_theme');
+_themeChannel.onmessage = e => {
+    if (e.data?.type !== 'theme') return;
+    const theme = e.data.value;
+    const el = document.getElementById('scene-theme');
+    if (el) el.value = theme;
+    applyDocTheme(theme);
+    scene3d?.applyTheme(theme);
+    try { localStorage.setItem('fv_scene_theme', theme); } catch {}
+    saveG3DSettings();
+};
 let infoPanel = null;
 let infoPanels = [];       // multi-window mode で開いたパネル一覧
 let multiWindowMode = false;
@@ -197,6 +209,8 @@ function initUI() {
                     applyDocTheme(value);
                     scene3d.applyTheme(value);
                     saveG3DSettings();
+                    try { localStorage.setItem('fv_scene_theme', value); } catch {}
+                    _themeChannel.postMessage({ type: 'theme', value });
                     break;
                 case 'shellOpacity': scene3d.setShellOpacity(value); saveG3DSettings(); break;
                 case 'internalRadius': scene3d.setInternalRadius(value); saveG3DSettings(); break;
@@ -768,6 +782,10 @@ function buildInfoRows(station, type) {
 // ---- Local window (machine editor) ----
 
 function openLocalWindow(machineStationId) {
+    try {
+        const theme = document.getElementById('scene-theme')?.value;
+        if (theme) localStorage.setItem('fv_scene_theme', theme);
+    } catch {}
     const st = state.stations.find(s => s.stationId === machineStationId);
     const equipName = st?.equipmentId || machineStationId;
     const params = new URLSearchParams({
@@ -1408,6 +1426,9 @@ function openG3DFloating(groupId, title) {
                 applyDocTheme(v);
                 scene3d && scene3d.applyTheme(v);
                 document.getElementById('scene-theme').value = v;
+                saveG3DSettings();
+                try { localStorage.setItem('fv_scene_theme', v); } catch {}
+                _themeChannel.postMessage({ type: 'theme', value: v });
             });
             body.querySelector('#gf-show-internal').addEventListener('change', e => {
                 scene3d && scene3d.setShowInternal(e.target.checked);
@@ -1528,6 +1549,7 @@ function restoreG3DSettings() {
         if (el) el.value = saved.theme;
         applyDocTheme(saved.theme);
         scene3d && scene3d.applyTheme(saved.theme);
+        try { localStorage.setItem('fv_scene_theme', saved.theme); } catch {};
     }
     if (saved.shellOpacity != null) {
         const el = document.getElementById('shell-opacity');
