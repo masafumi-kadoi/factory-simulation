@@ -343,7 +343,7 @@ function initUI() {
             : '複数ウインドウモード：オフ（クリックで有効化）';
     });
     document.getElementById('btn-open-visualizer').addEventListener('click', () => {
-        const dsId = state.liveDataSourceId;
+        const dsId = state.simDataSourceId || state.liveDataSourceId;
         if (dsId) {
             window.open(`/visualizer/?ds=${encodeURIComponent(dsId)}`, '_blank');
         }
@@ -442,7 +442,7 @@ async function selectFactory(factoryId) {
 async function loadRealtimeData(factoryId) {
     // Try to start poller (only if factory has external DB configured)
     try {
-        const factory = state.factories.find(f => f.id === factoryId) || state.currentFactoryData || {};
+        const factory = state.currentFactoryData?.id === factoryId ? state.currentFactoryData : (state.factories.find(f => f.id === factoryId) || {});
         if (factory.factoryDbHost) {
             await API.startPoller(factoryId).catch(() => {});
         }
