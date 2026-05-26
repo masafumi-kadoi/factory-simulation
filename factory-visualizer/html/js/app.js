@@ -36,6 +36,7 @@ const state = {
 
 let scene3d = null;
 let timeline = null;
+let _loadGen = 0; // increments on each selectFactory; loaders abort when stale
 
 const _themeChannel = new BroadcastChannel('fv_theme');
 _themeChannel.onmessage = e => {
@@ -380,6 +381,8 @@ async function loadFactories() {
 }
 
 async function selectFactory(factoryId) {
+    const gen = ++_loadGen; // capture generation before any await
+    const stillCurrent = () => gen === _loadGen;
     try {
         setStatus('読み込み中...', 'status-running');
         const [factoryData, stations, connections, executions] = await Promise.all([
@@ -389,6 +392,7 @@ async function selectFactory(factoryId) {
             API.fetchFactoryExecutions(factoryId).catch(() => []),
         ]);
 
+        if (!stillCurrent()) return; // another selectFactory started while we were awaiting
         state.currentFactory = factoryId;
         state.currentFactoryData = factoryData || state.factories.find(f => f.id === factoryId) || { id: factoryId };
         state.stations = Array.isArray(stations) ? stations : [];
@@ -435,10 +439,10 @@ async function selectFactory(factoryId) {
         timeline.clearSimulationData();
 
         // Load realtime data in background (non-blocking)
-        loadRealtimeData(factoryId).catch(e => console.warn('[realtime] load error', e));
+        loadRealtimeData(factoryId, gen).catch(e => console.warn('[realtime] load error', e));
 
         // Load existing simulation results into right zone
-        loadSimulationResults(factoryId).catch(e => console.warn('[sim] load error', e));
+        loadSimulationResults(factoryId, gen).catch(e => console.warn('[sim] load error', e));
     } catch (err) {
         setStatus('読み込み失敗: ' + err.message, 'status-error');
     }
@@ -446,9 +450,9 @@ async function selectFactory(factoryId) {
 
 // ---- 3-zone realtime data loading ----
 
-async function loadRealtimeData(factoryId) {
-    // Guard: abort if the factory changed while we were loading
-    if (state.currentFactory !== factoryId) return;
+async function loadRealtimeData(factoryId, gen = _loadGen) {
+    const ok = () => gen === _loadGen;
+    if (!ok()) return;
 
     // Try to start poller (only if factory has external DB configured)
     try {
@@ -464,7 +468,7 @@ async function loadRealtimeData(factoryId) {
     // Prefer active (ended_at == null), then most recent
     const ds = dsArr.find(d => !d.endedAt) || dsArr[0];
     if (!ds) return;
-    if (state.currentFactory !== factoryId) return;
+    if (!ok()) return;
 
     state.realtimeDataSourceId = ds.id;
 
@@ -501,8 +505,8 @@ async function loadRealtimeData(factoryId) {
     setStatus(`リアルタイム監視中: ${factoryName(factoryId)}`, 'status-running');
 }
 
-async function loadSimulationResults(factoryId) {
-    if (state.currentFactory !== factoryId) return;
+async function loadSimulationResults(factoryId, gen = _loadGen) {
+    if (gen !== _loadGen) return;
     const dss = await API.fetchFactoryDataSources(factoryId, 'simulation');
     const dsArr = Array.isArray(dss) ? dss : [];
 
