@@ -495,6 +495,13 @@ async function loadRealtimeData(factoryId, gen = _loadGen) {
 
         const evtMs = state.realtimeHistoryEvents.map(ev => new Date(ev.event_time).getTime());
         timeline.setRealtimeData(evtMs);
+
+        // Refresh 3D scene and time display at current timeline position.
+        // setNow() sets _currentTime internally but does not emit onSeek,
+        // so the scene stays blank and #tl-time shows "--" until the user seeks.
+        if (ok() && timeline.getCurrentTime() !== null) {
+            timeline.setCurrentTime(timeline.getCurrentTime(), true);
+        }
     } catch (e) {
         console.warn('[realtime] events load failed', e);
     }
