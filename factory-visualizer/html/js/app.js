@@ -419,6 +419,10 @@ async function selectFactory(factoryId) {
         const local = toLocalIsoString(now);
         document.getElementById('sim-start').value = local;
 
+        // Disconnect any existing WebSocket before switching factory
+        disconnectWebSocket();
+        state.liveDataSourceId = null;
+
         // Reset 3-zone state and refresh timeline
         state.realtimeDataSourceId = null;
         state.realtimeHistoryEvents = [];
