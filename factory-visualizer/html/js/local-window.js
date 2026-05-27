@@ -3041,9 +3041,18 @@ class LocalViewScene {
     }
 
     setStationRadius(r) {
+        const prevR = this._stationRadius;
         this._stationRadius = r;
-        const stations = [...this._stations.values()].map(s => s.station);
-        this.loadStations(stations, this._lastConnections || [], this._lastMachineStation);
+        if (prevR <= 0) return;
+        const scale = r / prevR;
+        this._stations.forEach(({ group }) => {
+            group.children.forEach(child => {
+                if (child.isMesh || child.isLineSegments) {
+                    child.scale.x *= scale;
+                    child.scale.z *= scale;
+                }
+            });
+        });
     }
 
     setShowStationNames(v) {
