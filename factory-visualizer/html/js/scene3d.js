@@ -55,7 +55,7 @@ export class Scene3D {
         this._interlockIndicators = new Map();
         this._theme = 'dark';
         this._shellOpacity = 0.6;
-        this._internalRadius = 15;
+        this._internalRadius = 0.25;
         this._showInternal = true;
         this._showStationNames = true;
         this._showMachineNames = true;
