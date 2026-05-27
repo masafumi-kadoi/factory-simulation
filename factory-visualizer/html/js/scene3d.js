@@ -1034,13 +1034,14 @@ export class Scene3D {
         // Already at target — skip (prevents re-triggering on every play tick)
         if (entry.stationId === stationId && !entry._anim) return;
 
-        // Suppress arc animation for within-same-equipment moves when internal view is ON.
+        // Detect within-same-equipment moves for slide (no arc) animation.
+        let intraMachine = false;
         if (animate && isInternal && this._showInternal) {
             const prevInternalEntry = this._internalStations.get(entry.stationId);
             if (prevInternalEntry) {
                 const prevParent = prevInternalEntry.station.parentId;
                 const newParent = this._internalStations.get(stationId)?.station?.parentId;
-                if (prevParent && prevParent === newParent) animate = false;
+                if (prevParent && prevParent === newParent) intraMachine = true;
             }
         }
 
@@ -1052,8 +1053,8 @@ export class Scene3D {
             return;
         }
 
-        // Arc animation: lerp x/z with easeInOut, parabola on y.
-        // Skip arc if display positions are effectively the same (e.g. both internal→same hub).
+        // Arc animation (inter-machine) or slide animation (intra-machine).
+        // Skip if display positions are effectively the same (e.g. both internal→same hub).
         const from = entry.mesh.position.clone();
         const to = new THREE.Vector3(px, py, pz);
         const hDist = Math.sqrt((to.x - from.x) ** 2 + (to.z - from.z) ** 2);
@@ -1065,9 +1066,9 @@ export class Scene3D {
         entry._anim = {
             from,
             to,
-            arcH: Math.max(2, Math.min(8, hDist * 0.35)),
+            arcH: intraMachine ? 0 : Math.max(2, Math.min(8, hDist * 0.35)),
             startTime: Date.now(),
-            duration: 350,
+            duration: intraMachine ? 250 : 350,
         };
     }
 
