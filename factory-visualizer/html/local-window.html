@@ -614,16 +614,24 @@
                 <div class="lv-section-hdr">高さ設定</div>
                 <div class="lv-section-body">
                     <div class="lv-sub-header">ラベル高さ</div>
-                    <div class="lv-row">
+                    <div class="lv-row lv-slider-row">
                         <label>ステーション名</label>
-                        <input type="number" class="lv-num" id="lv-h-station-label"
-                               value="0.8" min="0" max="10" step="0.1">
+                        <div class="lv-slider-inner">
+                            <input type="range" id="lv-h-station-label" min="0" max="5" step="0.1" value="0.8"
+                                   style="flex:1;accent-color:var(--accent-blue);">
+                            <input type="number" class="lv-num" id="lv-h-station-label-num"
+                                   value="0.8" min="0" max="5" step="0.1">
+                        </div>
                     </div>
                     <div class="lv-sub-header" style="margin-top:8px;">ワーク高さ</div>
-                    <div class="lv-row">
+                    <div class="lv-row lv-slider-row">
                         <label>ステーション上</label>
-                        <input type="number" class="lv-num" id="lv-h-work-station"
-                               value="0.5" min="0" max="10" step="0.1">
+                        <div class="lv-slider-inner">
+                            <input type="range" id="lv-h-work-station" min="0" max="5" step="0.1" value="0.5"
+                                   style="flex:1;accent-color:var(--accent-blue);">
+                            <input type="number" class="lv-num" id="lv-h-work-station-num"
+                                   value="0.5" min="0" max="5" step="0.1">
+                        </div>
                     </div>
                 </div>
             </div>

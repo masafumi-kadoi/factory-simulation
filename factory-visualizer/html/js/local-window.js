@@ -2368,10 +2368,24 @@ function initViewTab() {
         _lvScene?.setShowExit(e.target.checked);
     });
     document.getElementById('lv-h-station-label').addEventListener('input', e => {
-        _lvScene?.setStationLabelY(parseFloat(e.target.value) || 0.8);
+        const v = parseFloat(e.target.value) || 0.8;
+        document.getElementById('lv-h-station-label-num').value = v;
+        _lvScene?.setStationLabelY(v);
+    });
+    document.getElementById('lv-h-station-label-num').addEventListener('input', e => {
+        const v = parseFloat(e.target.value) || 0.8;
+        document.getElementById('lv-h-station-label').value = v;
+        _lvScene?.setStationLabelY(v);
     });
     document.getElementById('lv-h-work-station').addEventListener('input', e => {
-        _lvScene?.setWorkY(parseFloat(e.target.value) || 0.5);
+        const v = parseFloat(e.target.value) || 0.5;
+        document.getElementById('lv-h-work-station-num').value = v;
+        _lvScene?.setWorkY(v);
+    });
+    document.getElementById('lv-h-work-station-num').addEventListener('input', e => {
+        const v = parseFloat(e.target.value) || 0.5;
+        document.getElementById('lv-h-work-station').value = v;
+        _lvScene?.setWorkY(v);
     });
 
     // Init theme from shared storage or opener
