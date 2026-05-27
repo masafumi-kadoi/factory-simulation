@@ -4,7 +4,6 @@
 const SIMULATION_CORE_URL = '/api';
 
 const SERVICE_URLS = {
-    'sim-editor': '/editor',
     'factory-visualizer': '/factory-visualizer',
     'sim-visualizer': '/visualizer',
     'sim-factory-manager': '/factory',
@@ -64,7 +63,6 @@ const PortalAPI = {
         const services = [
             { name: 'realtime-gateway', url: '/api/data-sources', port: null },
             { name: 'sim-factory-manager', url: '/factory/', port: null },
-            { name: 'sim-editor', url: '/editor/', port: null },
             { name: 'factory-visualizer', url: '/factory-visualizer/', port: null },
             { name: 'sim-visualizer', url: '/visualizer/', port: null },
             { name: 'sim-executor', url: '/executor/', port: null },

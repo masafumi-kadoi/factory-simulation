@@ -10,14 +10,6 @@ const TOOLS = [
         status: 'online'
     },
     {
-        name: 'sim-editor',
-        icon: '\u270F\uFE0F',
-        title: 'Scenario Editor',
-        desc: 'Create and edit factory simulation scenarios with a visual editor.',
-        url: SERVICE_URLS['sim-editor'],
-        status: 'online'
-    },
-    {
         name: 'factory-visualizer',
         icon: '\u25B6\uFE0F',
         title: 'Factory Visualizer',
