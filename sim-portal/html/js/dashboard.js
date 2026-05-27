@@ -18,22 +18,6 @@ const TOOLS = [
         status: 'online'
     },
     {
-        name: 'sim-visualizer',
-        icon: '\uD83D\uDCCA',
-        title: 'Result Visualizer',
-        desc: 'Visualize simulation results and live factory data.',
-        url: SERVICE_URLS['sim-visualizer'] + '/index-list.html',
-        status: 'online'
-    },
-    {
-        name: 'sim-executor',
-        icon: '\u25B6',
-        title: 'Sim Executor',
-        desc: 'Execute simulations from scenarios with SimDB initial conditions.',
-        url: SERVICE_URLS['sim-executor'],
-        status: 'online'
-    },
-    {
         name: 'sim-explorer',
         icon: '\uD83D\uDD0D',
         title: 'Parameter Explorer',
@@ -128,7 +112,7 @@ async function loadRecentExecutions() {
                 const dsId = exec.dataSourceId;
                 const label = exec.factoryId ? `Factory: ${escapeHtml(exec.factoryId.substring(0, 8))}` : escapeHtml(exec.scenarioId || '-');
                 const viewLink = exec.status === 'completed' && dsId
-                    ? `<a href="${SERVICE_URLS['sim-visualizer']}/?ds=${encodeURIComponent(dsId)}" target="_blank" class="btn btn-outline btn-sm">View</a>`
+                    ? `<a href="${SERVICE_URLS['factory-visualizer']}/" target="_blank" class="btn btn-outline btn-sm">View</a>`
                     : '';
 
                 return `

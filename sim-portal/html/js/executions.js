@@ -112,7 +112,7 @@ function renderExecutionRow(exec) {
     let actions = '';
     if (exec.status === 'completed' && (exec.dataSourceId || exec.simulationId)) {
         const dsId = exec.dataSourceId || exec.simulationId;
-        actions = `<a href="${SERVICE_URLS['sim-visualizer']}/?ds=${encodeURIComponent(dsId)}" target="_blank" class="btn btn-outline btn-sm">Visualize</a>`;
+        actions = `<a href="${SERVICE_URLS['factory-visualizer']}/" target="_blank" class="btn btn-outline btn-sm">Visualize</a>`;
     }
 
     let errorHtml = '';
