@@ -1153,8 +1153,18 @@ export class Scene3D {
     }
 
     setInternalRadius(r) {
-        // Internal stations now use fixed Tetris blocks; radius slider is a no-op
         this._internalRadius = r;
+        this._internalStations.forEach(({ group }) => {
+            group.children.forEach(child => {
+                if (child.isMesh && child.geometry?.type === 'CylinderGeometry') {
+                    const scale = r / STATION_RADIUS;
+                    child.scale.set(scale, 1, scale);
+                } else if (child.isLineSegments) {
+                    const scale = r / STATION_RADIUS;
+                    child.scale.set(scale, 1, scale);
+                }
+            });
+        });
     }
 
     setShowWorks(v) {

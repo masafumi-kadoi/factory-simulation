@@ -3038,10 +3038,21 @@ class LocalViewScene {
 
     setShellOpacity(v) {
         this._shellOpacity = v;
-        if (this._shellMesh && this._shellMesh.material.opacity > 0) {
+        // Apply to shell box (non-GLB only)
+        if (this._shellMesh && this._shellMesh.visible && this._shellMesh.material.depthWrite !== false) {
             this._shellMesh.material.opacity = v * 0.2;
             this._shellMesh.material.needsUpdate = true;
         }
+        // Apply to station cylinders
+        this._stations.forEach(({ group }) => {
+            group.children.forEach(obj => {
+                if (obj.isMesh && obj.material) {
+                    obj.material.opacity = v;
+                    obj.material.transparent = v < 1;
+                    obj.material.needsUpdate = true;
+                }
+            });
+        });
     }
 
     setStationRadius(r) {
