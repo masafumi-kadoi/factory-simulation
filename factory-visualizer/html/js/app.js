@@ -294,8 +294,6 @@ function initUI() {
             await loadSimulationIntoRightZone(dsId);
             timeline.selectSimulation(dsId);
             document.getElementById('btn-stop-sim').disabled = false;
-            const vizBtn = document.getElementById('btn-open-visualizer');
-            if (vizBtn) vizBtn.disabled = false;
             seekToSimStart();
             setStatus('シミュレーション結果を表示中', 'status-ok');
         } catch (e) {
@@ -343,13 +341,6 @@ function initUI() {
             ? '複数ウインドウモード：オン（クリックで無効化）'
             : '複数ウインドウモード：オフ（クリックで有効化）';
     });
-    document.getElementById('btn-open-visualizer').addEventListener('click', () => {
-        const dsId = state.simDataSourceId || state.liveDataSourceId;
-        if (dsId) {
-            window.open(`/visualizer/?ds=${encodeURIComponent(dsId)}`, '_blank');
-        }
-    });
-
     // Simulation panel
     document.getElementById('btn-fetch-ic').addEventListener('click', () => fetchInitialConditions());
     document.getElementById('btn-run-now').addEventListener('click', () => {
@@ -437,8 +428,6 @@ async function selectFactory(factoryId) {
 
         // Reset toolbar buttons until the new factory's data is confirmed loaded
         document.getElementById('btn-stop-sim').disabled = true;
-        const vizBtnReset = document.getElementById('btn-open-visualizer');
-        if (vizBtnReset) vizBtnReset.disabled = true;
 
         // Load realtime data in background (non-blocking)
         loadRealtimeData(factoryId, gen).catch(e => console.warn('[realtime] load error', e));
@@ -513,11 +502,6 @@ async function loadRealtimeData(factoryId, gen = _loadGen) {
     subscribeRealtimeWebSocket(ds.id);
     setStatus(`リアルタイム監視中: ${factoryName(factoryId)}`, 'status-running');
 
-    // Enable visualizer button for the live data source
-    if (ok()) {
-        const vizBtn = document.getElementById('btn-open-visualizer');
-        if (vizBtn) vizBtn.disabled = false;
-    }
 }
 
 async function loadSimulationResults(factoryId, gen = _loadGen) {
@@ -530,12 +514,9 @@ async function loadSimulationResults(factoryId, gen = _loadGen) {
     const latest = dsArr[0];
     await loadSimulationIntoRightZone(latest.id);
 
-    // Enable the stop and visualizer buttons now that sim data is loaded
     if (gen === _loadGen) {
         const stopBtn = document.getElementById('btn-stop-sim');
         if (stopBtn) stopBtn.disabled = false;
-        const vizBtn = document.getElementById('btn-open-visualizer');
-        if (vizBtn) vizBtn.disabled = false;
     }
 
     // Render execution list
@@ -708,10 +689,6 @@ async function runSimulation() {
         // Load execution result and subscribe to live
         await loadExecutionResult(exec.executionId, exec.dataSourceId, startDatetime, simulationTime);
 
-        // Enable the "Open in 3D Viewer" button now that we have a dataSourceId
-        const vizBtn = document.getElementById('btn-open-visualizer');
-        if (vizBtn) vizBtn.disabled = false;
-
         // Refresh execution history list
         if (fid) {
             API.fetchFactoryExecutions(fid).then(execs => {
@@ -746,8 +723,6 @@ async function loadExecutionResult(execId, dataSourceId, startDatetime, simulati
         // Seek into the right zone so the user sees the simulation results
         seekToSimStart();
 
-        const vizBtn = document.getElementById('btn-open-visualizer');
-        if (vizBtn && dataSourceId) vizBtn.disabled = false;
     } catch (err) {
         setStatus('結果読み込み失敗: ' + err.message, 'status-error');
     }
@@ -838,8 +813,6 @@ function stopLive() {
     }
 
     document.getElementById('btn-stop-sim').disabled = true;
-    const vizBtn = document.getElementById('btn-open-visualizer');
-    if (vizBtn) vizBtn.disabled = !state.liveDataSourceId;
 
     const label = state.currentFactory ? `リアルタイム監視中: ${factoryName(state.currentFactory)}` : '停止';
     setStatus(label, state.liveDataSourceId ? 'status-running' : 'status-idle');
