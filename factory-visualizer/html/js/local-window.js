@@ -2409,7 +2409,7 @@ function _lvActivateTab() {
             const wrapper = document.getElementById('lv-canvas-wrapper');
             if (!wrapper) return;
             _lvScene = new LocalViewScene(wrapper);
-            _lvScene.loadStations(childStations, childConnections);
+            _lvScene.loadStations(childStations, childConnections, machineStation);
             // Apply current UI settings
             _lvScene.applyTheme(document.getElementById('lv-theme').value);
             _lvScene.setShellOpacity(parseFloat(document.getElementById('lv-shell-opacity').value));
@@ -2652,6 +2652,10 @@ class LocalViewScene {
         this._stationRadius = 0.25;
         this._animActive = true;
         this._gridHelper = null;
+        this._shellGroup = null;
+        this._shellMesh = null;
+        this._shellEdgeMesh = null;
+        this._lastMachineStation = null;
 
         this._initScene();
         this._animate();
@@ -2721,23 +2725,138 @@ class LocalViewScene {
         this._theme = theme;
         this._applyThemeColors();
         const stations = [...this._stations.values()].map(s => s.station);
-        if (stations.length) this.loadStations(stations, this._lastConnections || []);
+        if (stations.length) this.loadStations(stations, this._lastConnections || [], this._lastMachineStation);
     }
 
     // ---- Stations ----
 
-    loadStations(stations, connections) {
+    loadStations(stations, connections, machineStation = null) {
         this._lastConnections = connections || [];
+        this._lastMachineStation = machineStation;
         this._stations.forEach(({ group }) => this.scene.remove(group));
         this._stations.clear();
         this._connectionLines.forEach(l => this.scene.remove(l));
         this._connectionLines = [];
+        if (this._shellGroup) { this.scene.remove(this._shellGroup); this._shellGroup = null; }
 
         const placed = stations.filter(s => s.positionX !== null && s.positionY !== null);
+
+        if (machineStation) this._renderMachineShell(machineStation, placed);
+
         for (const st of placed) this._addStation(st);
         for (const conn of this._lastConnections) this._addConnectionLine(conn, placed);
 
         this._fitCamera(placed);
+    }
+
+    _renderMachineShell(machine, placedStations) {
+        const cfg = machine.config || {};
+        const hasGlb = !!cfg.model3DGlb?.data;
+        const hasGrid = Array.isArray(cfg.model3DGrid?.cells) && cfg.model3DGrid.cells.length > 0;
+
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        placedStations.forEach(s => {
+            const px = s.positionX || 0, pz = s.positionY || 0;
+            minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+            minZ = Math.min(minZ, pz); maxZ = Math.max(maxZ, pz);
+        });
+        if (!isFinite(minX)) { minX = -2; maxX = 2; minZ = -2; maxZ = 2; }
+
+        const PAD = 2;
+        const cx = (minX + maxX) / 2;
+        const cz = (minZ + maxZ) / 2;
+        const W = Math.max(maxX - minX + PAD * 2, 4);
+        const D = Math.max(maxZ - minZ + PAD * 2, 4);
+        const H = 3;
+
+        const shellGroup = new THREE.Group();
+
+        const shellGeo = new THREE.BoxGeometry(W, H, D);
+        const shellMat = new THREE.MeshStandardMaterial({
+            color: 0x4a9eff, transparent: true, opacity: this._shellOpacity * 0.2,
+            roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide,
+        });
+        const shellMesh = new THREE.Mesh(shellGeo, shellMat);
+        shellMesh.position.set(cx, H / 2, cz);
+        shellGroup.add(shellMesh);
+
+        const edgeGeo = new THREE.EdgesGeometry(shellGeo);
+        const edgeMat = new THREE.LineBasicMaterial({ color: 0x6ab4ff, transparent: true, opacity: 0.45 });
+        const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+        edgeMesh.position.copy(shellMesh.position);
+        shellGroup.add(edgeMesh);
+
+        this._shellMesh = shellMesh;
+        this._shellEdgeMesh = edgeMesh;
+
+        if (hasGlb) {
+            shellMesh.material.opacity = 0;
+            shellMesh.material.depthWrite = false;
+            edgeMesh.visible = false;
+
+            const equipOrigin = cfg.equipmentOrigin;
+            const eox = equipOrigin?.x ?? 0;
+            const eoz = equipOrigin?.z ?? 0;
+            const modelGroup = new THREE.Group();
+            modelGroup.position.set(cx - eox, 0, cz - eoz);
+            shellGroup.add(modelGroup);
+            this._loadGlb(cfg.model3DGlb.data, modelGroup);
+        } else if (hasGrid) {
+            shellMesh.material.opacity = 0;
+            shellMesh.material.depthWrite = false;
+            edgeMesh.visible = false;
+
+            const voxelMesh = this._buildVoxelMesh(cfg.model3DGrid, this._shellOpacity);
+            voxelMesh.position.set(cx, 0, cz);
+            shellGroup.add(voxelMesh);
+        }
+
+        this.scene.add(shellGroup);
+        this._shellGroup = shellGroup;
+    }
+
+    _loadGlb(base64data, targetGroup) {
+        const binary = atob(base64data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'model/gltf-binary' });
+        const url = URL.createObjectURL(blob);
+        const loader = new GLTFLoader();
+        loader.load(url, gltf => {
+            URL.revokeObjectURL(url);
+            const model = gltf.scene;
+            const box = new THREE.Box3().setFromObject(model);
+            model.position.y = -box.min.y;
+            targetGroup.add(model);
+        }, undefined, err => {
+            URL.revokeObjectURL(url);
+            console.error('GLB load error (local-view):', err);
+        });
+    }
+
+    _buildVoxelMesh(grid3d, opacity) {
+        const gridSize = grid3d.gridSize || 0.5;
+        const cellHeight = grid3d.height || 1.5;
+        const cells = grid3d.cells || [];
+        if (cells.length === 0) return new THREE.Group();
+
+        const origin = grid3d.origin;
+        const allC = cells.map(([c]) => c);
+        const allR = cells.map(([, r]) => r);
+        const refC = origin ? origin[0] : (Math.min(...allC) + Math.max(...allC)) / 2;
+        const refR = origin ? origin[1] : (Math.min(...allR) + Math.max(...allR)) / 2;
+
+        const group = new THREE.Group();
+        const geo = new THREE.BoxGeometry(gridSize * 0.95, cellHeight, gridSize * 0.95);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x4a9eff, transparent: true, opacity, roughness: 0.4, metalness: 0.3,
+        });
+        cells.forEach(([cx, cz]) => {
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set((cx - refC) * gridSize, cellHeight / 2, (cz - refR) * gridSize);
+            group.add(mesh);
+        });
+        return group;
     }
 
     _addStation(station) {
@@ -2919,21 +3038,16 @@ class LocalViewScene {
 
     setShellOpacity(v) {
         this._shellOpacity = v;
-        this._stations.forEach(({ group }) => {
-            group.traverse(obj => {
-                if (obj.isMesh && obj.material) {
-                    obj.material.opacity = v;
-                    obj.material.transparent = v < 1;
-                    obj.material.needsUpdate = true;
-                }
-            });
-        });
+        if (this._shellMesh && this._shellMesh.material.opacity > 0) {
+            this._shellMesh.material.opacity = v * 0.2;
+            this._shellMesh.material.needsUpdate = true;
+        }
     }
 
     setStationRadius(r) {
         this._stationRadius = r;
         const stations = [...this._stations.values()].map(s => s.station);
-        this.loadStations(stations, this._lastConnections || []);
+        this.loadStations(stations, this._lastConnections || [], this._lastMachineStation);
     }
 
     setShowStationNames(v) {
