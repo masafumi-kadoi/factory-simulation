@@ -465,6 +465,7 @@ input[type="range"] {
 }
 .tl-btn:hover { background: var(--border-color); }
 .tl-btn.active { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+.tl-btn.sync-active { background: #2e7d32; border-color: #4caf50; color: #fff; }
 #tl-speed {
     background: var(--bg-surface);
     color: var(--text-primary);

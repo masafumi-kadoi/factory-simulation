@@ -196,6 +196,7 @@ function applyHistoryAtTime(ms, animate = true) {
 
 function initTimeline() {
     const canvas = document.getElementById('timeline-canvas');
+    let _syncNowRef = { active: false };
     timeline = new Timeline({
         canvas,
         onSeek: (ms, seeking) => {
@@ -204,12 +205,25 @@ function initTimeline() {
         },
         onPlayStateChange: playing => {
             document.getElementById('tl-play').textContent = playing ? '⏸' : '▶';
+            if (playing && _syncNowRef.active) {
+                _syncNowRef.active = false;
+                document.getElementById('tl-sync-now')?.classList.remove('sync-active');
+            }
+        },
+        onUserSeek: () => {
+            if (_syncNowRef.active) {
+                _syncNowRef.active = false;
+                document.getElementById('tl-sync-now')?.classList.remove('sync-active');
+            }
         },
     });
 
     // Initialise with current time and refresh the NOW marker every 30 s
     timeline.setNow(Date.now());
-    setInterval(() => timeline.setNow(Date.now()), 30_000);
+    setInterval(() => {
+        timeline.setNow(Date.now());
+        if (_syncNowRef.active) timeline.setCurrentTime(Date.now(), true);
+    }, 30_000);
 
     document.getElementById('tl-play').addEventListener('click', () => timeline.togglePlay());
     document.getElementById('tl-rewind').addEventListener('click', () => timeline.seekToStart());
@@ -218,6 +232,16 @@ function initTimeline() {
     timeline.setSpeed(parseFloat(speedSel.value));
     speedSel.addEventListener('change', e => {
         timeline.setSpeed(parseFloat(e.target.value));
+    });
+
+    const syncBtn = document.getElementById('tl-sync-now');
+    syncBtn.addEventListener('click', () => {
+        _syncNowRef.active = !_syncNowRef.active;
+        syncBtn.classList.toggle('sync-active', _syncNowRef.active);
+        if (_syncNowRef.active) {
+            timeline.pause();
+            timeline.setCurrentTime(Date.now(), true);
+        }
     });
 }
 

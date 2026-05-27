@@ -4,11 +4,12 @@
 // Right zone (amber) : future 24h — simulation predictions
 
 export class Timeline {
-    constructor({ canvas, onSeek, onPlayStateChange }) {
+    constructor({ canvas, onSeek, onPlayStateChange, onUserSeek }) {
         this._canvas = canvas;
         this._ctx = canvas.getContext('2d');
         this._onSeek = onSeek;
         this._onPlayStateChange = onPlayStateChange;
+        this._onUserSeek = onUserSeek;
 
         // Fixed 48-hour window centred on nowMs
         this._nowMs = null;          // Date.now() snapshot — set by setNow()
@@ -166,6 +167,7 @@ export class Timeline {
     _handleClick(e) {
         if (this._nowMs === null) return;
         const x = e.clientX - this._canvas.getBoundingClientRect().left;
+        this._onUserSeek && this._onUserSeek();
         this.pause();
         this.setCurrentTime(this._xToMs(x), true);
     }
@@ -173,6 +175,7 @@ export class Timeline {
     _handleMouseDown(e) {
         if (this._nowMs === null) return;
         this._dragging = true;
+        this._onUserSeek && this._onUserSeek();
         this.pause();
     }
     _handleMouseMove(e) {
