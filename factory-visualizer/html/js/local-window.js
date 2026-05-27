@@ -228,22 +228,87 @@ function _getSignalLabel(sig) {
 // ---- Boot ----
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // タイトルをステーションタイプに応じて設定
-    const titleLabel = _IS_SUB ? `Station Editor — ${MACHINE_ID}` : `Machine Editor — ${EQUIP_NAME}`;
-    document.getElementById('local-title').textContent = titleLabel;
     document.getElementById('local-factory-info').textContent = `factory: ${FACTORY_ID.substring(0, 8)}…`;
     document.getElementById('info-sid').value = MACHINE_ID;
 
-    initTabs();
     initButtons();
     initViewTab();
     await loadMachineData();
 
-    // Activate 3D scene if ビュー表示 is the default active tab
-    if (document.querySelector('.tab.active')?.dataset.tab === 'view') {
-        _lvActivateTab();
+    // Detect station type and configure UI accordingly
+    const stationType = machineStation?.stationType || 'machine';
+    if (stationType === 'source' || stationType === 'drain') {
+        document.getElementById('local-title').textContent = `${stationType === 'source' ? 'Source' : 'Drain'} Editor — ${MACHINE_ID}`;
+        _initSourceDrainMode(stationType);
+    } else {
+        const titleLabel = _IS_SUB ? `Station Editor — ${MACHINE_ID}` : `Machine Editor — ${EQUIP_NAME}`;
+        document.getElementById('local-title').textContent = titleLabel;
+        initTabs();
+        if (document.querySelector('.tab.active')?.dataset.tab === 'view') {
+            _lvActivateTab();
+        }
     }
 });
+
+function _initSourceDrainMode(stationType) {
+    // Hide all tabs except info
+    document.querySelectorAll('.tab').forEach(t => {
+        if (t.dataset.tab !== 'info') t.style.display = 'none';
+    });
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelector('.tab[data-tab="info"]').classList.add('active');
+    document.getElementById('tab-info').classList.add('active');
+
+    // Replace info tab content with source/drain config form
+    const infoTab = document.getElementById('tab-info');
+    const cfg = machineStation?.config || {};
+
+    if (stationType === 'source') {
+        infoTab.innerHTML = `
+            <div class="field-group">
+                <label>Station ID</label>
+                <input type="text" value="${MACHINE_ID}" readonly style="opacity:0.6">
+            </div>
+            <div class="field-group">
+                <label>連続生産モード</label>
+                <select id="cfg-continuous">
+                    <option value="true" ${cfg.continuous ? 'selected' : ''}>有効（timeLimit まで無限生成）</option>
+                    <option value="false" ${!cfg.continuous ? 'selected' : ''}>無効（workCount 個で停止）</option>
+                </select>
+            </div>
+            <div class="field-group">
+                <label>ワーク生成数 (workCount)</label>
+                <input type="number" id="cfg-workCount" value="${cfg.workCount || 10}" min="1" step="1">
+                <span style="font-size:10px;color:var(--text-muted);">連続モード OFF の場合に使用</span>
+            </div>
+            <div class="field-group">
+                <label>生成間隔 (arrivalInterval) [秒]</label>
+                <input type="number" id="cfg-arrivalInterval" value="${cfg.arrivalInterval || 1}" min="0.1" step="0.1">
+            </div>
+            <div class="field-group">
+                <label>搬出時間 (departureTime) [秒]</label>
+                <input type="number" id="cfg-departureTime" value="${cfg.departureTime || 0.5}" min="0" step="0.1">
+            </div>
+        `;
+    } else {
+        infoTab.innerHTML = `
+            <div class="field-group">
+                <label>Station ID</label>
+                <input type="text" value="${MACHINE_ID}" readonly style="opacity:0.6">
+            </div>
+            <div class="field-group">
+                <label>搬入時間 (arrivalTime) [秒]</label>
+                <input type="number" id="cfg-arrivalTime" value="${cfg.arrivalTime || 0.5}" min="0" step="0.1">
+            </div>
+            <p style="font-size:11px;color:var(--text-muted);margin-top:16px;">
+                Drain はワークを受け取り消滅させるステーションです。<br>
+                特別な設定は不要です。
+            </p>
+        `;
+    }
+}
+
 
 function initTabs() {
     if (_IS_SUB) {
@@ -2223,6 +2288,31 @@ async function saveAndClose() {
     const btn = document.getElementById('btn-save');
     btn.disabled = true;
     btn.textContent = '保存中...';
+
+    const stationType = machineStation?.stationType || 'machine';
+
+    // Source/Drain: save config fields and close
+    if (stationType === 'source' || stationType === 'drain') {
+        try {
+            let newConfig = { ...(machineStation?.config || {}) };
+            if (stationType === 'source') {
+                newConfig.continuous = document.getElementById('cfg-continuous').value === 'true';
+                newConfig.workCount = parseInt(document.getElementById('cfg-workCount').value) || 10;
+                newConfig.arrivalInterval = parseFloat(document.getElementById('cfg-arrivalInterval').value) || 1;
+                newConfig.departureTime = parseFloat(document.getElementById('cfg-departureTime').value) || 0.5;
+            } else {
+                newConfig.arrivalTime = parseFloat(document.getElementById('cfg-arrivalTime').value) || 0.5;
+            }
+            await API.updateStation(FACTORY_ID, MACHINE_ID, { config: newConfig });
+            btn.textContent = '保存完了';
+            setTimeout(() => window.close(), 500);
+        } catch (err) {
+            alert('保存失敗: ' + err.message);
+            btn.disabled = false;
+            btn.textContent = '保存する';
+        }
+        return;
+    }
 
     try {
         // config を段階的に構築して1回のsaveにまとめる
