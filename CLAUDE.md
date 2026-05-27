@@ -47,7 +47,6 @@ powershell -ExecutionPolicy Bypass -File scripts/setup-dev.ps1
 |---|---|---|
 | `simulation-core` | シミュレーションエンジン + REST API | 8080 |
 | `sim-visualizer` | 3D可視化 (Nginx + Three.js) | 8081 |
-| `sim-editor` | シナリオエディタ (Nginx) | 8082 |
 | `sim-executor` | 実行管理フロントエンド (Nginx) | 8083 |
 | `sim-executor-backend` | 実行管理バックエンド API (Go) | 8084 |
 | `sim-portal` | 統合管理ポータル (Nginx) | 8085 |

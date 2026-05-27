@@ -1,5 +1,5 @@
-// Mouse button configuration module for editor and viewer
-// Shared between sim-editor and sim-visualizer
+// Mouse button configuration module for 3D viewers
+// Used by sim-visualizer
 
 // --- Presets ---
 

@@ -41,64 +41,16 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("/api/scenarios/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Handler 1: Method=%s, Path=%s", r.Method, r.URL.Path)
-		// Route based on path
-		if r.URL.Path == "/api/scenarios" || r.URL.Path == "/api/scenarios/" {
-			if r.Method == http.MethodGet {
-				log.Println("Calling HandleListScenarios")
-				handler.HandleListScenarios(w, r)
-			} else {
-				log.Println("Calling HandleCreateScenario")
-				handler.HandleCreateScenario(w, r)
-			}
-		} else if r.Method == http.MethodPut {
-			// PUT /api/scenarios/:id - update scenario
-			log.Println("Calling HandleUpdateScenario")
-			handler.HandleUpdateScenario(w, r)
-		} else if r.Method == http.MethodDelete {
-			// DELETE /api/scenarios/:id - delete scenario
-			log.Println("Calling HandleDeleteScenario")
-			handler.HandleDeleteScenario(w, r)
-		} else {
-			// GET /api/scenarios/:id - get scenario details
-			log.Println("Calling HandleGetScenario")
-			handler.HandleGetScenario(w, r)
-		}
-	}))
-	mux.HandleFunc("/api/scenarios", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Handler 2: Method=%s, Path=%s", r.Method, r.URL.Path)
-		if r.Method == http.MethodGet {
-			// GET /api/scenarios - list all scenarios
-			log.Println("Calling HandleListScenarios")
-			handler.HandleListScenarios(w, r)
-		} else {
-			// POST /api/scenarios - create scenario
-			log.Println("Calling HandleCreateScenario")
-			handler.HandleCreateScenario(w, r)
-		}
-	}))
-	mux.HandleFunc("/api/simulations", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			handler.HandleGetSimulations(w, r)
-		} else {
-			handler.HandleRunSimulation(w, r)
-		}
-	}))
+	mux.HandleFunc("/api/simulations", corsMiddleware(handler.HandleGetSimulations))
 	mux.HandleFunc("/api/simulations/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		// Route to appropriate handler based on path
 		if r.URL.Path == "/api/simulations/" {
 			http.Error(w, "Simulation ID required", http.StatusBadRequest)
 			return
 		}
-
-		// Check if path ends with /logs
 		if len(r.URL.Path) > 5 && r.URL.Path[len(r.URL.Path)-5:] == "/logs" {
 			handler.HandleGetLogs(w, r)
 		} else if len(r.URL.Path) > 8 && r.URL.Path[len(r.URL.Path)-8:] == "/lineage" {
 			handler.HandleGetLineage(w, r)
-		} else if len(r.URL.Path) > 11 && r.URL.Path[len(r.URL.Path)-11:] == "/export-wdh" {
-			handler.HandleExportWDH(w, r)
 		} else {
 			handler.HandleGetSimulation(w, r)
 		}

@@ -29,6 +29,7 @@ services:
       - ./database/migrations/017_recreate_scenarios.sql:/docker-entrypoint-initdb.d/017_recreate_scenarios.sql
       - ./database/migrations/018_consolidate_equipment_groups.sql:/docker-entrypoint-initdb.d/018_consolidate_equipment_groups.sql
       - ./database/migrations/019_fix_orphaned_stations.sql:/docker-entrypoint-initdb.d/019_fix_orphaned_stations.sql
+      - ./database/migrations/020_drop_scenario_tables.sql:/docker-entrypoint-initdb.d/020_drop_scenario_tables.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -129,21 +130,6 @@ services:
     networks:
       - factory-network
 
-  sim-editor:
-    build:
-      context: .
-      dockerfile: sim-editor/Dockerfile
-    container_name: factory-sim-editor
-    expose:
-      - "80"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - factory-network
-
   factory-visualizer:
     build:
       context: ./factory-visualizer
@@ -230,8 +216,6 @@ services:
     depends_on:
       sim-visualizer:
         condition: service_healthy
-      sim-editor:
-        condition: service_healthy
       factory-visualizer:
         condition: service_healthy
       sim-factory-manager:
@@ -258,8 +242,6 @@ services:
       sim-portal:
         condition: service_healthy
       sim-visualizer:
-        condition: service_healthy
-      sim-editor:
         condition: service_healthy
       factory-visualizer:
         condition: service_healthy

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"factory-simulation/simulation-core/internal/domain"
 	"factory-simulation/simulation-core/internal/simulation"
 	"factory-simulation/simulation-core/internal/wdhexport"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 
 // RunRequest is the internal request from realtime-gateway
 type RunRequest struct {
-	ScenarioID        string                             `json:"scenarioId"`
 	FactoryID         string                             `json:"factoryId"`
 	DataSourceID      string                             `json:"dataSourceId"`
 	SimulationTime    float64                            `json:"simulationTime"`
@@ -41,8 +39,8 @@ func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.ScenarioID == "" && req.FactoryID == "" {
-		respondError(w, http.StatusBadRequest, "scenarioId or factoryId is required")
+	if req.FactoryID == "" {
+		respondError(w, http.StatusBadRequest, "factoryId is required")
 		return
 	}
 	if req.DataSourceID == "" {
@@ -63,21 +61,10 @@ func (h *Handler) HandleRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fetch scenario — from factory_stations/connections or from scenarios table
-	var scenario *domain.Scenario
-	var fetchErr error
-	if req.FactoryID != "" {
-		scenario, fetchErr = h.repo.GetScenarioFromFactory(req.FactoryID)
-		if fetchErr != nil {
-			respondError(w, http.StatusNotFound, fetchErr.Error())
-			return
-		}
-	} else {
-		scenario, fetchErr = h.GetScenario(req.ScenarioID)
-		if fetchErr != nil {
-			respondError(w, http.StatusNotFound, fetchErr.Error())
-			return
-		}
+	scenario, fetchErr := h.repo.GetScenarioFromFactory(req.FactoryID)
+	if fetchErr != nil {
+		respondError(w, http.StatusNotFound, fetchErr.Error())
+		return
 	}
 
 	// Build initial conditions

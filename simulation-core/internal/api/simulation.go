@@ -1,17 +1,18 @@
 package api
 
 import (
-	"factory-simulation/simulation-core/internal/domain"
 	"factory-simulation/simulation-core/internal/simulation"
 	"fmt"
-	"log"
 	"net/http"
-	"runtime"
 	"strings"
-	"time"
-
-	"github.com/google/uuid"
 )
+
+// LogsResponse represents a GET /api/simulations/:id/logs response
+type LogsResponse struct {
+	SimulationID      string                       `json:"simulationId"`
+	StationStatusLogs []simulation.StationStatusLog `json:"stationStatusLogs"`
+	WorkEvents        []simulation.WorkEventLog     `json:"workEvents"`
+}
 
 // InitialConditionStation represents initial conditions for a station
 type InitialConditionStation struct {
@@ -20,14 +21,7 @@ type InitialConditionStation struct {
 		QualityStatus string `json:"qualityStatus"`
 	} `json:"currentWork"`
 	ElapsedTime float64  `json:"elapsedTime"`
-	WorkIDs     []string `json:"workIds"` // Predefined work IDs for this station (for source stations)
-}
-
-// SimulationRequest represents a POST /api/simulations request
-type SimulationRequest struct {
-	ScenarioID        string                             `json:"scenarioId"`
-	SimulationTime    float64                            `json:"simulationTime"`
-	InitialConditions map[string]InitialConditionStation `json:"initialConditions"`
+	WorkIDs     []string `json:"workIds"`
 }
 
 // SimulationResponse represents a POST /api/simulations response
@@ -53,137 +47,6 @@ type SimulationResult struct {
 		TotalWorksDestroyed int `json:"totalWorksDestroyed"`
 		TotalEvents         int `json:"totalEvents"`
 	} `json:"summary"`
-}
-
-// LogsResponse represents a GET /api/simulations/:id/logs response
-type LogsResponse struct {
-	SimulationID      string                       `json:"simulationId"`
-	StationStatusLogs []simulation.StationStatusLog `json:"stationStatusLogs"`
-	WorkEvents        []simulation.WorkEventLog     `json:"workEvents"`
-}
-
-// HandleRunSimulation handles POST /api/simulations
-func (h *Handler) HandleRunSimulation(w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if rv := recover(); rv != nil {
-			log.Printf("PANIC in HandleRunSimulation: %v", rv)
-			// Print stack trace
-			buf := make([]byte, 4096)
-			n := runtime.Stack(buf, false)
-			log.Printf("Stack trace:\n%s", buf[:n])
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Internal panic: %v", rv))
-		}
-	}()
-
-	// Disable WriteTimeout — same as /run — simulation runs synchronously and can
-	// take longer than the global 5-minute WriteTimeout.
-	rc := http.NewResponseController(w)
-	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
-		log.Printf("[simulation] warning: failed to clear write deadline: %v", err)
-	}
-
-	if r.Method != http.MethodPost {
-		respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	var req SimulationRequest
-	if err := parseJSON(r, &req); err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	// Validate request
-	if req.ScenarioID == "" {
-		respondError(w, http.StatusBadRequest, "Scenario ID is required")
-		return
-	}
-	if req.SimulationTime <= 0 {
-		respondError(w, http.StatusBadRequest, "Simulation time must be positive")
-		return
-	}
-
-	// Get scenario
-	scenario, err := h.GetScenario(req.ScenarioID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, err.Error())
-		return
-	}
-
-	// Extract work IDs and initial work conditions from initial conditions
-	workIDsByStation := make(map[string][]string)
-	initialWorks := make(map[string]simulation.InitialWorkCondition)
-	if req.InitialConditions != nil {
-		for stationID, condition := range req.InitialConditions {
-			if len(condition.WorkIDs) > 0 {
-				workIDsByStation[stationID] = condition.WorkIDs
-			}
-			if condition.CurrentWork != nil && condition.CurrentWork.ID != "" {
-				initialWorks[stationID] = simulation.InitialWorkCondition{
-					WorkID:        condition.CurrentWork.ID,
-					QualityStatus: condition.CurrentWork.QualityStatus,
-					ElapsedTime:   condition.ElapsedTime,
-				}
-			}
-		}
-	}
-	if len(initialWorks) > 0 {
-		log.Printf("Initial conditions: %d works to place", len(initialWorks))
-	}
-
-	// Generate unique simulation ID using UUID
-	simulationID := uuid.New().String()
-
-	// Generate friendly name: ScenarioName_RunN_Timestamp
-	timestamp := time.Now().Format("2006-01-02T15:04:05")
-	friendlyName := fmt.Sprintf("%s_実行_%s", scenario.Name, timestamp)
-
-	// Migrate old interlock rules to 10-signal model
-	domain.MigrateScenario(scenario)
-
-	// Run simulation with initial conditions
-	engine := simulation.NewEngineWithInitialConditions(scenario, workIDsByStation, initialWorks)
-	sim, statusLogs, workEventLogs, workLineageLogs, err := engine.Run(simulationID, friendlyName, req.SimulationTime)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Simulation failed: %v", err))
-		return
-	}
-
-	// Save to database
-	if err := h.repo.SaveSimulationRun(sim); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save simulation: %v", err))
-		return
-	}
-
-	if err := h.repo.SaveStationStatusLogs(sim.ID, statusLogs); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save status logs: %v", err))
-		return
-	}
-
-	if err := h.repo.SaveWorkEvents(sim.ID, workEventLogs); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save work events: %v", err))
-		return
-	}
-
-	if err := h.repo.SaveWorkLineageLogs(sim.ID, workLineageLogs); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save work lineage logs: %v", err))
-		return
-	}
-
-	// Prepare response
-	response := SimulationResponse{
-		SimulationID: sim.ID,
-		FriendlyName: sim.FriendlyName,
-		Status:       string(sim.Status),
-	}
-	if sim.EndTime != nil {
-		response.EndTime = *sim.EndTime
-	}
-	if sim.EndReason != nil {
-		response.EndReason = string(*sim.EndReason)
-	}
-
-	respondJSON(w, http.StatusOK, response)
 }
 
 // HandleGetSimulation handles GET /api/simulations/:id

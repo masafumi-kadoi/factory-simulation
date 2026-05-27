@@ -3,7 +3,6 @@
 const SERVICE_DISPLAY = {
     'realtime-gateway': { label: 'Realtime Gateway (API)', icon: '\u2699\uFE0F' },
     'sim-factory-manager': { label: 'Factory Manager (Frontend)', icon: '\uD83C\uDFED' },
-    'sim-editor': { label: 'Scenario Editor (Frontend)', icon: '\u270F\uFE0F' },
     'sim-executor': { label: 'Simulation Executor (Frontend)', icon: '\uD83D\uDCCB' },
     'sim-visualizer': { label: 'Result Visualizer (Frontend)', icon: '\uD83D\uDCCA' },
 };

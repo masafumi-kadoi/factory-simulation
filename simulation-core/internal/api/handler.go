@@ -3,10 +3,8 @@ package api
 import (
 	"encoding/json"
 	"factory-simulation/simulation-core/internal/database"
-	"factory-simulation/simulation-core/internal/domain"
 	"fmt"
 	"net/http"
-	"sync"
 )
 
 // APIError represents an API error
@@ -17,16 +15,13 @@ type APIError struct {
 
 // Handler handles HTTP requests
 type Handler struct {
-	repo      *database.Repository
-	scenarios map[string]*domain.Scenario
-	mu        sync.RWMutex
+	repo *database.Repository
 }
 
 // NewHandler creates a new handler
 func NewHandler(repo *database.Repository) *Handler {
 	return &Handler{
-		repo:      repo,
-		scenarios: make(map[string]*domain.Scenario),
+		repo: repo,
 	}
 }
 
