@@ -2428,7 +2428,7 @@ function _lvActivateTab() {
         });
     } else {
         _lvScene.resume();
-        _lvScene.loadStations(childStations, childConnections);
+        _lvScene.loadStations(childStations, childConnections, machineStation);
     }
     _lvRefreshHistory();
     _lvStartSyncLoop();
@@ -2798,7 +2798,7 @@ class LocalViewScene {
             const eox = equipOrigin?.x ?? 0;
             const eoz = equipOrigin?.z ?? 0;
             const modelGroup = new THREE.Group();
-            modelGroup.position.set(cx - eox, 0, cz - eoz);
+            modelGroup.position.set(-eox, 0, -eoz);
             shellGroup.add(modelGroup);
             this._loadGlb(cfg.model3DGlb.data, modelGroup);
         } else if (hasGrid) {
@@ -2807,7 +2807,7 @@ class LocalViewScene {
             edgeMesh.visible = false;
 
             const voxelMesh = this._buildVoxelMesh(cfg.model3DGrid, this._shellOpacity);
-            voxelMesh.position.set(cx, 0, cz);
+            voxelMesh.position.set(0, 0, 0);
             shellGroup.add(voxelMesh);
         }
 
