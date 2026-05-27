@@ -2653,8 +2653,6 @@ class LocalViewScene {
         this._animActive = true;
         this._gridHelper = null;
         this._shellGroup = null;
-        this._shellMesh = null;
-        this._shellEdgeMesh = null;
         this._lastMachineStation = null;
 
         this._initScene();
@@ -2771,29 +2769,7 @@ class LocalViewScene {
 
         const shellGroup = new THREE.Group();
 
-        const shellGeo = new THREE.BoxGeometry(W, H, D);
-        const shellMat = new THREE.MeshStandardMaterial({
-            color: 0x4a9eff, transparent: true, opacity: this._shellOpacity * 0.2,
-            roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide,
-        });
-        const shellMesh = new THREE.Mesh(shellGeo, shellMat);
-        shellMesh.position.set(cx, H / 2, cz);
-        shellGroup.add(shellMesh);
-
-        const edgeGeo = new THREE.EdgesGeometry(shellGeo);
-        const edgeMat = new THREE.LineBasicMaterial({ color: 0x6ab4ff, transparent: true, opacity: 0.45 });
-        const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
-        edgeMesh.position.copy(shellMesh.position);
-        shellGroup.add(edgeMesh);
-
-        this._shellMesh = shellMesh;
-        this._shellEdgeMesh = edgeMesh;
-
         if (hasGlb) {
-            shellMesh.material.opacity = 0;
-            shellMesh.material.depthWrite = false;
-            edgeMesh.visible = false;
-
             const equipOrigin = cfg.equipmentOrigin;
             const eox = equipOrigin?.x ?? 0;
             const eoz = equipOrigin?.z ?? 0;
@@ -2802,13 +2778,24 @@ class LocalViewScene {
             shellGroup.add(modelGroup);
             this._loadGlb(cfg.model3DGlb.data, modelGroup);
         } else if (hasGrid) {
-            shellMesh.material.opacity = 0;
-            shellMesh.material.depthWrite = false;
-            edgeMesh.visible = false;
-
             const voxelMesh = this._buildVoxelMesh(cfg.model3DGrid, this._shellOpacity);
             voxelMesh.position.set(0, 0, 0);
             shellGroup.add(voxelMesh);
+        } else {
+            const shellGeo = new THREE.BoxGeometry(W, H, D);
+            const shellMat = new THREE.MeshStandardMaterial({
+                color: 0x4a9eff, transparent: true, opacity: this._shellOpacity * 0.2,
+                roughness: 0.5, metalness: 0.1, side: THREE.DoubleSide,
+            });
+            const shellMesh = new THREE.Mesh(shellGeo, shellMat);
+            shellMesh.position.set(cx, H / 2, cz);
+            shellGroup.add(shellMesh);
+
+            const edgeGeo = new THREE.EdgesGeometry(shellGeo);
+            const edgeMat = new THREE.LineBasicMaterial({ color: 0x6ab4ff, transparent: true, opacity: 0.45 });
+            const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+            edgeMesh.position.copy(shellMesh.position);
+            shellGroup.add(edgeMesh);
         }
 
         this.scene.add(shellGroup);
