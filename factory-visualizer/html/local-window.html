@@ -435,14 +435,14 @@
         <span id="local-factory-info" style="color:var(--text-muted);font-size:11px;"></span>
     </div>
     <div class="tab-bar">
-        <div class="tab active" data-tab="info">モデル情報</div>
+        <div class="tab active" data-tab="view">ビュー表示</div>
+        <div class="tab" data-tab="info">モデル情報</div>
         <div class="tab" data-tab="model3d">3Dモデル編集</div>
         <div class="tab" data-tab="logic">ロジック編集</div>
-        <div class="tab" data-tab="view">ビュー表示</div>
     </div>
 
     <!-- Tab: Info -->
-    <div class="tab-content active" id="tab-info">
+    <div class="tab-content" id="tab-info">
         <div class="field-group">
             <label>設備名 (name)</label>
             <input type="text" id="info-name" placeholder="設備名を入力">
@@ -545,7 +545,7 @@
     </div>
 
     <!-- Tab: View Display -->
-    <div class="tab-content" id="tab-view">
+    <div class="tab-content active" id="tab-view">
         <!-- Left panel -->
         <div class="lv-left">
             <!-- Objects section -->

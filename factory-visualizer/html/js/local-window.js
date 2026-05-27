@@ -238,22 +238,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     initButtons();
     initViewTab();
     await loadMachineData();
+
+    // Activate 3D scene if ビュー表示 is the default active tab
+    if (document.querySelector('.tab.active')?.dataset.tab === 'view') {
+        _lvActivateTab();
+    }
 });
 
 function initTabs() {
-    // ステーションタイプに応じてタブを表示・非表示
     if (_IS_SUB) {
-        // サブマシン (.001+): ロジックのみ、3Dモデルタブを非表示
+        // サブマシン (.001+): 3Dモデルタブを非表示、デフォルトをロジックタブに変更
         const modelTab = document.querySelector('.tab[data-tab="model3d"]');
         if (modelTab) modelTab.style.display = 'none';
-        // デフォルトをロジックタブに変更
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         const logicTab = document.querySelector('.tab[data-tab="logic"]');
         if (logicTab) { logicTab.classList.add('active'); document.getElementById('tab-logic').classList.add('active'); }
-        else { document.querySelector('.tab[data-tab="info"]').classList.add('active'); document.getElementById('tab-info').classList.add('active'); }
     }
-    // サフィックスなし / .000 マスター: 全タブ表示
 
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
