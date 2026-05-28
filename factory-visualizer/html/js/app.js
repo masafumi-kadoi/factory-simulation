@@ -582,9 +582,9 @@ const _simWindow = {
     loadedToMs: 0,
     loading: false,
 };
-const SIM_WINDOW_MS   = 30 * 60 * 1000;  // load 30 min ahead
-const SIM_PREFETCH_MS = 15 * 60 * 1000;  // trigger reload 15 min before edge
-const SIM_DISCARD_MS  = 30 * 60 * 1000;  // discard events >30 min behind
+const SIM_WINDOW_MS   = 60 * 60 * 1000;  // load 1h ahead
+const SIM_PREFETCH_MS = 30 * 60 * 1000;  // trigger reload 30 min before edge
+const SIM_DISCARD_MS  = 60 * 60 * 1000;  // discard events >1h behind
 
 async function loadSimulationIntoRightZone(dataSourceId) {
     try {
@@ -627,10 +627,6 @@ async function _simEnsureWindow(centerMs) {
     } else {
         return;
     }
-
-    // Pause playback during fetch to prevent stutter, auto-resume after
-    const wasPlaying = timeline?.isPlaying;
-    if (wasPlaying) timeline.pause();
 
     _simWindow.loading = true;
     try {
@@ -686,7 +682,6 @@ async function _simEnsureWindow(centerMs) {
         console.warn('[sim] progressive load failed', e);
     } finally {
         _simWindow.loading = false;
-        if (wasPlaying) timeline.play();
     }
 }
 
