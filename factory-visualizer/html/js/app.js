@@ -582,9 +582,9 @@ const _simWindow = {
     loadedToMs: 0,
     loading: false,
 };
-const SIM_WINDOW_MS   = 10 * 60 * 1000;  // load 10 min ahead / 5 min behind
-const SIM_PREFETCH_MS = 5 * 60 * 1000;   // trigger reload 5 min before edge
-const SIM_DISCARD_MS  = 15 * 60 * 1000;  // discard events >15 min behind
+const SIM_WINDOW_MS   = 30 * 60 * 1000;  // load 30 min ahead
+const SIM_PREFETCH_MS = 15 * 60 * 1000;  // trigger reload 15 min before edge
+const SIM_DISCARD_MS  = 30 * 60 * 1000;  // discard events >30 min behind
 
 async function loadSimulationIntoRightZone(dataSourceId) {
     try {
@@ -607,15 +607,13 @@ async function loadSimulationIntoRightZone(dataSourceId) {
 
 async function _simEnsureWindow(centerMs) {
     if (!_simWindow.dsId || _simWindow.loading) return;
-    const BEHIND = SIM_WINDOW_MS / 2;   // 5 min behind
-    const AHEAD  = SIM_WINDOW_MS;       // 10 min ahead
+    const BEHIND = SIM_WINDOW_MS / 2;
+    const AHEAD  = SIM_WINDOW_MS;
     const needFrom = centerMs - BEHIND;
     const needTo   = centerMs + AHEAD;
 
-    // Already covered?
     if (_simWindow.loadedFromMs <= needFrom && _simWindow.loadedToMs >= needTo) return;
 
-    // Determine fetch range (only the gap)
     let fetchFrom, fetchTo;
     if (_simWindow.loadedToMs === 0) {
         fetchFrom = needFrom;
@@ -629,6 +627,10 @@ async function _simEnsureWindow(centerMs) {
     } else {
         return;
     }
+
+    // Pause playback during fetch to prevent stutter, auto-resume after
+    const wasPlaying = timeline?.isPlaying;
+    if (wasPlaying) timeline.pause();
 
     _simWindow.loading = true;
     try {
@@ -684,6 +686,7 @@ async function _simEnsureWindow(centerMs) {
         console.warn('[sim] progressive load failed', e);
     } finally {
         _simWindow.loading = false;
+        if (wasPlaying) timeline.play();
     }
 }
 
