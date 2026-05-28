@@ -262,7 +262,7 @@ function initTimeline() {
         timeline.setCurrentTime(Date.now(), true);
         _syncTimer = setInterval(() => {
             timeline.setNow(Date.now());
-            timeline.setCurrentTime(Date.now(), true);
+            timeline.setCurrentTime(Date.now(), false);
         }, 200);
     }
     function _stopSync() {
