@@ -561,15 +561,15 @@ async function loadSimulationResults(factoryId, gen = _loadGen) {
     } catch (e) { /* ignore */ }
 }
 
-// Progressive sim event loading: loads ±5 min windows, prefetches at ±1 min edge
+// Progressive sim event loading
 const _simWindow = {
     dsId: null,
     loadedFromMs: 0,
     loadedToMs: 0,
     loading: false,
 };
-const SIM_WINDOW_MS   = 5 * 60 * 1000;   // ±5 min
-const SIM_PREFETCH_MS = 1 * 60 * 1000;   // trigger reload 1 min before edge
+const SIM_WINDOW_MS   = 10 * 60 * 1000;  // load 10 min ahead / 5 min behind
+const SIM_PREFETCH_MS = 5 * 60 * 1000;   // trigger reload 5 min before edge
 const SIM_DISCARD_MS  = 15 * 60 * 1000;  // discard events >15 min behind
 
 async function loadSimulationIntoRightZone(dataSourceId) {
@@ -593,8 +593,10 @@ async function loadSimulationIntoRightZone(dataSourceId) {
 
 async function _simEnsureWindow(centerMs) {
     if (!_simWindow.dsId || _simWindow.loading) return;
-    const needFrom = centerMs - SIM_WINDOW_MS;
-    const needTo   = centerMs + SIM_WINDOW_MS;
+    const BEHIND = SIM_WINDOW_MS / 2;   // 5 min behind
+    const AHEAD  = SIM_WINDOW_MS;       // 10 min ahead
+    const needFrom = centerMs - BEHIND;
+    const needTo   = centerMs + AHEAD;
 
     // Already covered?
     if (_simWindow.loadedFromMs <= needFrom && _simWindow.loadedToMs >= needTo) return;
@@ -602,16 +604,13 @@ async function _simEnsureWindow(centerMs) {
     // Determine fetch range (only the gap)
     let fetchFrom, fetchTo;
     if (_simWindow.loadedToMs === 0) {
-        // First load
         fetchFrom = needFrom;
         fetchTo   = needTo;
     } else if (centerMs >= _simWindow.loadedToMs - SIM_PREFETCH_MS) {
-        // Expanding forward
         fetchFrom = _simWindow.loadedToMs;
-        fetchTo   = needTo;
+        fetchTo   = centerMs + AHEAD;
     } else if (centerMs <= _simWindow.loadedFromMs + SIM_PREFETCH_MS) {
-        // Expanding backward
-        fetchFrom = needFrom;
+        fetchFrom = centerMs - BEHIND;
         fetchTo   = _simWindow.loadedFromMs;
     } else {
         return;
