@@ -131,11 +131,16 @@ function initScene() {
 function applyHistoryAtTime(ms, animate = true) {
     if (!scene3d) return;
 
-    // Pick the right events + locationMap based on zone
-    // Use timeline's fixed nowMs (updated every 30s) rather than live Date.now(),
-    // so seeking just past the NOW marker correctly switches to sim data.
+    // Pick the right events + locationMap based on zone.
+    // If sim data is loaded and ms falls within the loaded sim window,
+    // always use sim data (prevents nowMs refresh from flipping the zone).
     const zoneNow = timeline?._nowMs ?? Date.now();
-    const isRealtime = ms <= zoneNow;
+    let isRealtime = ms <= zoneNow;
+    if (isRealtime && state.simHistoryEvents.length > 0 && _simWindow.dsId) {
+        const simFirstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
+        const simLastMs  = new Date(state.simHistoryEvents[state.simHistoryEvents.length - 1].event_time).getTime();
+        if (ms >= simFirstMs && ms <= simLastMs) isRealtime = false;
+    }
     const events   = isRealtime ? state.realtimeHistoryEvents : state.simHistoryEvents;
     const locMap   = isRealtime ? state.realtimeLocationMap   : state.simLocationMap;
 
