@@ -207,6 +207,12 @@ function initTimeline() {
         onSeek: (ms, seeking) => {
             setTimeDisplay(ms);
             applyHistoryAtTime(ms, !seeking);
+            // Trigger progressive sim event loading when near window edge
+            if (state.simDataSourceId && _simWindow.dsId) {
+                const nearEnd = ms >= _simWindow.loadedToMs - SIM_PREFETCH_MS;
+                const nearStart = ms <= _simWindow.loadedFromMs + SIM_PREFETCH_MS;
+                if (nearEnd || nearStart) _simEnsureWindow(ms);
+            }
         },
         onPlayStateChange: playing => {
             document.getElementById('tl-play').textContent = playing ? '⏸' : '▶';
@@ -323,7 +329,7 @@ function initUI() {
             await loadSimulationIntoRightZone(dsId);
             timeline.selectSimulation(dsId);
             document.getElementById('btn-stop-sim').disabled = false;
-            seekToSimStart();
+            await seekToSimStart();
             setStatus('シミュレーション結果を表示中', 'status-ok');
         } catch (e) {
             console.warn('[execHistory] failed to load simulation', e);
@@ -449,7 +455,7 @@ async function selectFactory(factoryId) {
         state.realtimeHistoryEvents = [];
         state.realtimeLocationMap = new Map();
         state.simDataSourceId = null;
-        state.simHistoryEvents = [];
+        state.simHistoryEvents = []; _simWindow.dsId = null; _simWindow.loadedFromMs = 0; _simWindow.loadedToMs = 0;
         state.simLocationMap = new Map();
         timeline.setNow(Date.now());
         timeline.setRealtimeData([]);
@@ -555,6 +561,17 @@ async function loadSimulationResults(factoryId, gen = _loadGen) {
     } catch (e) { /* ignore */ }
 }
 
+// Progressive sim event loading: loads ±5 min windows, prefetches at ±1 min edge
+const _simWindow = {
+    dsId: null,
+    loadedFromMs: 0,
+    loadedToMs: 0,
+    loading: false,
+};
+const SIM_WINDOW_MS   = 5 * 60 * 1000;   // ±5 min
+const SIM_PREFETCH_MS = 1 * 60 * 1000;   // trigger reload 1 min before edge
+const SIM_DISCARD_MS  = 15 * 60 * 1000;  // discard events >15 min behind
+
 async function loadSimulationIntoRightZone(dataSourceId) {
     try {
         const layout = await API.fetchDataSourceLayout(dataSourceId);
@@ -566,39 +583,113 @@ async function loadSimulationIntoRightZone(dataSourceId) {
         console.warn('[sim] layout load failed', e);
     }
 
+    // Reset progressive window
+    _simWindow.dsId = dataSourceId;
+    _simWindow.loadedFromMs = 0;
+    _simWindow.loadedToMs = 0;
+    state.simHistoryEvents = [];
+    state.simDataSourceId = dataSourceId;
+}
+
+async function _simEnsureWindow(centerMs) {
+    if (!_simWindow.dsId || _simWindow.loading) return;
+    const needFrom = centerMs - SIM_WINDOW_MS;
+    const needTo   = centerMs + SIM_WINDOW_MS;
+
+    // Already covered?
+    if (_simWindow.loadedFromMs <= needFrom && _simWindow.loadedToMs >= needTo) return;
+
+    // Determine fetch range (only the gap)
+    let fetchFrom, fetchTo;
+    if (_simWindow.loadedToMs === 0) {
+        // First load
+        fetchFrom = needFrom;
+        fetchTo   = needTo;
+    } else if (centerMs >= _simWindow.loadedToMs - SIM_PREFETCH_MS) {
+        // Expanding forward
+        fetchFrom = _simWindow.loadedToMs;
+        fetchTo   = needTo;
+    } else if (centerMs <= _simWindow.loadedFromMs + SIM_PREFETCH_MS) {
+        // Expanding backward
+        fetchFrom = needFrom;
+        fetchTo   = _simWindow.loadedFromMs;
+    } else {
+        return;
+    }
+
+    _simWindow.loading = true;
     try {
         const events = await API.fetchDataSourceEvents(
-            dataSourceId,
-            new Date(0).toISOString(),
-            new Date('2100-01-01').toISOString()
+            _simWindow.dsId,
+            new Date(fetchFrom).toISOString(),
+            new Date(fetchTo).toISOString()
         );
         const evArr = Array.isArray(events) ? events : [];
-        state.simHistoryEvents = evArr
-            .filter(ev => ev.table === 'item_movement' || ev.movement_type)
-            .sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
-        state.simDataSourceId = dataSourceId;
+        const newEvents = evArr
+            .filter(ev => ev.table === 'item_movement' || ev.movement_type);
 
+        if (newEvents.length > 0) {
+            // Merge and sort
+            const merged = state.simHistoryEvents.concat(newEvents);
+            merged.sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
+            // Deduplicate by event_time + item_id
+            const seen = new Set();
+            state.simHistoryEvents = merged.filter(ev => {
+                const key = `${ev.event_time}|${ev.item_id}|${ev.movement_type}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
+
+        // Update loaded range
+        _simWindow.loadedFromMs = Math.min(_simWindow.loadedFromMs || fetchFrom, fetchFrom);
+        _simWindow.loadedToMs   = Math.max(_simWindow.loadedToMs   || fetchTo,   fetchTo);
+
+        // Discard old events far behind current position
+        const discardBefore = centerMs - SIM_DISCARD_MS;
+        if (state.simHistoryEvents.length > 0) {
+            const firstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
+            if (firstMs < discardBefore) {
+                state.simHistoryEvents = state.simHistoryEvents.filter(
+                    ev => new Date(ev.event_time).getTime() >= discardBefore
+                );
+                _simWindow.loadedFromMs = discardBefore;
+            }
+        }
+
+        // Update timeline bracket (use loaded range)
         if (state.simHistoryEvents.length > 0) {
             const firstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
             const lastMs  = new Date(state.simHistoryEvents[state.simHistoryEvents.length - 1].event_time).getTime();
             const evtMs = state.simHistoryEvents.map(ev => new Date(ev.event_time).getTime());
-            timeline.setSimulationData(dataSourceId, firstMs, lastMs, evtMs);
+            timeline.setSimulationData(_simWindow.dsId, firstMs, lastMs, evtMs);
         }
+
+        console.log(`[sim] window ${new Date(fetchFrom).toISOString().slice(11,19)}–${new Date(fetchTo).toISOString().slice(11,19)}: +${newEvents.length} events, total=${state.simHistoryEvents.length}`);
     } catch (e) {
-        console.warn('[sim] events load failed', e);
+        console.warn('[sim] progressive load failed', e);
+    } finally {
+        _simWindow.loading = false;
     }
 }
 
 // Seek the timeline to the best viewing position for the loaded simulation.
-// Prefers the first future event (right zone); falls back to nowMs+1 so the
-// user is placed in the right zone and sees the sim's final state.
-function seekToSimStart() {
-    if (!state.simHistoryEvents.length || !timeline) return;
+// Triggers initial progressive load around the seek target.
+async function seekToSimStart() {
+    if (!state.simDataSourceId || !timeline) return;
     const nowMs = timeline._nowMs ?? Date.now();
-    const firstFutureEv = state.simHistoryEvents.find(ev => new Date(ev.event_time).getTime() > nowMs);
-    const seekMs = firstFutureEv
-        ? new Date(firstFutureEv.event_time).getTime() + 1
-        : nowMs + 1;  // all events in past → show final state at right-zone start
+    const seekMs = nowMs + 1;
+    // Load initial window around the seek target
+    await _simEnsureWindow(seekMs);
+    // If we got future events, seek to the first one
+    if (state.simHistoryEvents.length > 0) {
+        const firstFutureEv = state.simHistoryEvents.find(ev => new Date(ev.event_time).getTime() > nowMs);
+        if (firstFutureEv) {
+            timeline.setCurrentTime(new Date(firstFutureEv.event_time).getTime() + 1, true);
+            return;
+        }
+    }
     timeline.setCurrentTime(seekMs, true);
 }
 
@@ -750,7 +841,7 @@ async function loadExecutionResult(execId, dataSourceId, startDatetime, simulati
         timeline.selectSimulation(dataSourceId);
 
         // Seek into the right zone so the user sees the simulation results
-        seekToSimStart();
+        await seekToSimStart();
 
     } catch (err) {
         setStatus('結果読み込み失敗: ' + err.message, 'status-error');
@@ -832,7 +923,7 @@ function disconnectWebSocket() {
 function stopLive() {
     // Clear simulation data from the right zone (do not touch the realtime WS)
     state.simDataSourceId = null;
-    state.simHistoryEvents = [];
+    state.simHistoryEvents = []; _simWindow.dsId = null; _simWindow.loadedFromMs = 0; _simWindow.loadedToMs = 0;
     state.simLocationMap = new Map();
     timeline.clearSimulationData();
 

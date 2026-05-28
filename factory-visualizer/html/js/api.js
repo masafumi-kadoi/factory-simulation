@@ -106,11 +106,12 @@ export async function fetchDataSourceLayout(dataSourceId) {
     return req('GET', `/data-sources/${encodeURIComponent(dataSourceId)}/layout`);
 }
 
-export async function fetchDataSourceEvents(dataSourceId, fromTime, toTime) {
+export async function fetchDataSourceEvents(dataSourceId, fromTime, toTime, limit) {
     let path = `/data-sources/${encodeURIComponent(dataSourceId)}/events`;
     const params = new URLSearchParams();
     if (fromTime) params.set('from', fromTime);
     if (toTime) params.set('to', toTime);
+    if (limit) params.set('limit', String(limit));
     const qs = params.toString();
     return req('GET', qs ? `${path}?${qs}` : path);
 }
