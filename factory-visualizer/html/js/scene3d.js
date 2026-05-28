@@ -37,6 +37,14 @@ const STATION_COLORS = {
 const STATION_RADIUS = 0.25; // 直径 0.5m
 const STATION_HEIGHT = 0.2;  // 高さ 0.2m
 
+// Adaptive grid spacing steps (metres) and camera-distance thresholds
+const GRID_STEPS = [
+    { maxDist:  15, spacing:  1 },
+    { maxDist:  50, spacing:  5 },
+    { maxDist: 120, spacing: 10 },
+    { maxDist: Infinity, spacing: 50 },
+];
+
 // Model top heights used for relative↔absolute label height conversion
 export const MODEL_TOP = {
     machine: 11,           // machine shell height (H)
@@ -182,7 +190,7 @@ export class Scene3D {
         this._recreateGrid(gridSize, THEMES[this._theme]);
     }
 
-    _recreateGrid(size, t) {
+    _recreateGrid(size, t, spacing) {
         if (this._grid) {
             this.scene.remove(this._grid);
             if (this._grid.geometry) this._grid.geometry.dispose();
@@ -194,14 +202,19 @@ export class Scene3D {
             this._grid = null;
         }
 
-        // Large GridHelper that follows the camera — fog hides the edges,
-        // creating the illusion of an infinite grid.
-        const gridSize = 600;
-        const spacing  = 5;
-        this._gridSpacing = spacing;
-        this._grid = new THREE.GridHelper(gridSize, gridSize / spacing, t.gridCenter, t.gridLines);
+        const sp = spacing || 5;
+        const gridSize = sp * 120;
+        this._gridSpacing = sp;
+        this._grid = new THREE.GridHelper(gridSize, gridSize / sp, t.gridCenter, t.gridLines);
         this._grid.position.y = 0.2;
         this.scene.add(this._grid);
+    }
+
+    _pickGridSpacing(camDist) {
+        for (const step of GRID_STEPS) {
+            if (camDist < step.maxDist) return step.spacing;
+        }
+        return GRID_STEPS[GRID_STEPS.length - 1].spacing;
     }
 
     // ---- Load factory ----
@@ -1383,6 +1396,13 @@ export class Scene3D {
         });
 
         const cam = this._useOrtho ? this._orthoCamera : this.camera;
+
+        // Adapt grid spacing to camera distance
+        const camDist = cam.position.distanceTo(this.controls.target);
+        const idealSpacing = this._pickGridSpacing(camDist);
+        if (idealSpacing !== this._gridSpacing) {
+            this._recreateGrid(this._groundSize, THEMES[this._theme], idealSpacing);
+        }
 
         // Keep grid centered under camera — snap to spacing so lines tile seamlessly
         if (this._grid) {
