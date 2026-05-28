@@ -238,22 +238,36 @@ function initTimeline() {
             if (playing && _syncNowRef.active) {
                 _syncNowRef.active = false;
                 document.getElementById('tl-sync-now')?.classList.remove('sync-active');
+                _stopSync();
             }
         },
         onUserSeek: () => {
             if (_syncNowRef.active) {
                 _syncNowRef.active = false;
                 document.getElementById('tl-sync-now')?.classList.remove('sync-active');
+                _stopSync();
             }
         },
     });
 
     // Initialise with current time and refresh the NOW marker every 30 s
     timeline.setNow(Date.now());
-    setInterval(() => {
+    let _syncTimer = null;
+    setInterval(() => timeline.setNow(Date.now()), 30_000);
+
+    function _startSync() {
+        if (_syncTimer) return;
+        timeline.pause();
         timeline.setNow(Date.now());
-        if (_syncNowRef.active) timeline.setCurrentTime(Date.now(), true);
-    }, 30_000);
+        timeline.setCurrentTime(Date.now(), true);
+        _syncTimer = setInterval(() => {
+            timeline.setNow(Date.now());
+            timeline.setCurrentTime(Date.now(), true);
+        }, 200);
+    }
+    function _stopSync() {
+        if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+    }
 
     document.getElementById('tl-play').addEventListener('click', () => timeline.togglePlay());
     document.getElementById('tl-rewind').addEventListener('click', () => timeline.seekToStart());
@@ -269,8 +283,9 @@ function initTimeline() {
         _syncNowRef.active = !_syncNowRef.active;
         syncBtn.classList.toggle('sync-active', _syncNowRef.active);
         if (_syncNowRef.active) {
-            timeline.pause();
-            timeline.setCurrentTime(Date.now(), true);
+            _startSync();
+        } else {
+            _stopSync();
         }
     });
 }
