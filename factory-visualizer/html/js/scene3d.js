@@ -262,7 +262,7 @@ export class Scene3D {
                 });
             });
         });
-        const internals = [...internalsMap.values()];
+        const internals = [...internalsMap.values()].filter(s => s.stationType !== 'entry' && s.stationType !== 'exit');
 
         // Group machines by equipment name (strip .NNN suffix) and render shells
         const groups = this._groupByEquipment(machines);
