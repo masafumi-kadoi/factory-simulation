@@ -55,6 +55,26 @@ export function initLeftPanel({ onFilterChange, onSettingChange }) {
         });
     }
 
+    const mlsSlider = document.getElementById('machine-label-scale');
+    const mlsVal = document.getElementById('machine-label-scale-val');
+    if (mlsSlider) {
+        mlsSlider.addEventListener('input', e => {
+            const v = parseFloat(e.target.value);
+            mlsVal.textContent = v;
+            onSettingChange && onSettingChange('machineLabelScale', v);
+        });
+    }
+
+    const slsSlider = document.getElementById('station-label-scale');
+    const slsVal = document.getElementById('station-label-scale-val');
+    if (slsSlider) {
+        slsSlider.addEventListener('input', e => {
+            const v = parseFloat(e.target.value);
+            slsVal.textContent = v;
+            onSettingChange && onSettingChange('stationLabelScale', v);
+        });
+    }
+
     // Checkboxes
     const checkboxes = {
         'show-internal': 'showInternal',

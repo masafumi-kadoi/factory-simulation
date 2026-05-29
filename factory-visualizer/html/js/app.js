@@ -295,6 +295,8 @@ function initUI() {
                 case 'shellOpacity': scene3d.setShellOpacity(value); saveG3DSettings(); break;
                 case 'internalRadius': scene3d.setInternalRadius(value); saveG3DSettings(); break;
                 case 'workSize': scene3d.setWorkSize(value); saveG3DSettings(); break;
+                case 'machineLabelScale': scene3d.setMachineLabelScale(value); saveG3DSettings(); break;
+                case 'stationLabelScale': scene3d.setStationLabelScale(value); saveG3DSettings(); break;
                 case 'showInternal':
                     scene3d.setShowInternal(value);
                     scene3d.clearWorks();

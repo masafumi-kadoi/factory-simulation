@@ -69,6 +69,8 @@ export class Scene3D {
         this._showMachineNames = true;
         this._showWorks = true;
         this._workSize = 1.0;
+        this._machineLabelScale = 1.0;
+        this._stationLabelScale = 1.0;
         this._showInterlocks = false;
         // Label / work height settings (stored as absolute Y from ground)
         this._labelHeightMode  = 'relative'; // 'relative' | 'absolute'
@@ -1194,6 +1196,22 @@ export class Scene3D {
         const scale = v / prev;
         this._works.forEach(({ mesh }) => {
             mesh.scale.set(mesh.scale.x * scale, mesh.scale.y * scale, mesh.scale.z * scale);
+        });
+    }
+
+    setMachineLabelScale(v) {
+        this._machineLabelScale = v;
+        const baseW = 8, baseH = 1.5;
+        this._equipmentGroups.forEach(({ labelMesh }) => {
+            if (labelMesh) labelMesh.scale.set(baseW * v, baseH * v, 1);
+        });
+    }
+
+    setStationLabelScale(v) {
+        this._stationLabelScale = v;
+        const baseW = 8, baseH = 1.5;
+        this._internalStations.forEach(({ labelMesh }) => {
+            if (labelMesh) labelMesh.scale.set(baseW * v, baseH * v, 1);
         });
     }
 
