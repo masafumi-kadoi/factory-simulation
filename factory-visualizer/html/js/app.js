@@ -1105,6 +1105,11 @@ function restoreSimStart() {
         }
     });
 
+    // Default: sync ON
+    syncBtn.classList.add('sync-active');
+    _updateSimStartToNow();
+    _simSyncTimer = setInterval(_updateSimStartToNow, 1000);
+
     function _updateSimStartToNow() {
         const now = new Date();
         now.setSeconds(0, 0);
