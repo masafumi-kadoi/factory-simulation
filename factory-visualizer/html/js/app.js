@@ -274,6 +274,11 @@ function initTimeline() {
             _stopSync();
         }
     });
+
+    // Default: sync ON
+    _syncNowRef.active = true;
+    syncBtn.classList.add('sync-active');
+    _startSync();
 }
 
 function initUI() {
