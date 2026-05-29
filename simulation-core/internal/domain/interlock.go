@@ -141,7 +141,11 @@ func getProcessingDefaultConfig() *InterlockConfig {
 			{
 				ID: "R1", Description: "空きステーション → 搬入可ON",
 				Target: SignalInputReady, Value: true,
-				Conditions: []RuleCondition{{Signal: SignalInputWorkPresent, Value: false}},
+				Conditions: []RuleCondition{
+					{Signal: SignalInputWorkPresent, Value: false},
+					{Signal: SignalProcessingWorkPresent, Value: false},
+					{Signal: SignalOutputWorkPresent, Value: false},
+				},
 			},
 			{
 				ID: "R2", Description: "ワーク受入済 → 搬入可OFF",
@@ -354,7 +358,11 @@ func getModulerDefaultConfig() *InterlockConfig {
 			{
 				ID: "R1", Description: "空き → 搬入可ON",
 				Target: SignalInputReady, Value: true,
-				Conditions: []RuleCondition{{Signal: SignalInputWorkPresent, Value: false}},
+				Conditions: []RuleCondition{
+					{Signal: SignalInputWorkPresent, Value: false},
+					{Signal: SignalProcessingWorkPresent, Value: false},
+					{Signal: SignalOutputWorkPresent, Value: false},
+				},
 			},
 			{
 				ID: "R2", Description: "ワーク有り → 搬入可OFF",

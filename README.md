@@ -190,15 +190,15 @@ echo "Open: http://localhost:8081?sim=$SIM_ID"
 Processingステーションの状態遷移:
 
 ```
-Idle (搬入可=ON, 搬出可=OFF)
+Idle (搬入可=ON, 搬出可=OFF)  ← IWP=OFF, PWP=OFF, OWP=OFF
   ↓ ワーク到着
-Receiving (搬入可=OFF, 搬出可=OFF)
+Receiving (搬入可=OFF, 搬出可=OFF)  ← IWP=ON, PWP=OFF, OWP=OFF
   ↓ 処理開始
-Processing (搬入可=OFF, 搬出可=OFF)
+Processing (搬入可=OFF, 搬出可=OFF)  ← IWP=OFF, PWP=ON, OWP=OFF
   ↓ 処理完了
-Completed (搬入可=OFF, 搬出可=ON)
+Completed (搬入可=OFF, 搬出可=ON)  ← IWP=OFF, PWP=OFF, OWP=ON
   ↓ ワーク出発
-Idle (搬入可=ON, 搬出可=OFF)
+Idle (搬入可=ON, 搬出可=OFF)  ← IWP=OFF, PWP=OFF, OWP=OFF
 ```
 
 ### SimDB連携

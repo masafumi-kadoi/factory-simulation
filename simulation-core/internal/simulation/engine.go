@@ -365,10 +365,13 @@ func (e *Engine) handleWorkArrived(event *Event, station *domain.Station) error 
 		return err
 	}
 
-	// Update result signals: IWP/PWP/OWP=ON, workType:<type>=ON
+	// Update result signals based on station type
 	station.SetSignal(domain.SignalInputWorkPresent, true)
-	station.SetSignal(domain.SignalProcessingWorkPresent, true)
-	station.SetSignal(domain.SignalOutputWorkPresent, true)
+	if station.Type == domain.StationTypeSwitch {
+		// Switch divert: transparent station (no processing phase), set OWP=ON immediately
+		station.SetSignal(domain.SignalOutputWorkPresent, true)
+	}
+	// Processing/Machine/Moduler: IWP=ON only (PWP, OWP remain OFF — exclusive phase model)
 	setWorkTypeSignal(station.Signals, work.Type)
 
 	// Log work event
@@ -507,6 +510,9 @@ func (e *Engine) handleProcessingStarted(event *Event, station *domain.Station) 
 		return err
 	}
 
+	// Update phase signals: IWP→OFF, PWP→ON (work moves to processing position)
+	station.SetSignal(domain.SignalInputWorkPresent, false)
+	station.SetSignal(domain.SignalProcessingWorkPresent, true)
 	// Set result signal: RUN=ON
 	station.SetSignal(domain.SignalRunning, true)
 
@@ -576,6 +582,9 @@ func (e *Engine) handleProcessingCompleted(event *Event, station *domain.Station
 		return err
 	}
 
+	// Update phase signals: PWP→OFF, OWP→ON (work moves to output position)
+	station.SetSignal(domain.SignalProcessingWorkPresent, false)
+	station.SetSignal(domain.SignalOutputWorkPresent, true)
 	// Update result signals: RUN=OFF, CPL=ON
 	station.SetSignal(domain.SignalRunning, false)
 	station.SetSignal(domain.SignalComplete, true)

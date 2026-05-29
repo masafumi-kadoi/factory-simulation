@@ -90,7 +90,7 @@ const INTERLOCK_DEFAULTS = {
             {name:'workFull',initial:false},{name:'workEmpty',initial:false},
         ],
         rules: [
-            { id:'R1', description:'空きステーション → 搬入可ON',  target:'inputReady',   value:true,  conditions:[{signal:'inputWorkPresent',value:false}] },
+            { id:'R1', description:'空きステーション → 搬入可ON',  target:'inputReady',   value:true,  conditions:[{signal:'inputWorkPresent',value:false},{signal:'processingWorkPresent',value:false},{signal:'outputWorkPresent',value:false}] },
             { id:'R2', description:'ワーク受入済 → 搬入可OFF',     target:'inputReady',   value:false, conditions:[{signal:'inputWorkPresent',value:true}] },
             { id:'R3', description:'ワーク到着 → 加工準備ON',      target:'processReady', value:true,  conditions:[{signal:'inputWorkPresent',value:true},{signal:'running',value:false},{signal:'complete',value:false}] },
             { id:'R4', description:'加工中 → 加工準備OFF',         target:'processReady', value:false, conditions:[{signal:'running',value:true}] },

@@ -818,9 +818,9 @@ erDiagram
 ```mermaid
 classDiagram
     class StationSignals {
-        +bool inputWorkPresent
-        +bool processingWorkPresent
-        +bool outputWorkPresent
+        +bool inputWorkPresent      // ワークが搬入位置にある
+        +bool processingWorkPresent // ワークが加工位置にある
+        +bool outputWorkPresent     // ワークが搬出位置にある
         +bool running
         +bool complete
         +bool processReady

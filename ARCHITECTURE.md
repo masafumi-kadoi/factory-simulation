@@ -69,9 +69,9 @@ Factory Simulationは、工場の生産ラインにおけるワークフロー�
 
 | 信号名 | 略称 | 種別 | 説明 |
 |--------|------|------|------|
-| `inputWorkPresent` | IWP | 状態 | 入力ワーク有 |
-| `processingWorkPresent` | PWP | 状態 | 加工中ワーク有 |
-| `outputWorkPresent` | OWP | 状態 | 出力ワーク有 |
+| `inputWorkPresent` | IWP | 状態 | ワークが搬入位置にある（加工未開始） |
+| `processingWorkPresent` | PWP | 状態 | ワークが加工位置にある（加工中） |
+| `outputWorkPresent` | OWP | 状態 | ワークが搬出位置にある（搬出待ち） |
 | `running` | RUN | 状態 | 加工実行中 |
 | `complete` | CPL | 状態 | 加工完了 |
 | `processReady` | PR | 制御 | 加工開始可 |

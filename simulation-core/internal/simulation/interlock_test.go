@@ -65,7 +65,7 @@ func TestEvaluateRules_ProcessingWorkArrived(t *testing.T) {
 	// Initial evaluation
 	evaluateRules(station, scenario, 0.0)
 
-	// Work arrives: set IWP=ON (PWP, OWP also ON in engine but testing rules here)
+	// Work arrives: set IWP=ON only (exclusive phase model)
 	station.SetSignal(domain.SignalInputWorkPresent, true)
 
 	changes, err := evaluateRules(station, scenario, 1.0)
@@ -98,11 +98,10 @@ func TestEvaluateRules_ProcessingWorkArrived(t *testing.T) {
 }
 
 func TestEvaluateRules_ProcessingComplete(t *testing.T) {
-	// Simulate: processing complete → IWP=ON, OWP=ON, CPL=ON
+	// Simulate: processing complete → OWP=ON, CPL=ON (exclusive phase model)
 	station := newTestStation("proc-1", domain.StationTypeProcessing)
 	scenario := newTestScenario(station)
 
-	station.SetSignal(domain.SignalInputWorkPresent, true)
 	station.SetSignal(domain.SignalOutputWorkPresent, true)
 	station.SetSignal(domain.SignalComplete, true)
 
@@ -136,14 +135,12 @@ func TestEvaluateRules_ProcessingWorkDeparted(t *testing.T) {
 	station := newTestStation("proc-1", domain.StationTypeProcessing)
 	scenario := newTestScenario(station)
 
-	// Start from completed state with OR=ON
-	station.SetSignal(domain.SignalInputWorkPresent, true)
+	// Start from completed state with OR=ON (exclusive phase: OWP=ON only)
 	station.SetSignal(domain.SignalOutputWorkPresent, true)
 	station.SetSignal(domain.SignalComplete, true)
 	station.SetSignal(domain.SignalOutputReady, true)
 
-	// Work departs: engine sets IWP/OWP/CPL=OFF
-	station.SetSignal(domain.SignalInputWorkPresent, false)
+	// Work departs: engine sets OWP/CPL=OFF
 	station.SetSignal(domain.SignalOutputWorkPresent, false)
 	station.SetSignal(domain.SignalComplete, false)
 
@@ -163,6 +160,48 @@ func TestEvaluateRules_ProcessingWorkDeparted(t *testing.T) {
 	// Should have at least 2 changes: OR→OFF, IR→ON
 	if len(changes) < 2 {
 		t.Errorf("expected at least 2 signal changes, got %d", len(changes))
+	}
+}
+
+func TestEvaluateRules_ProcessingDuringProcessing(t *testing.T) {
+	// During processing: PWP=ON, RUN=ON → inputReady must stay OFF
+	station := newTestStation("proc-1", domain.StationTypeProcessing)
+	scenario := newTestScenario(station)
+
+	station.SetSignal(domain.SignalProcessingWorkPresent, true)
+	station.SetSignal(domain.SignalRunning, true)
+
+	_, err := evaluateRules(station, scenario, 1.0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if station.GetSignal(domain.SignalInputReady) {
+		t.Error("expected inputReady=OFF during processing (PWP=ON)")
+	}
+	if station.GetSignal(domain.SignalOutputReady) {
+		t.Error("expected outputReady=OFF during processing")
+	}
+}
+
+func TestEvaluateRules_ProcessingAwaitingDeparture(t *testing.T) {
+	// Awaiting departure: OWP=ON, CPL=ON → inputReady must stay OFF
+	station := newTestStation("proc-1", domain.StationTypeProcessing)
+	scenario := newTestScenario(station)
+
+	station.SetSignal(domain.SignalOutputWorkPresent, true)
+	station.SetSignal(domain.SignalComplete, true)
+
+	_, err := evaluateRules(station, scenario, 2.0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if station.GetSignal(domain.SignalInputReady) {
+		t.Error("expected inputReady=OFF while awaiting departure (OWP=ON)")
+	}
+	if !station.GetSignal(domain.SignalOutputReady) {
+		t.Error("expected outputReady=ON while awaiting departure")
 	}
 }
 
@@ -219,8 +258,7 @@ func TestEvaluateRules_CrossStationReference(t *testing.T) {
 		},
 	}
 
-	// Set proc-1 to completed state
-	proc1Station.SetSignal(domain.SignalInputWorkPresent, true)
+	// Set proc-1 to completed state (exclusive phase: OWP=ON only)
 	proc1Station.SetSignal(domain.SignalOutputWorkPresent, true)
 	proc1Station.SetSignal(domain.SignalComplete, true)
 

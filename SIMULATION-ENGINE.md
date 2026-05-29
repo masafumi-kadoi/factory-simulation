@@ -152,9 +152,11 @@ WorkDeparted
 
 **信号フロー:**
 
+IWP / PWP / OWP はワークの位置（フェーズ）を表す排他的な信号です。同時に ON になるのは最大1つで、すべて OFF の場合はステーション内にワークがありません（Idle）。
+
 ```
 WorkArrived
-  ├─ IWP, PWP, OWP = ON
+  ├─ IWP = ON
   ├─ workType:<type> = ON
   └─ evaluateRules
        ├─ IR = OFF (R2: IWP=ON → IR=OFF)
@@ -162,12 +164,16 @@ WorkArrived
             └─ triggerProcessReady → ProcessingStarted スケジュール
 
 ProcessingStarted
+  ├─ IWP = OFF
+  ├─ PWP = ON
   ├─ RUN = ON
   └─ evaluateRules
        └─ PR = OFF (R4: RUN=ON → PR=OFF)
   └─ ProcessingCompleted をスケジュール (currentTime + processingTime)
 
 ProcessingCompleted
+  ├─ PWP = OFF
+  ├─ OWP = ON
   ├─ RUN = OFF
   ├─ CPL = ON
   └─ evaluateRules
@@ -181,7 +187,7 @@ WorkDeparted
   ├─ workType:* クリア
   └─ evaluateRules
        ├─ OR = OFF (R6: OWP=OFF → OR=OFF)
-       └─ IR = ON  (R1: IWP=OFF → IR=ON)
+       └─ IR = ON  (R1: IWP=OFF & PWP=OFF & OWP=OFF → IR=ON)
             └─ checkHandshakes (上流.OR=ON なら WorkDeparted スケジュール)
 ```
 
@@ -189,7 +195,7 @@ WorkDeparted
 
 | ID | 条件 | → | 結果 |
 |----|------|---|------|
-| R1 | IWP = OFF | → | IR = ON |
+| R1 | IWP=OFF & PWP=OFF & OWP=OFF | → | IR = ON |
 | R2 | IWP = ON | → | IR = OFF |
 | R3 | IWP=ON & RUN=OFF & CPL=OFF | → | PR = ON |
 | R4 | RUN = ON | → | PR = OFF |
