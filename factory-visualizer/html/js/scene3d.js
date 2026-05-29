@@ -68,7 +68,7 @@ export class Scene3D {
         this._showStationNames = true;
         this._showMachineNames = true;
         this._showWorks = true;
-        this._workSize = 1.1;
+        this._workSize = 1.0;
         this._showInterlocks = false;
         // Label / work height settings (stored as absolute Y from ground)
         this._labelHeightMode  = 'relative'; // 'relative' | 'absolute'
