@@ -1848,7 +1848,7 @@ function restoreG3DSettings() {
         const valEl = document.getElementById('internal-radius-val');
         if (el) el.value = saved.internalRadius;
         if (valEl) valEl.textContent = saved.internalRadius;
-        scene3d && scene3d.setInternalRadius(parseInt(saved.internalRadius));
+        scene3d && scene3d.setInternalRadius(parseFloat(saved.internalRadius) || 0.25);
     }
     const checks = {
         'show-internal':      ['showInternal',      v => scene3d && scene3d.setShowInternal(v)],
