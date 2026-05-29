@@ -68,7 +68,7 @@ export class Scene3D {
         this._showStationNames = true;
         this._showMachineNames = true;
         this._showWorks = true;
-        this._workSize = 1.0;
+        this._workSize = 0.5;
         this._machineLabelScale = 1.0;
         this._stationLabelScale = 1.0;
         this._showInterlocks = false;
