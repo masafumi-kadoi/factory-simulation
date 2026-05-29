@@ -1092,6 +1092,24 @@ function restoreSimStart() {
     document.getElementById('sim-start').addEventListener('change', e => {
         sessionStorage.setItem('fv_sim_start', e.target.value);
     });
+
+    let _simSyncTimer = null;
+    const syncBtn = document.getElementById('sim-start-sync');
+    syncBtn.addEventListener('click', () => {
+        const active = syncBtn.classList.toggle('sync-active');
+        if (active) {
+            _updateSimStartToNow();
+            _simSyncTimer = setInterval(_updateSimStartToNow, 1000);
+        } else {
+            if (_simSyncTimer) { clearInterval(_simSyncTimer); _simSyncTimer = null; }
+        }
+    });
+
+    function _updateSimStartToNow() {
+        const now = new Date();
+        now.setSeconds(0, 0);
+        document.getElementById('sim-start').value = toLocalIsoString(now);
+    }
 }
 
 // ---- Utilities ----
