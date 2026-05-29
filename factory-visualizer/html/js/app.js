@@ -154,25 +154,11 @@ function applyHistoryAtTime(ms, animate = true) {
         return;
     }
 
-    // Build set of entry/exit station IDs to skip (transparent pass-through)
-    const entryExitIds = new Set();
-    state.stations.forEach(s => {
-        if (s.stationType === 'entry' || s.stationType === 'exit') entryExitIds.add(s.stationId);
-        const members = s.config?.equipmentLayout?.members;
-        if (Array.isArray(members)) {
-            members.forEach(m => {
-                if (m.stationType === 'entry' || m.stationType === 'exit') entryExitIds.add(m.stationId);
-            });
-        }
-    });
-
     const workLocations = new Map(); // workId → locationId (at station)
     const workTransit = new Map();   // workId → fromLocationId (departed but not yet arrived)
     for (const ev of events) {
         if (new Date(ev.event_time).getTime() > ms) break;
         if (ev.movement_type === 'arrived') {
-            const stationId = locMap.get(Number(ev.to_location_id));
-            if (stationId && entryExitIds.has(stationId)) continue;
             workLocations.set(ev.item_id, ev.to_location_id);
             workTransit.delete(ev.item_id);
         } else if (ev.movement_type === 'departed') {

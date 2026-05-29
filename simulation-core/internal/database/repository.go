@@ -666,52 +666,109 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		}
 	}
 
-	// First pass: identify entry/exit stations for each machine hub.
-	// Primary source: equipmentLayout members with stationType "entry"/"exit".
-	// Fallback: hub→child / child→hub connections in factory_connections.
-	hubEntries := make(map[string][]string) // hub ID → ordered entry station IDs
-	hubExits := make(map[string][]string)   // hub ID → ordered exit station IDs
-	seenEntry := make(map[string]bool)
-	seenExit := make(map[string]bool)
-	for machineID, ld := range machineLayouts {
-		for _, mem := range ld.members {
-			switch mem.stationType {
-			case "entry":
-				k := machineID + ":" + mem.stationID
-				if !seenEntry[k] {
-					seenEntry[k] = true
-					hubEntries[machineID] = append(hubEntries[machineID], mem.stationID)
-				}
-			case "exit":
-				k := machineID + ":" + mem.stationID
-				if !seenExit[k] {
-					seenExit[k] = true
-					hubExits[machineID] = append(hubExits[machineID], mem.stationID)
-				}
-			}
+	// Entry/Exit resolution: Entry/Exit are logical connection nodes only.
+	// Resolve them to the actual processing stations they connect to, then
+	// remove entry/exit from the stations list.
+	//
+	// For each machine hub:
+	//   hubInlets[hub] = stations that external connections should target (entry's downstream)
+	//   hubOutlets[hub] = stations that external connections should originate from (exit's upstream)
+
+	// Build internal connection graph for resolving entry/exit
+	entryExitSet := make(map[string]bool)
+	for _, rs := range rawStations {
+		t := rs.stype
+		if ot, ok := memberTypeOverride[rs.id]; ok && ot != "" {
+			t = ot
+		}
+		if t == "entry" || t == "exit" {
+			entryExitSet[rs.id] = true
 		}
 	}
+
+	// Build adjacency: from → []to for internal connections (to resolve entry→processing, processing→exit)
+	adjFrom := make(map[string][]string) // stationID → downstream station IDs
+	adjTo := make(map[string][]string)   // stationID → upstream station IDs
 	for _, rc := range rawConns {
-		if machineHubs[rc.from] && stationParent[rc.to] == rc.from {
-			k := rc.from + ":" + rc.to
-			if !seenEntry[k] {
-				seenEntry[k] = true
-				hubEntries[rc.from] = append(hubEntries[rc.from], rc.to)
-			}
+		adjFrom[rc.from] = append(adjFrom[rc.from], rc.to)
+		adjTo[rc.to] = append(adjTo[rc.to], rc.from)
+	}
+
+	// For each entry: find its 1:1 downstream non-entry/exit station
+	entryResolved := make(map[string]string) // entry ID → resolved processing station ID
+	for id := range entryExitSet {
+		t := "entry"
+		if ot, ok := memberTypeOverride[id]; ok && ot != "" {
+			t = ot
 		}
-		if machineHubs[rc.to] && stationParent[rc.from] == rc.to {
-			k := rc.to + ":" + rc.from
-			if !seenExit[k] {
-				seenExit[k] = true
-				hubExits[rc.to] = append(hubExits[rc.to], rc.from)
+		if t != "entry" {
+			continue
+		}
+		for _, next := range adjFrom[id] {
+			if !entryExitSet[next] {
+				entryResolved[id] = next
+				break
 			}
 		}
 	}
 
-	// Second pass: expand connections through hub entry/exit stations.
+	// For each exit: find its 1:1 upstream non-entry/exit station
+	exitResolved := make(map[string]string) // exit ID → resolved processing station ID
+	for id := range entryExitSet {
+		t := "exit"
+		if ot, ok := memberTypeOverride[id]; ok && ot != "" {
+			t = ot
+		}
+		if t != "exit" {
+			continue
+		}
+		for _, prev := range adjTo[id] {
+			if !entryExitSet[prev] {
+				exitResolved[id] = prev
+				break
+			}
+		}
+	}
+
+	// Build hub inlet/outlet maps (resolved through entry/exit)
+	hubInlets := make(map[string][]string)  // hub ID → resolved station IDs (for incoming connections)
+	hubOutlets := make(map[string][]string) // hub ID → resolved station IDs (for outgoing connections)
+	for machineID, ld := range machineLayouts {
+		for _, mem := range ld.members {
+			switch mem.stationType {
+			case "entry":
+				if resolved, ok := entryResolved[mem.stationID]; ok {
+					hubInlets[machineID] = append(hubInlets[machineID], resolved)
+				}
+			case "exit":
+				if resolved, ok := exitResolved[mem.stationID]; ok {
+					hubOutlets[machineID] = append(hubOutlets[machineID], resolved)
+				}
+			}
+		}
+	}
+
+	// Remove entry/exit from stations list
+	var filteredStations []domain.Station
+	for _, st := range stations {
+		if !entryExitSet[st.ID] {
+			filteredStations = append(filteredStations, st)
+		}
+	}
+	stations = filteredStations
+	// Rebuild stationSet without entry/exit
+	stationSet = make(map[string]bool)
+	for _, st := range stations {
+		stationSet[st.ID] = true
+	}
+
+	// Second pass: expand connections, skipping entry/exit nodes.
 	seen := make(map[string]bool)
 	var connections []domain.Connection
 	addConn := func(from, to, condition string, fromPort, toPort int) {
+		if from == to || !stationSet[from] || !stationSet[to] {
+			return
+		}
 		key := fmt.Sprintf("%s->%s(%s)", from, to, condition)
 		if !seen[key] {
 			seen[key] = true
@@ -725,13 +782,16 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 		}
 	}
 	for _, rc := range rawConns {
-		// Skip self-loops (machine→machine-itself artifacts from old equipment group design).
 		if rc.from == rc.to {
+			continue
+		}
+		// Skip connections involving entry/exit directly (they are resolved above)
+		if entryExitSet[rc.from] || entryExitSet[rc.to] {
 			continue
 		}
 		fromIsHub := machineHubs[rc.from]
 		toIsHub := machineHubs[rc.to]
-		// Hub ↔ direct-child connections define topology only; skip simulation routing.
+		// Hub ↔ direct-child connections define topology only; skip.
 		if fromIsHub && stationParent[rc.to] == rc.from {
 			continue
 		}
@@ -739,22 +799,19 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 			continue
 		}
 		if !fromIsHub && !toIsHub {
-			// Both endpoints are simulation stations — include directly.
-			if stationSet[rc.from] && stationSet[rc.to] {
-				addConn(rc.from, rc.to, rc.condition, rc.fromPort, rc.toPort)
-			}
+			addConn(rc.from, rc.to, rc.condition, rc.fromPort, rc.toPort)
 			continue
 		}
-		// At least one endpoint is a hub — expand through entry/exit stations.
+		// At least one endpoint is a hub — expand through resolved inlets/outlets.
 		var froms []string
 		if fromIsHub {
-			froms = hubExits[rc.from]
+			froms = hubOutlets[rc.from]
 		} else if stationSet[rc.from] {
 			froms = []string{rc.from}
 		}
 		var tos []string
 		if toIsHub {
-			tos = hubEntries[rc.to]
+			tos = hubInlets[rc.to]
 		} else if stationSet[rc.to] {
 			tos = []string{rc.to}
 		}
@@ -762,6 +819,16 @@ func (r *Repository) GetScenarioFromFactory(factoryID string) (*domain.Scenario,
 			for _, t := range tos {
 				addConn(f, t, rc.condition, rc.fromPort, rc.toPort)
 			}
+		}
+	}
+
+	// Add intra-machine connections that don't involve entry/exit
+	for _, ld := range machineLayouts {
+		for _, c := range ld.connections {
+			if entryExitSet[c.from] || entryExitSet[c.to] {
+				continue
+			}
+			addConn(c.from, c.to, c.cond, c.fromPort, c.toPort)
 		}
 	}
 
