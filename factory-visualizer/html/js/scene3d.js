@@ -68,6 +68,7 @@ export class Scene3D {
         this._showStationNames = true;
         this._showMachineNames = true;
         this._showWorks = true;
+        this._workSize = 1.1;
         this._showInterlocks = false;
         // Label / work height settings (stored as absolute Y from ground)
         this._labelHeightMode  = 'relative'; // 'relative' | 'absolute'
@@ -1016,7 +1017,7 @@ export class Scene3D {
 
         let entry = this._works.get(workId);
         if (!entry) {
-            const WBOX = 1.1;
+            const WBOX = this._workSize;
             const color = this._workColor(workId, workType);
             const geo = new THREE.BoxGeometry(WBOX, WBOX, WBOX);
             const mat = new THREE.MeshStandardMaterial({
@@ -1184,6 +1185,16 @@ export class Scene3D {
     setShowWorks(v) {
         this._showWorks = v;
         this._works.forEach(({ mesh }) => { mesh.visible = v; });
+    }
+
+    setWorkSize(v) {
+        const prev = this._workSize;
+        this._workSize = v;
+        if (prev <= 0) return;
+        const scale = v / prev;
+        this._works.forEach(({ mesh }) => {
+            mesh.scale.set(mesh.scale.x * scale, mesh.scale.y * scale, mesh.scale.z * scale);
+        });
     }
 
     setShowStationNames(v) {

@@ -40,10 +40,20 @@ export function initLeftPanel({ onFilterChange, onSettingChange }) {
     const radiusSlider = document.getElementById('internal-radius');
     const radiusVal = document.getElementById('internal-radius-val');
     radiusSlider.addEventListener('input', e => {
-        const v = parseInt(e.target.value);
+        const v = parseFloat(e.target.value);
         radiusVal.textContent = v;
         onSettingChange && onSettingChange('internalRadius', v);
     });
+
+    const workSizeSlider = document.getElementById('work-size');
+    const workSizeVal = document.getElementById('work-size-val');
+    if (workSizeSlider) {
+        workSizeSlider.addEventListener('input', e => {
+            const v = parseFloat(e.target.value);
+            workSizeVal.textContent = v;
+            onSettingChange && onSettingChange('workSize', v);
+        });
+    }
 
     // Checkboxes
     const checkboxes = {
