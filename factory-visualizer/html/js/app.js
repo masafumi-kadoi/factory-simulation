@@ -81,10 +81,72 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     restoreSimStart();
 
+    // Deep-link: open a specific data source from URL query (?ds=&live=&factoryId=&kind=)
+    await openDeepLinkFromQuery();
+
     // Expose state and timeline for child windows (e.g. local-window ビュー表示 tab sync)
     window._fvState = state;
     window._fvTimeline = timeline;
 });
+
+// Resolve a data source id to its { factoryId, sourceType }.
+// Uses URL-provided hints when both present (no API call); otherwise reverse-looks-up
+// the full /data-sources list. Returns null if not resolvable.
+async function resolveDataSource(dsId, factoryIdHint, kindHint) {
+    if (factoryIdHint && kindHint) {
+        return { id: dsId, factoryId: factoryIdHint, sourceType: kindHint };
+    }
+    const all = await API.fetchDataSources();
+    const arr = Array.isArray(all) ? all : (all.dataSources || []);
+    return arr.find(d => d.id === dsId) || null;
+}
+
+// Deep-link orchestration: read ?ds=&live=&factoryId=&kind=, select the owning
+// factory, and open the requested data source in the correct zone/mode.
+async function openDeepLinkFromQuery() {
+    const qp = new URLSearchParams(location.search);
+    const dsParam = qp.get('ds');
+    if (!dsParam) return; // no deep-link → normal idle boot
+
+    const liveParam = qp.get('live') === '1';
+    const factoryIdParam = qp.get('factoryId') || null;
+    const kindParam = qp.get('kind') || null; // 'realtime' | 'simulation'
+
+    try {
+        // 'realtime' covers both realtime sources and the realtime hint from kind param
+        const normKind = kindParam === 'simulation' ? 'simulation' : (kindParam === 'realtime' ? 'realtime' : null);
+        const resolved = await resolveDataSource(dsParam, factoryIdParam, liveParam ? 'realtime' : normKind);
+        if (!resolved || !resolved.factoryId) {
+            setStatus('指定データソースを開けませんでした。工場を選択してください', 'status-warn');
+            return;
+        }
+
+        const factoryId = resolved.factoryId;
+        const sel = document.getElementById('factory-select');
+        if (sel) sel.value = factoryId;
+
+        const kind = liveParam ? 'realtime' : (resolved.sourceType === 'simulation' ? 'sim' : 'realtime');
+        const p = await selectFactory(factoryId, { preferredDsId: dsParam, preferredKind: kind });
+
+        if (kind === 'sim') {
+            await p; // wait for the simulation loader to finish loading the right zone
+            // Generation guard: only apply if our DS is still the loaded one
+            if (state.simDataSourceId === dsParam) {
+                timeline.selectSimulation(dsParam);
+                const stopBtn = document.getElementById('btn-stop-sim');
+                if (stopBtn) stopBtn.disabled = false;
+                switchDataSourceMode('sim');
+                await seekToSimStart();
+                setStatus('シミュレーション結果を表示中', 'status-ok');
+            }
+        }
+        // realtime: loadRealtimeData already sets the live zone, subscribes WS,
+        // and the default mode is 'realtime' — no extra step needed.
+    } catch (e) {
+        console.warn('[deeplink] failed to open data source', e);
+        setStatus('指定データソースを開けませんでした。工場を選択してください', 'status-warn');
+    }
+}
 
 function initScene() {
     const wrapper = document.getElementById('scene-canvas-wrapper');
@@ -435,7 +497,8 @@ async function loadFactories() {
     setStatus(`工場 ${state.factories.length} 件`);
 }
 
-async function selectFactory(factoryId) {
+async function selectFactory(factoryId, opts = {}) {
+    const { preferredDsId = null, preferredKind } = opts;
     const gen = ++_loadGen; // capture generation before any await
     const stillCurrent = () => gen === _loadGen;
     try {
@@ -497,10 +560,14 @@ async function selectFactory(factoryId) {
         document.getElementById('btn-stop-sim').disabled = true;
 
         // Load realtime data in background (non-blocking)
-        loadRealtimeData(factoryId, gen).catch(e => console.warn('[realtime] load error', e));
+        const rtP = loadRealtimeData(factoryId, gen, preferredDsId).catch(e => console.warn('[realtime] load error', e));
 
         // Load existing simulation results into right zone
-        loadSimulationResults(factoryId, gen).catch(e => console.warn('[sim] load error', e));
+        const simP = loadSimulationResults(factoryId, gen, preferredDsId).catch(e => console.warn('[sim] load error', e));
+
+        // For deep-link callers: return the relevant loader promise so the caller
+        // can apply post-load mode/seek once it settles. Normal callers ignore this.
+        return preferredKind === 'sim' ? simP : preferredKind === 'realtime' ? rtP : undefined;
     } catch (err) {
         setStatus('読み込み失敗: ' + err.message, 'status-error');
     }
@@ -508,7 +575,7 @@ async function selectFactory(factoryId) {
 
 // ---- 3-zone realtime data loading ----
 
-async function loadRealtimeData(factoryId, gen = _loadGen) {
+async function loadRealtimeData(factoryId, gen = _loadGen, preferredDsId = null) {
     const ok = () => gen === _loadGen;
     if (!ok()) return;
 
@@ -523,8 +590,10 @@ async function loadRealtimeData(factoryId, gen = _loadGen) {
     // Find latest realtime data source for this factory
     const dss = await API.fetchFactoryDataSources(factoryId, 'realtime');
     const dsArr = Array.isArray(dss) ? dss : [];
-    // Prefer active (ended_at == null), then most recent
-    const ds = dsArr.find(d => !d.endedAt) || dsArr[0];
+    // Prefer the deep-linked DS if given, else active (ended_at == null), then most recent
+    const ds = preferredDsId
+        ? (dsArr.find(d => d.id === preferredDsId) || dsArr.find(d => !d.endedAt) || dsArr[0])
+        : (dsArr.find(d => !d.endedAt) || dsArr[0]);
     if (!ds) return;
     if (!ok()) return;
 
@@ -571,15 +640,15 @@ async function loadRealtimeData(factoryId, gen = _loadGen) {
 
 }
 
-async function loadSimulationResults(factoryId, gen = _loadGen) {
+async function loadSimulationResults(factoryId, gen = _loadGen, preferredDsId = null) {
     if (gen !== _loadGen) return;
     const dss = await API.fetchFactoryDataSources(factoryId, 'simulation');
     const dsArr = Array.isArray(dss) ? dss : [];
 
-    // Load the most recent completed simulation into the right zone
+    // Load the deep-linked simulation if given, else the most recent, into the right zone
     if (dsArr.length === 0) return;
-    const latest = dsArr[0];
-    await loadSimulationIntoRightZone(latest.id);
+    const chosen = preferredDsId ? (dsArr.find(d => d.id === preferredDsId) || dsArr[0]) : dsArr[0];
+    await loadSimulationIntoRightZone(chosen.id);
 
     if (gen === _loadGen) {
         const stopBtn = document.getElementById('btn-stop-sim');

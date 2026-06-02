@@ -80,7 +80,7 @@ async function loadDataSources() {
                     <td>${escapeHtml(d.sourceType)}</td>
                     <td>${d.endedAt ? `<span class="badge badge-inactive">Ended</span>` : `<span class="badge badge-live"><span class="live-dot"></span>Live</span>`}</td>
                     <td>
-                        <a href="${viewerBase}?ds=${encodeURIComponent(d.id || '')}" class="btn btn-outline btn-sm" target="_blank">View</a>
+                        <a href="${viewerBase}?ds=${encodeURIComponent(d.id || '')}&factoryId=${encodeURIComponent(FACTORY_ID)}&kind=${encodeURIComponent(d.sourceType || '')}" class="btn btn-outline btn-sm" target="_blank">View</a>
                     </td>
                 </tr>`).join('')}
             </tbody></table></div>`;
@@ -96,7 +96,7 @@ function updateLiveUI(isLive) {
     const viewerBtn = document.getElementById('btn-open-viewer');
     if (isLive && currentDataSourceId) {
         viewerBtn.classList.remove('hidden');
-        viewerBtn.href = `__BASE_PREFIX__/factory-visualizer/?ds=${currentDataSourceId}&live=1`;
+        viewerBtn.href = `__BASE_PREFIX__/factory-visualizer/?ds=${encodeURIComponent(currentDataSourceId)}&live=1&factoryId=${encodeURIComponent(FACTORY_ID)}`;
     } else {
         viewerBtn.classList.add('hidden');
     }
