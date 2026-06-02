@@ -15,12 +15,7 @@ async function init() {
         showError('Failed to load factory: ' + err.message);
         return;
     }
-    // Setup "New Scenario" link
-    const newScenarioBtn = document.getElementById('btn-new-scenario');
-    if (newScenarioBtn) {
-        newScenarioBtn.href = `__BASE_PREFIX__/editor/editor.html?new=1&factoryId=${encodeURIComponent(FACTORY_ID)}`;
-    }
-    await Promise.all([loadStations(), loadScenarios(), loadDataSources()]);
+    await Promise.all([loadStations(), loadDataSources()]);
 }
 
 async function loadStations() {
@@ -61,30 +56,6 @@ async function deleteStation(stationId) {
     }
 }
 
-async function loadScenarios() {
-    const tbody = document.getElementById('scenarios-tbody');
-    if (!tbody) return;
-    try {
-        const scenarios = await FactoryAPI.listScenarios(FACTORY_ID);
-        if (!scenarios || scenarios.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#757575;padding:24px">No scenarios. Create one with "New Scenario".</td></tr>`;
-            return;
-        }
-        tbody.innerHTML = scenarios.map(s => `
-            <tr>
-                <td style="font-size:12px;color:#757575">${(s.id || '').substring(0,8)}...</td>
-                <td>${escapeHtml(s.name)}</td>
-                <td><span class="badge badge-inactive">${escapeHtml(s.scenarioType || 'simulation')}</span></td>
-                <td style="font-size:12px;color:#757575">${s.updatedAt ? new Date(s.updatedAt).toLocaleString('ja-JP') : '-'}</td>
-                <td>
-                    <a href="__BASE_PREFIX__/editor/editor.html?scenarioId=${encodeURIComponent(s.id)}&factoryId=${encodeURIComponent(FACTORY_ID)}" class="btn btn-outline btn-sm" target="_blank">Edit</a>
-                </td>
-            </tr>`).join('');
-    } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="5" class="alert-error" style="padding:12px">Error: ${escapeHtml(err.message)}</td></tr>`;
-    }
-}
-
 async function loadDataSources() {
     const el = document.getElementById('datasource-list');
     try {
@@ -99,7 +70,7 @@ async function loadDataSources() {
             currentDataSourceId = liveDs.id;
             updateLiveUI(true);
         }
-        const viewerBase = '/visualizer/';
+        const viewerBase = '__BASE_PREFIX__/factory-visualizer/';
         el.innerHTML = `<div class="table-wrap"><table>
             <thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>${ds.map(d => `
@@ -125,7 +96,7 @@ function updateLiveUI(isLive) {
     const viewerBtn = document.getElementById('btn-open-viewer');
     if (isLive && currentDataSourceId) {
         viewerBtn.classList.remove('hidden');
-        viewerBtn.href = `/visualizer/?ds=${currentDataSourceId}&live=1`;
+        viewerBtn.href = `__BASE_PREFIX__/factory-visualizer/?ds=${currentDataSourceId}&live=1`;
     } else {
         viewerBtn.classList.add('hidden');
     }

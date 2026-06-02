@@ -95,12 +95,4 @@ const FactoryAPI = {
         const r = await fetch(`${API}/factories/${id}`, { method: 'DELETE' });
         if (!r.ok) throw new Error(await r.text());
     },
-
-    async listScenarios(factoryId) {
-        const url = factoryId ? `${API}/scenarios?factory_id=${encodeURIComponent(factoryId)}` : `${API}/scenarios`;
-        const r = await fetch(url);
-        if (!r.ok) throw new Error(await r.text());
-        const data = await r.json();
-        return Array.isArray(data) ? data : (data.scenarios || []);
-    },
 };

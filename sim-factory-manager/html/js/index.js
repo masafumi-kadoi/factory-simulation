@@ -29,7 +29,7 @@ async function loadFactories() {
 }
 
 async function deleteFactory(id) {
-    if (!confirm('Delete this factory and all its stations and scenarios?')) return;
+    if (!confirm('Delete this factory and all its stations?')) return;
     try {
         await FactoryAPI.deleteFactory(id);
         await loadFactories();
