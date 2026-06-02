@@ -403,6 +403,93 @@ Simulation failed: interlock violation: next station ... InputReady=OFF
 | メモリ使用量 | 100ワークあたり約10MB |
 | API応答時間 | 平均50ms以下 |
 
+## densei-system への統合（サブモジュール運用）
+
+このシステムは、複数システムを束ねる統合リポジトリ [densei-system](https://github.com/tmc-ccoe/densei-system) に
+**git submodule** として組み込み、`/digital-twin/` パスプレフィックス配下で公開できる。
+ローカル単体起動（`docker-compose.yml` + `nginx-proxy`, HTTPS）はこれまで通り並行して利用可能。
+
+### 仕組み
+
+- フロントの絶対パスは `__BASE_PREFIX__` プレースホルダで保持し、Docker ビルド時の
+  `ARG BASE_PREFIX` で置換する（各サブツールの Dockerfile 内 `sed`）。
+  - ローカル単体: `BASE_PREFIX=""`（空）→ `/api`, `/ws/live` 等（従来通り）
+  - densei-system 配下: `BASE_PREFIX=/digital-twin` → `/digital-twin/api`, `/digital-twin/ws/live`
+- densei-system の `system-proxy` が `/digital-twin/*` を rewrite で除去し、
+  本リポジトリの `digital-twin-proxy`（HTTP:80）へ転送する。
+- Go バックエンド（simulation-core / realtime-gateway / factory-poller）は
+  プレフィックス除去後の素のパス（`/api`, `/ws` 等）を受けるため**改修不要**。
+
+### 統合用ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `compose.digital-twin.yml` | densei-system から include される統合 compose（フロントを `BASE_PREFIX=/digital-twin` でビルド、入口は `digital-twin-proxy:80`） |
+| `digital-twin-proxy/nginx.conf` | プレフィックス除去後のリクエストを各サービスへ振り分ける HTTP 入口 |
+
+### densei-system 側でのセットアップ（別作業 / 引き継ぎ手順）
+
+1. サブモジュール追加（ディレクトリ名は `densei-digital-twin`）:
+
+   ```bash
+   cd densei-system
+   git submodule add https://github.com/tmc-ccoe/densei-digital-twin.git densei-digital-twin
+   ```
+
+2. ルート `compose.yml` に include を追加:
+
+   ```yaml
+   include:
+     - path: densei-digital-twin/compose.digital-twin.yml
+   ```
+
+3. `proxy/services/digital-twin.conf.template` を新規作成（既存 signage-system テンプレに倣う）:
+
+   ```nginx
+   # digital-twin: ファクトリーシミュレーションシステム
+   upstream digital_twin_proxy {
+       server ${DIGITAL_TWIN_PROXY_HOST}:${DIGITAL_TWIN_PROXY_PORT};
+   }
+   # --- LOCATIONS ---
+   location /digital-twin/ {
+       rewrite ^/digital-twin(/.*)$ $1 break;
+       proxy_pass http://digital_twin_proxy;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection $connection_upgrade;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+   }
+   location = /digital-twin {
+       return 301 /digital-twin/;
+   }
+   ```
+
+4. `system-config-init` の環境変数に有効化フラグを追加（`.env` 等）:
+
+   ```
+   DIGITAL_TWIN_ENABLED=true
+   DIGITAL_TWIN_PROXY_HOST=dt-proxy
+   DIGITAL_TWIN_PROXY_PORT=80
+   ```
+
+### プレフィックス配下のローカル検証
+
+densei-system なしでプレフィックス挙動だけを確認する場合:
+
+```bash
+# /digital-twin プレフィックスでビルド
+docker compose -f compose.digital-twin.yml build
+
+# 起動（digital-twin-proxy が :80 入口）
+docker compose -f compose.digital-twin.yml up -d
+```
+
+手前に `rewrite ^/digital-twin(/.*)$ $1 break;` する簡易 nginx を立て、
+`http://localhost/digital-twin/portal/` でアクセスすると統合相当の動作を確認できる。
+
 ## ライセンス
 
 MIT

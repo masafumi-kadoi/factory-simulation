@@ -726,7 +726,7 @@ async function seekToSimStart() {
 function subscribeRealtimeWebSocket(dataSourceId) {
     disconnectWebSocket();
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/ws/live`;
+    const url = `${proto}//${location.host}__BASE_PREFIX__/ws/live`;
     const ws = new WebSocket(url);
     state.ws = ws;
     ws.onopen = () => {
@@ -910,7 +910,7 @@ async function subscribeWebSocket(dataSourceId) {
     }
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/ws/live`;
+    const url = `${proto}//${location.host}__BASE_PREFIX__/ws/live`;
 
     const ws = new WebSocket(url);
     state.ws = ws;
@@ -1117,7 +1117,7 @@ function openLocalWindow(machineStationId) {
         machineId: machineStationId,
         equipName,
     });
-    const url = `/factory-visualizer/local-window.html?${params}`;
+    const url = `__BASE_PREFIX__/factory-visualizer/local-window.html?${params}`;
     const win = window.open(url, `machine_${equipName}`, 'width=900,height=700,resizable=yes');
     if (!win) setStatus('ポップアップがブロックされました。許可してください。', 'status-warn');
 }

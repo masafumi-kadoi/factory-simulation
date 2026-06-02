@@ -1,5 +1,5 @@
 // API client for Factory Manager - all calls go through nginx-proxy to realtime-gateway
-const API = '/api';
+const API = '__BASE_PREFIX__/api';
 
 const FactoryAPI = {
     async listFactories() {

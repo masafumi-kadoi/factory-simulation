@@ -1,7 +1,7 @@
 // API client for factory-visualizer
 // All requests go through /api (nginx-proxy → realtime-gateway)
 
-const BASE = '/api';
+const BASE = '__BASE_PREFIX__/api';
 
 async function req(method, path, body) {
     const opts = {

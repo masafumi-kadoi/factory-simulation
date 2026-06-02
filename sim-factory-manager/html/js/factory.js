@@ -18,7 +18,7 @@ async function init() {
     // Setup "New Scenario" link
     const newScenarioBtn = document.getElementById('btn-new-scenario');
     if (newScenarioBtn) {
-        newScenarioBtn.href = `/editor/editor.html?new=1&factoryId=${encodeURIComponent(FACTORY_ID)}`;
+        newScenarioBtn.href = `__BASE_PREFIX__/editor/editor.html?new=1&factoryId=${encodeURIComponent(FACTORY_ID)}`;
     }
     await Promise.all([loadStations(), loadScenarios(), loadDataSources()]);
 }
@@ -77,7 +77,7 @@ async function loadScenarios() {
                 <td><span class="badge badge-inactive">${escapeHtml(s.scenarioType || 'simulation')}</span></td>
                 <td style="font-size:12px;color:#757575">${s.updatedAt ? new Date(s.updatedAt).toLocaleString('ja-JP') : '-'}</td>
                 <td>
-                    <a href="/editor/editor.html?scenarioId=${encodeURIComponent(s.id)}&factoryId=${encodeURIComponent(FACTORY_ID)}" class="btn btn-outline btn-sm" target="_blank">Edit</a>
+                    <a href="__BASE_PREFIX__/editor/editor.html?scenarioId=${encodeURIComponent(s.id)}&factoryId=${encodeURIComponent(FACTORY_ID)}" class="btn btn-outline btn-sm" target="_blank">Edit</a>
                 </td>
             </tr>`).join('');
     } catch (err) {

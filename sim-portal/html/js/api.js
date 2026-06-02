@@ -1,11 +1,11 @@
 // Portal API Client
 // All API calls go through the reverse proxy (same origin)
 
-const SIMULATION_CORE_URL = '/api';
+const SIMULATION_CORE_URL = '__BASE_PREFIX__/api';
 
 const SERVICE_URLS = {
-    'factory-visualizer': '/factory-visualizer',
-    'sim-factory-manager': '/factory',
+    'factory-visualizer': '__BASE_PREFIX__/factory-visualizer',
+    'sim-factory-manager': '__BASE_PREFIX__/factory',
 };
 
 const HEALTH_CHECK_TIMEOUT = 3000;
@@ -59,9 +59,9 @@ const PortalAPI = {
 
     async checkAllServices() {
         const services = [
-            { name: 'realtime-gateway', url: '/api/data-sources', port: null },
-            { name: 'sim-factory-manager', url: '/factory/', port: null },
-            { name: 'factory-visualizer', url: '/factory-visualizer/', port: null },
+            { name: 'realtime-gateway', url: '__BASE_PREFIX__/api/data-sources', port: null },
+            { name: 'sim-factory-manager', url: '__BASE_PREFIX__/factory/', port: null },
+            { name: 'factory-visualizer', url: '__BASE_PREFIX__/factory-visualizer/', port: null },
         ];
 
         const results = await Promise.all(

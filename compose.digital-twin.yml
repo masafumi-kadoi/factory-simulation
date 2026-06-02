@@ -1,0 +1,210 @@
+# densei-system 統合用 compose（digital-twin サブモジュール）
+#
+# densei-system のルートから include される前提:
+#   include:
+#     - path: densei-digital-twin/compose.digital-twin.yml
+#
+# 入口は digital-twin-proxy (:80)。densei-system の system-proxy が
+# `/digital-twin/*` を rewrite で除去して digital-twin-proxy へ転送する。
+# フロント3つは BASE_PREFIX=/digital-twin でビルドされ、ブラウザは
+# `/digital-twin/api`, `/digital-twin/ws/live` 等を叩く。
+#
+# ※ ローカル単体起動は従来通り docker-compose.yml（nginx-proxy:443, BASE_PREFIX空）を使用。
+#   この統合用ファイルでプレフィックス配下の挙動を検証する場合は README の手順を参照。
+
+x-base-prefix: &base_prefix "/digital-twin"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: dt-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: factory_simulation
+    volumes:
+      - dt_postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - digital-twin-network
+    restart: unless-stopped
+
+  simulation-core:
+    build:
+      context: ./simulation-core
+      dockerfile: Dockerfile
+    container_name: dt-simulation-core
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: factory_simulation
+      PORT: 8080
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - digital-twin-network
+    restart: unless-stopped
+
+  factory-poller:
+    build:
+      context: ./factory-poller
+      dockerfile: Dockerfile
+    container_name: dt-factory-poller
+    environment:
+      PORT: 8091
+      INTERNAL_DB_DSN: "host=postgres port=5432 dbname=factory_simulation user=postgres password=postgres sslmode=disable"
+    expose:
+      - "8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8091/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - digital-twin-network
+    restart: unless-stopped
+
+  realtime-gateway:
+    build:
+      context: ./realtime-gateway
+      dockerfile: Dockerfile
+    container_name: dt-realtime-gateway
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: factory_simulation
+      PORT: 8090
+      SIMULATION_CORE_URL: http://simulation-core:8080
+      FACTORY_POLLER_URL: http://factory-poller:8091
+    expose:
+      - "8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      simulation-core:
+        condition: service_healthy
+      factory-poller:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - digital-twin-network
+    restart: unless-stopped
+
+  factory-visualizer:
+    build:
+      context: ./factory-visualizer
+      dockerfile: Dockerfile
+      args:
+        BASE_PREFIX: *base_prefix
+    container_name: dt-factory-visualizer
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - digital-twin-network
+    restart: unless-stopped
+
+  sim-factory-manager:
+    build:
+      context: ./sim-factory-manager
+      dockerfile: Dockerfile
+      args:
+        BASE_PREFIX: *base_prefix
+    container_name: dt-sim-factory-manager
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - digital-twin-network
+    restart: unless-stopped
+
+  sim-portal:
+    build:
+      context: ./sim-portal
+      dockerfile: Dockerfile
+      args:
+        BASE_PREFIX: *base_prefix
+    container_name: dt-sim-portal
+    expose:
+      - "80"
+    depends_on:
+      factory-visualizer:
+        condition: service_healthy
+      sim-factory-manager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - digital-twin-network
+    restart: unless-stopped
+
+  # 統合時の入口（HTTP:80）。system-proxy がプレフィックス除去後にここへ転送。
+  digital-twin-proxy:
+    build:
+      context: ./digital-twin-proxy
+      dockerfile: Dockerfile
+    container_name: dt-proxy
+    expose:
+      - "80"
+    depends_on:
+      sim-portal:
+        condition: service_healthy
+      factory-visualizer:
+        condition: service_healthy
+      sim-factory-manager:
+        condition: service_healthy
+      realtime-gateway:
+        condition: service_healthy
+      simulation-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - digital-twin-network
+    restart: unless-stopped
+
+volumes:
+  dt_postgres_data:
+    driver: local
+
+networks:
+  digital-twin-network:
+    driver: bridge
