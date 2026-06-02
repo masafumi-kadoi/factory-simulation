@@ -32,6 +32,7 @@ const state = {
     simDataSourceId: null,
     simHistoryEvents: [],            // sorted item_movement for right zone
     simLocationMap: new Map(),       // locationId → stationId for sim DS
+    dataSourceMode: 'realtime',      // 'realtime' | 'sim'
 };
 
 let scene3d = null;
@@ -131,16 +132,8 @@ function initScene() {
 function applyHistoryAtTime(ms, animate = true) {
     if (!scene3d) return;
 
-    // Pick the right events + locationMap based on zone.
-    // If sim data is loaded and ms falls within the loaded sim window,
-    // always use sim data (prevents nowMs refresh from flipping the zone).
-    const zoneNow = timeline?._nowMs ?? Date.now();
-    let isRealtime = ms <= zoneNow;
-    if (isRealtime && state.simHistoryEvents.length > 0 && _simWindow.dsId) {
-        const simFirstMs = new Date(state.simHistoryEvents[0].event_time).getTime();
-        const simLastMs  = new Date(state.simHistoryEvents[state.simHistoryEvents.length - 1].event_time).getTime();
-        if (ms >= simFirstMs && ms <= simLastMs) isRealtime = false;
-    }
+    // Pick the right events + locationMap based on the explicit data source mode toggle.
+    const isRealtime = state.dataSourceMode === 'realtime';
     const events   = isRealtime ? state.realtimeHistoryEvents : state.simHistoryEvents;
     const locMap   = isRealtime ? state.realtimeLocationMap   : state.simLocationMap;
 
@@ -354,16 +347,27 @@ function initUI() {
         if (!dsId) return;
         setStatus('シミュレーション結果を読み込み中...', 'status-running');
         try {
+            const prevTime = timeline.getCurrentTime();
             await loadSimulationIntoRightZone(dsId);
             timeline.selectSimulation(dsId);
             document.getElementById('btn-stop-sim').disabled = false;
-            await seekToSimStart();
+            switchDataSourceMode('sim');
+            if (prevTime !== null) {
+                await _simEnsureWindow(prevTime);
+                timeline.setCurrentTime(prevTime, true);
+            } else {
+                await seekToSimStart();
+            }
             setStatus('シミュレーション結果を表示中', 'status-ok');
         } catch (e) {
             console.warn('[execHistory] failed to load simulation', e);
             setStatus('読み込み失敗: ' + e.message, 'status-error');
         }
     });
+
+    // Data source toggle buttons
+    document.getElementById('ds-btn-realtime').addEventListener('click', () => switchDataSourceMode('realtime'));
+    document.getElementById('ds-btn-sim').addEventListener('click', () => switchDataSourceMode('sim'));
 
     // Factory selector
     document.getElementById('factory-select').addEventListener('change', async e => {
@@ -740,9 +744,8 @@ function subscribeRealtimeWebSocket(dataSourceId) {
             // Update timeline dots
             const evtMs = state.realtimeHistoryEvents.map(e => new Date(e.event_time).getTime());
             timeline.setRealtimeData(evtMs);
-            // If currently viewing realtime zone, update 3D
-            const curMs = timeline.getCurrentTime();
-            if (curMs !== null && curMs <= (timeline._nowMs ?? Date.now())) {
+            // If currently viewing realtime mode, update 3D
+            if (state.dataSourceMode === 'realtime') {
                 state.locationMap = state.realtimeLocationMap;
                 handleWsEvent(event);
             }
@@ -831,7 +834,8 @@ async function runSimulation() {
         document.getElementById('btn-stop-sim').disabled = false;
         setStatus('完了', 'status-ok');
 
-        // Load execution result and subscribe to live
+        // Load execution result and switch to sim mode
+        switchDataSourceMode('sim');
         await loadExecutionResult(exec.executionId, exec.dataSourceId, startDatetime, simulationTime);
 
         // Refresh execution history list
@@ -945,6 +949,36 @@ function disconnectWebSocket() {
     }
 }
 
+function switchDataSourceMode(mode) {
+    state.dataSourceMode = mode;
+    const btnRt  = document.getElementById('ds-btn-realtime');
+    const btnSim = document.getElementById('ds-btn-sim');
+    const execList = document.getElementById('execution-list');
+
+    if (mode === 'realtime') {
+        btnRt.classList.add('active');
+        btnSim.classList.remove('active');
+        execList.classList.add('disabled');
+    } else {
+        btnSim.classList.add('active');
+        btnRt.classList.remove('active');
+        execList.classList.remove('disabled');
+    }
+
+    // Re-render 3D at current seek position with the new data source
+    const curMs = timeline?.getCurrentTime();
+    if (curMs !== null) {
+        timeline.setCurrentTime(curMs, true);
+    }
+
+    if (mode === 'realtime') {
+        const label = state.currentFactory ? `リアルタイム監視中: ${factoryName(state.currentFactory)}` : '';
+        setStatus(label, state.liveDataSourceId ? 'status-running' : 'status-idle');
+    } else {
+        setStatus('シミュレーション結果を表示中', 'status-ok');
+    }
+}
+
 function stopLive() {
     // Clear simulation data from the right zone (do not touch the realtime WS)
     state.simDataSourceId = null;
@@ -952,15 +986,15 @@ function stopLive() {
     state.simLocationMap = new Map();
     timeline.clearSimulationData();
 
+    // Switch back to realtime mode
+    switchDataSourceMode('realtime');
+
     // Return view to the realtime zone (seek to NOW)
     if (timeline && timeline._nowMs !== null) {
         timeline.setCurrentTime(timeline._nowMs, true);
     }
 
     document.getElementById('btn-stop-sim').disabled = true;
-
-    const label = state.currentFactory ? `リアルタイム監視中: ${factoryName(state.currentFactory)}` : '停止';
-    setStatus(label, state.liveDataSourceId ? 'status-running' : 'status-idle');
 }
 
 function handleWsEvent(event) {
