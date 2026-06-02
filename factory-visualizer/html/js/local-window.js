@@ -558,6 +558,7 @@ function initModelTab() {
         }
         _grid.isDragging = true;
         _glbPreviewBuffer = null; // グリッド編集開始 → voxelプレビューに切替
+        _importedGlb = null;      // グリッド編集開始 → インポート済みGLBを破棄しグリッドモードへ
         const key = `${cell.col},${cell.row}`;
         if (_grid.cells.has(key)) { _grid.dragMode = 'remove'; _grid.cells.delete(key); }
         else { _grid.dragMode = 'add'; _grid.cells.add(key); }
